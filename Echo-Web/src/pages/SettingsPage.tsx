@@ -24,6 +24,7 @@ import {
   Server,
   Puzzle,
   RefreshCw,
+  Wifi,
 } from 'lucide-react'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
@@ -51,6 +52,11 @@ import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { AddonEndpoint, ExtensionTelemetry } from '../types/extension.ts'
 import { pwaManager } from '../services/pwa/pwaManager.ts'
 import type { SwStatus } from '../services/pwa/pwaTypes.ts'
+import {
+  getNetworkConnectionInfo,
+  subscribeNetworkChange,
+  getEffectiveAudioQuality,
+} from '../services/networkQuality.ts'
 
 const accents: { value: AccentColor; label: string; color: string }[] = [
   { value: 'violet', label: 'Violet', color: '#8b79e8' },
@@ -207,6 +213,11 @@ export function SettingsPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
   const telemetry = getAudioTelemetry()
+  const [networkInfo, setNetworkInfo] = useState(() => getNetworkConnectionInfo())
+
+  useEffect(() => {
+    return subscribeNetworkChange((info) => setNetworkInfo(info))
+  }, [])
 
   const sections = [
     {
@@ -618,33 +629,94 @@ export function SettingsPage() {
               </div>
             </div>
 
+            {/* Real-time Network Quality Indicator */}
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-white/6 bg-white/3 p-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <Wifi size={15} className="text-[#b09cff]" />
+                <div>
+                  <span className="text-[#a59fad]">Active Network: </span>
+                  <strong className="text-white capitalize">
+                    {networkInfo.isMetered ? 'Cellular / Metered' : 'Wi-Fi / Unmetered'}
+                  </strong>
+                  {networkInfo.saveData && (
+                    <span className="ml-2 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+                      Data Saver Active
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-[11px] text-[#a59fad]">
+                Effective Tier:{' '}
+                <strong className="font-semibold text-[#b09cff] uppercase">
+                  {getEffectiveAudioQuality(preferences)}
+                </strong>
+              </div>
+            </div>
+
+            {/* Wi-Fi / Unmetered Quality Tier */}
             <div className="quality-setting">
               <div>
-                <strong>Streaming audio quality</strong>
-                <small>Preferred audio bitrate and encoding for stream resolution.</small>
+                <strong>Wi-Fi & Unmetered streaming quality</strong>
+                <small>Quality ceiling applied over Wi-Fi, Ethernet, and high-speed unmetered links.</small>
               </div>
               <div
                 className="quality-options"
                 role="radiogroup"
-                aria-label="Audio quality preference"
+                aria-label="Wi-Fi audio quality preference"
               >
                 {qualityOptions.map((option) => (
                   <button
                     key={option.value}
                     className={classNames(
                       'quality-option',
-                      preferences.audioQuality === option.value && 'is-active',
+                      (preferences.audioQualityWifi ?? 'lossless') === option.value && 'is-active',
                     )}
                     type="button"
                     role="radio"
-                    aria-checked={preferences.audioQuality === option.value}
-                    onClick={() => save('audioQuality', option.value)}
+                    aria-checked={(preferences.audioQualityWifi ?? 'lossless') === option.value}
+                    onClick={() => {
+                      save('audioQualityWifi', option.value)
+                      save('audioQuality', option.value)
+                    }}
                   >
                     <span>
                       <strong>{option.label}</strong>
                       <small>{option.description}</small>
                     </span>
-                    {preferences.audioQuality === option.value && <Check size={16} />}
+                    {(preferences.audioQualityWifi ?? 'lossless') === option.value && <Check size={16} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cellular / Metered Quality Tier */}
+            <div className="quality-setting mt-4">
+              <div>
+                <strong>Cellular & Metered streaming quality</strong>
+                <small>Quality ceiling enforced over mobile cellular networks and metered connections.</small>
+              </div>
+              <div
+                className="quality-options"
+                role="radiogroup"
+                aria-label="Cellular audio quality preference"
+              >
+                {qualityOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    className={classNames(
+                      'quality-option',
+                      (preferences.audioQualityCellular ?? 'medium') === option.value && 'is-active',
+                    )}
+                    type="button"
+                    role="radio"
+                    aria-checked={(preferences.audioQualityCellular ?? 'medium') === option.value}
+                    onClick={() => save('audioQualityCellular', option.value)}
+                  >
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                    {(preferences.audioQualityCellular ?? 'medium') === option.value && <Check size={16} />}
                   </button>
                 ))}
               </div>

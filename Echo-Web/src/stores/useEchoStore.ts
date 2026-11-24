@@ -85,6 +85,8 @@ const defaultPreferences: UserPreferences = {
   showExplicit: true,
   volumeNormalization: false,
   audioQuality: 'high',
+  audioQualityWifi: 'lossless',
+  audioQualityCellular: 'medium',
   smoothScrolling: true,
   compactLists: false,
   lastPlayedLayout: 'grid',

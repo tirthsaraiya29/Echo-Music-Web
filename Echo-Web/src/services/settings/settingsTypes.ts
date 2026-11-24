@@ -24,6 +24,8 @@ export const userPreferencesSchema = z.object({
   showExplicit: z.boolean().default(true),
   volumeNormalization: z.boolean().default(false),
   audioQuality: audioQualitySchema.default('high'),
+  audioQualityWifi: audioQualitySchema.optional().default('lossless'),
+  audioQualityCellular: audioQualitySchema.optional().default('medium'),
   smoothScrolling: z.boolean().default(true),
   compactLists: z.boolean().default(false),
   lastPlayedLayout: lastPlayedLayoutSchema.default('grid'),

@@ -126,6 +126,8 @@ export interface UserPreferences {
   showExplicit: boolean
   volumeNormalization: boolean
   audioQuality: AudioQuality
+  audioQualityWifi?: AudioQuality | undefined
+  audioQualityCellular?: AudioQuality | undefined
   smoothScrolling: boolean
   compactLists: boolean
   lastPlayedLayout: 'grid' | 'list'

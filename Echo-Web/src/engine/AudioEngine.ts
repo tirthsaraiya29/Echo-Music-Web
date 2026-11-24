@@ -24,22 +24,13 @@ import { updateDiscordPresence, clearDiscordPresence } from '../services/discord
 import { castService } from '../services/cast/castService.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { ExtensionResolvedStream } from '../types/extension.ts'
+import {
+  isDataSaverActive,
+  isMeteredConnection,
+  getEffectiveAudioQuality,
+} from '../services/networkQuality.ts'
 
-/**
- * Evaluates whether Data Saver is active from user preference or browser network policy.
- */
-export function isDataSaverActive(): boolean {
-  const prefs = useEchoStore.getState().preferences
-  if (prefs?.dataSaver) return true
-
-  if (typeof navigator !== 'undefined' && 'connection' in navigator) {
-    const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
-    if (conn?.saveData === true) return true
-    if (conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g') return true
-  }
-
-  return false
-}
+export { isDataSaverActive, isMeteredConnection, getEffectiveAudioQuality }
 
 export interface AudioEngineMetrics {
   stateEmissionsCount: number
@@ -1076,6 +1067,20 @@ export class AudioEngine {
     return isDataSaverActive()
   }
 
+  /**
+   * Evaluates whether the client is currently connected over a metered/cellular network.
+   */
+  public isMeteredConnection(): boolean {
+    return isMeteredConnection()
+  }
+
+  /**
+   * Evaluates the effective streaming audio quality ceiling under live network conditions.
+   */
+  public getEffectiveAudioQuality(): import('../types/domain.ts').AudioQuality {
+    return getEffectiveAudioQuality(useEchoStore.getState().preferences)
+  }
+
   private async handlePrebuffer(): Promise<void> {
     if (this.isDataSaverActive()) {
       // Data Saver suspends background track preloading to minimize network/bandwidth usage
@@ -1166,9 +1171,11 @@ export class AudioEngine {
     const prefs = useEchoStore.getState().preferences
     const isExtensionFirst =
       prefs.extensionSourcePriority !== 'youtube-first' && prefs.preferExtensionAudio !== false
+    const effectiveQuality = getEffectiveAudioQuality(prefs)
 
     // Attempt custom extension audio provider resolution when extension-first is enabled
-    if (isExtensionFirst && !this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
+    // and network quality tier permits (non-low)
+    if (isExtensionFirst && effectiveQuality !== 'low' && extensionManager.hasEnabledAddons()) {
       try {
         const extStream = await extensionManager.resolveTrackExtension(track)
         if (extStream?.streamUrl) {
@@ -1186,11 +1193,9 @@ export class AudioEngine {
     const videoId = track.videoId || track.id
     if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
       try {
-        // Data saver forces the smallest stream regardless of the chosen quality tier,
-        // respecting both user preference and browser network policies.
-        const quality = this.isDataSaverActive() ? 'low' : prefs.audioQuality
+        // Uses effective quality tier reflecting Wi-Fi vs metered/cellular ceilings and data saver policies
         const res = await fetch(
-          `/api/stream/resolve?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(quality)}`,
+          `/api/stream/resolve?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(effectiveQuality)}`,
         )
         if (res.ok) {
           const data = (await res.json()) as StreamResolutionResult
