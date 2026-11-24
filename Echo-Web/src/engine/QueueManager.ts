@@ -7,6 +7,11 @@ import type {
   RestoreQueueOptions,
   Track,
 } from '../types/audio.ts'
+import {
+  filterBlockedArtistsFromQueue,
+  filterBlockedArtistsFromTracks,
+  isTrackBlocked,
+} from '../services/innertube/blockedArtistsService.ts'
 
 export const TrackSchema = z
   .object({
@@ -471,14 +476,23 @@ export class QueueManager {
     this.historyList = []
   }
 
-  public addRadioTracks(tracks: Track[], nextContinuationToken?: string | null): void {
+  public addRadioTracks(
+    tracks: Track[],
+    nextContinuationToken?: string | null,
+    blockedArtists?: string[],
+  ): void {
     const existingIds = new Set<string>()
     if (this.activeTrack) existingIds.add(this.activeTrack.id)
     for (const t of this.upNextList) existingIds.add(t.id)
     for (const t of this.sourceQueueList) existingIds.add(t.id)
     for (const t of this.radioQueueList) existingIds.add(t.id)
 
-    const valid = tracks.filter((t) => {
+    const unblocked =
+      blockedArtists && blockedArtists.length > 0
+        ? filterBlockedArtistsFromTracks(tracks, blockedArtists)
+        : tracks
+
+    const valid = unblocked.filter((t) => {
       const ok = isValidTrack(t)
       if (!ok) {
         this.metrics.invalidDropsCount++
@@ -495,6 +509,41 @@ export class QueueManager {
       this.setContinuationToken(nextContinuationToken, true)
     }
     this.metrics.mutationsCount++
+  }
+
+  public purgeBlockedArtists(blockedArtists: string[]): {
+    purgedCount: number
+    currentTrackPurged: boolean
+  } {
+    if (!blockedArtists || blockedArtists.length === 0) {
+      return { purgedCount: 0, currentTrackPurged: false }
+    }
+    let purgedCount = 0
+    let currentTrackPurged = false
+
+    const initialUpNext = this.upNextList.length
+    this.upNextList = filterBlockedArtistsFromQueue(this.upNextList, blockedArtists)
+    purgedCount += initialUpNext - this.upNextList.length
+
+    const initialSource = this.sourceQueueList.length
+    this.sourceQueueList = filterBlockedArtistsFromQueue(this.sourceQueueList, blockedArtists)
+    purgedCount += initialSource - this.sourceQueueList.length
+
+    const initialRadio = this.radioQueueList.length
+    this.radioQueueList = filterBlockedArtistsFromQueue(this.radioQueueList, blockedArtists)
+    purgedCount += initialRadio - this.radioQueueList.length
+
+    if (this.activeTrack && isTrackBlocked(this.activeTrack, blockedArtists)) {
+      this.activeTrack = null
+      currentTrackPurged = true
+      purgedCount++
+    }
+
+    if (purgedCount > 0) {
+      this.metrics.mutationsCount++
+    }
+
+    return { purgedCount, currentTrackPurged }
   }
 
   public clearRadioQueue(): void {

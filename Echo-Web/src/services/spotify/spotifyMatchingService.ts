@@ -248,8 +248,8 @@ export async function matchSingleTrack(
         throw new DOMException('Matching cancelled', 'AbortError')
       }
 
-      let candidates = options.candidates
-      if (!candidates) {
+      let candidates: Track[] = options.candidates ?? []
+      if (candidates.length === 0) {
         const query = `${safeTarget.title} ${safeTarget.artist}`.trim()
         const timeoutMs = options.timeoutMs ?? 8000
         const timeoutCtrl = new AbortController()

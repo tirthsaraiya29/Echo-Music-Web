@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import type { Track, PlaylistSummary, HomeShelf, UserPreferences } from '../../types/domain.ts'
-import type { SearchResultCatalog } from './client.ts'
+import type { Track, PlaylistSummary, HomeShelf, UserPreferences, SearchResultCatalog } from '../../types/domain.ts'
 
 export const shortsFilterOptionsSchema = z.object({
   enabled: z.boolean().default(true),

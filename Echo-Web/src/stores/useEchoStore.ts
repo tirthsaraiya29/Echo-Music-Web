@@ -16,6 +16,13 @@ import {
   sanitizeUserPreferences,
   recordSettingsMetric,
 } from '../services/settings/settingsTypes.ts'
+import {
+  formatBlockedArtistEntry,
+  parseBlockedArtistEntry,
+  isArtistBlocked as checkArtistBlocked,
+  isTrackBlocked,
+  filterBlockedArtistsFromQueue,
+} from '../services/innertube/blockedArtistsService.ts'
 
 export const playlistTitleSchema = z
   .string()
@@ -148,6 +155,10 @@ type EchoState = {
   preferences: UserPreferences
   toast: string
   trackCache: Record<string, Track>
+  blockedArtists: string[]
+  blockArtist: (artist: { id: string; name: string } | string) => void
+  unblockArtist: (artistIdOrName: string) => void
+  isArtistBlocked: (artistId: string, artistName?: string) => boolean
   cacheTrack: (track: Track) => void
   cacheTracks: (tracks: Track[]) => void
   getTrack: (id: string) => Track | undefined
@@ -210,6 +221,7 @@ export const useEchoStore = create<EchoState>()(
       preferences: defaultPreferences,
       toast: '',
       trackCache: {},
+      blockedArtists: [],
 
       cacheTrack: (track: Track) => {
         cacheTrack(track)
@@ -632,6 +644,74 @@ export const useEchoStore = create<EchoState>()(
         set({ preferences: { ...defaultPreferences } })
       },
 
+      blockArtist: (artistOrId) => {
+        const id = typeof artistOrId === 'string' ? artistOrId : artistOrId.id
+        const name = typeof artistOrId === 'string' ? artistOrId : artistOrId.name
+        const entry = formatBlockedArtistEntry(id, name)
+
+        set((state) => {
+          if (
+            state.blockedArtists.some((e) => {
+              const p = parseBlockedArtistEntry(e)
+              return p.id === id || (name && p.name.toLowerCase() === name.toLowerCase())
+            })
+          ) {
+            return state
+          }
+          const updatedBlocked = [...state.blockedArtists, entry]
+
+          // Purge blocked tracks from current queue
+          const queueTracks = state.queueIds
+            .map((tid) => state.trackCache[tid])
+            .filter((t): t is Track => Boolean(t))
+          const filteredQueue = filterBlockedArtistsFromQueue(queueTracks, updatedBlocked)
+          const filteredQueueIds = filteredQueue.map((t) => t.id)
+
+          // If current track is by blocked artist, advance or stop
+          let currentTrack = state.currentTrack
+          let currentTrackId = state.currentTrackId
+          let isPlaying = state.isPlaying
+          if (currentTrack && isTrackBlocked(currentTrack, updatedBlocked)) {
+            if (filteredQueue.length > 0) {
+              const next = filteredQueue[0]!
+              currentTrack = next
+              currentTrackId = next.id
+            } else {
+              currentTrack = null
+              currentTrackId = ''
+              isPlaying = false
+            }
+          }
+
+          return {
+            blockedArtists: updatedBlocked,
+            queueIds: filteredQueueIds,
+            currentTrack,
+            currentTrackId,
+            isPlaying,
+            toast: `Blocked artist: ${name}`,
+          }
+        })
+      },
+
+      unblockArtist: (artistIdOrName) => {
+        set((state) => {
+          const target = artistIdOrName.trim().toLowerCase()
+          const updatedBlocked = state.blockedArtists.filter((e) => {
+            const parsed = parseBlockedArtistEntry(e)
+            return parsed.id.toLowerCase() !== target && parsed.name.toLowerCase() !== target
+          })
+          return {
+            blockedArtists: updatedBlocked,
+            toast: 'Unblocked artist',
+          }
+        })
+      },
+
+      isArtistBlocked: (artistId, artistName) => {
+        return checkArtistBlocked(artistId, artistName, get().blockedArtists)
+      },
+
       setToast: (message) => set({ toast: message }),
       clearToast: () => set({ toast: '' }),
     }),
@@ -702,6 +782,7 @@ export const useEchoStore = create<EchoState>()(
           recentItems: state.recentItems,
           preferences: state.preferences,
           trackCache: prunedCache,
+          blockedArtists: state.blockedArtists,
         }
       },
       merge: (persisted, current) => {
@@ -718,6 +799,7 @@ export const useEchoStore = create<EchoState>()(
           ...current,
           ...saved,
           trackCache: restoredCache,
+          blockedArtists: saved.blockedArtists ?? [],
           playlists: saved.playlists ?? [],
           savedPlaylistIds: saved.savedPlaylistIds ?? [],
           likedTrackIds: saved.likedTrackIds ?? [],

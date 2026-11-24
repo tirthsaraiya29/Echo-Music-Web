@@ -55,6 +55,7 @@ import {
   clearSpotifyTasteProfile,
   type SpotifyTasteProfile,
 } from '../services/spotify/spotifyRecommendationBridge.ts'
+import { parseBlockedArtistEntry } from '../services/innertube/blockedArtistsService.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { AddonEndpoint, ExtensionTelemetry } from '../types/extension.ts'
 import { pwaManager } from '../services/pwa/pwaManager.ts'
@@ -138,6 +139,8 @@ export function SettingsPage() {
   const resetPreferences = useEchoStore((state) => state.resetPreferences)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const notify = useEchoStore((state) => state.setToast)
+  const blockedArtists = useEchoStore((state) => state.blockedArtists)
+  const unblockArtist = useEchoStore((state) => state.unblockArtist)
   const {
     setCrossfadeDuration,
     setCrossfadeProfile,
@@ -264,7 +267,7 @@ export function SettingsPage() {
       id: 'content',
       label: 'Content & Region',
       icon: Globe,
-      keywords: 'region explicit start tab catalog language shorts reel video',
+      keywords: 'region explicit start tab catalog language shorts reel video blocked artists',
     },
     {
       id: 'lyrics',
@@ -1047,6 +1050,51 @@ export function SettingsPage() {
               value={preferences.hideVideoSongs ?? false}
               onChange={save}
             />
+
+            {/* Blocked Artists Management */}
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <strong className="block text-sm font-semibold text-white">Blocked Artists</strong>
+                  <small className="text-xs text-[#a59fad]">
+                    Artists excluded across Home, Search, Radio, and Queue.
+                  </small>
+                </div>
+                <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-white">
+                  {blockedArtists.length} {blockedArtists.length === 1 ? 'artist' : 'artists'}
+                </span>
+              </div>
+
+              {blockedArtists.length === 0 ? (
+                <p className="py-2 text-xs italic text-[#a59fad]">No blocked artists.</p>
+              ) : (
+                <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                  {blockedArtists.map((entry) => {
+                    const parsed = parseBlockedArtistEntry(entry)
+                    return (
+                      <div
+                        key={entry}
+                        className="flex items-center justify-between rounded-lg bg-black/20 p-2.5 text-xs"
+                      >
+                        <div>
+                          <span className="font-semibold text-white">{parsed.name}</span>
+                          <span className="ml-2 font-mono text-[10px] text-[#a59fad]">
+                            ID: {parsed.id}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => unblockArtist(parsed.id || parsed.name)}
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-400 hover:bg-red-500/20"
+                        >
+                          Unblock
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </section>
         )}
 

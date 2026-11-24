@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import type { Track, HomeShelf, UserPreferences } from '../../types/domain.ts'
-import type { SearchResultCatalog } from './client.ts'
+import type { Track, HomeShelf, UserPreferences, SearchResultCatalog } from '../../types/domain.ts'
 
 export const videoSongFilterOptionsSchema = z.object({
   enabled: z.boolean().default(false),

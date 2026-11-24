@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Album, Artist, HomeShelf, PlaylistSummary, Track } from '../../types/domain.ts'
+import type { Album, Artist, HomeShelf, Track, SearchResultCatalog } from '../../types/domain.ts'
 import type { SponsorSegment } from '../../types/audio.ts'
 import type { StreamResolutionResult } from '../../types/innertube.ts'
 import { apiFetch } from '../api.ts'
@@ -19,6 +19,10 @@ import {
   filterVideoSongsFromSearchResults,
   isVideoSongFilterEnabled,
 } from './videoSongFilterService.ts'
+import {
+  filterBlockedArtistsFromShelves,
+  filterBlockedArtistsFromSearchResults,
+} from './blockedArtistsService.ts'
 import { fetchWithCache } from '../cache/metadataCache.ts'
 import { useEchoStore, cacheTracks } from '../../stores/useEchoStore.ts'
 
@@ -52,12 +56,7 @@ export const SEARCH_FILTERS = {
 
 export type SearchFilterKey = keyof typeof SEARCH_FILTERS | 'all'
 
-export interface SearchResultCatalog {
-  tracks: Track[]
-  albums: Album[]
-  artists: Artist[]
-  playlists: PlaylistSummary[]
-}
+export type { SearchResultCatalog } from '../../types/domain.ts'
 
 export class InnerTubeClient {
   public static getMetrics(): InnerTubeClientMetrics {
@@ -117,6 +116,8 @@ export class InnerTubeClient {
           }
           shelves = filterShortsFromShelves(shelves, filterShorts)
           shelves = filterVideoSongsFromShelves(shelves, filterVideos)
+          const blockedArtists = useEchoStore.getState().blockedArtists || []
+          shelves = filterBlockedArtistsFromShelves(shelves, blockedArtists)
           for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
@@ -170,6 +171,8 @@ export class InnerTubeClient {
           }
           shelves = filterShortsFromShelves(shelves, filterShorts)
           shelves = filterVideoSongsFromShelves(shelves, filterVideos)
+          const blockedArtists = useEchoStore.getState().blockedArtists || []
+          shelves = filterBlockedArtistsFromShelves(shelves, blockedArtists)
           for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
@@ -311,6 +314,8 @@ export class InnerTubeClient {
           }
           catalog = filterShortsFromSearchResults(catalog, filterShorts)
           catalog = filterVideoSongsFromSearchResults(catalog, filterVideos)
+          const blockedArtists = useEchoStore.getState().blockedArtists || []
+          catalog = filterBlockedArtistsFromSearchResults(catalog, blockedArtists)
           if (catalog.tracks.length > 0) {
             cacheTracks(catalog.tracks)
           }

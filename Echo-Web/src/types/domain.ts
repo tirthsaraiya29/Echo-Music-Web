@@ -164,3 +164,10 @@ export interface UserPreferences {
   filterShorts?: boolean | undefined
   hideVideoSongs?: boolean | undefined
 }
+
+export interface SearchResultCatalog {
+  tracks: Track[]
+  albums: Album[]
+  artists: Artist[]
+  playlists: PlaylistSummary[]
+}

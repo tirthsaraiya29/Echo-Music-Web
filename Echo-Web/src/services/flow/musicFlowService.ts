@@ -307,7 +307,7 @@ export class MusicFlowService {
       const res = await InnerTubeClient.search(query, 'songs')
       if (res.tracks && res.tracks.length > 0) {
         const existingIds = new Set(this.state.feed.map((t) => t.id))
-        const novel = res.tracks.filter((t) => !existingIds.has(t.id))
+        const novel = res.tracks.filter((t: Track) => !existingIds.has(t.id))
         if (novel.length > 0) {
           this.state.feed = [...this.state.feed, ...novel]
           this.emit()

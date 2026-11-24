@@ -69,7 +69,7 @@ export function PodcastsPage() {
       try {
         const results = await InnerTubeClient.search(category.query, 'podcasts')
         if (!cancelled) {
-          const tracks: Track[] = (results.tracks || []).map((t) => ({
+          const tracks: Track[] = (results.tracks || []).map((t: Track) => ({
             ...t,
             isPodcast: true,
             albumTitle: t.albumTitle || 'Podcast',

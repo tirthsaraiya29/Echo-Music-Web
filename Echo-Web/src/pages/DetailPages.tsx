@@ -681,6 +681,9 @@ export function ArtistPage() {
   const { data, isLoading, error } = useArtist(artistId)
   const followed = useEchoStore((state) => state.followedArtistIds.includes(artistId))
   const toggleFollow = useEchoStore((state) => state.toggleArtistFollow)
+  const isBlocked = useEchoStore((state) => state.isArtistBlocked(artistId, data?.artist?.name))
+  const blockArtist = useEchoStore((state) => state.blockArtist)
+  const unblockArtist = useEchoStore((state) => state.unblockArtist)
   const setToast = useEchoStore((state) => state.setToast)
   const { playQueue } = useAudioEngine()
 
@@ -763,6 +766,22 @@ export function ArtistPage() {
                   <Plus size={15} /> Follow
                 </>
               )}
+            </button>
+            <button
+              className={classNames('button', isBlocked ? 'button--quiet' : 'button--outline')}
+              type="button"
+              aria-label={isBlocked ? `Unblock ${artist.name}` : `Block ${artist.name}`}
+              aria-pressed={isBlocked}
+              onClick={() => {
+                if (isBlocked) {
+                  unblockArtist(artist.id || artist.name)
+                } else {
+                  blockArtist({ id: artist.id, name: artist.name })
+                }
+              }}
+            >
+              <UserX size={15} />
+              {isBlocked ? 'Blocked' : 'Block'}
             </button>
           </div>
         </div>
