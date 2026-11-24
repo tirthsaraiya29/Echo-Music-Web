@@ -84,6 +84,8 @@ export interface ExtensionTelemetry {
   matchesFound: number
   resolutionSuccesses: number
   fallbackCount: number
+  fallbackToYouTubeCount: number
+  extensionCascadeFailures: number
   activeExtensionSource?: string | undefined
 }
 

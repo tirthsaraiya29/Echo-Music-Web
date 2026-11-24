@@ -49,6 +49,8 @@ export class ExtensionManager {
     matchesFound: 0,
     resolutionSuccesses: 0,
     fallbackCount: 0,
+    fallbackToYouTubeCount: 0,
+    extensionCascadeFailures: 0,
   }
 
   constructor() {
@@ -232,11 +234,14 @@ export class ExtensionManager {
     this.telemetry.totalAttempts++
 
     for (const addon of enabledAddons) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 3500)
       try {
         // Step 1: Match track candidate
         const matchRes = await fetch('/api/extensions/match', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             addonUrl: addon.url,
             title: track.title,
@@ -245,26 +250,36 @@ export class ExtensionManager {
           }),
         })
 
-        if (!matchRes.ok) continue
+        if (!matchRes.ok) {
+          this.telemetry.extensionCascadeFailures++
+          continue
+        }
         const matchData = (await matchRes.json()) as {
           matched: boolean
           candidate?: { id: string } | undefined
         }
 
-        if (!matchData.matched || !matchData.candidate?.id) continue
+        if (!matchData.matched || !matchData.candidate?.id) {
+          this.telemetry.extensionCascadeFailures++
+          continue
+        }
         this.telemetry.matchesFound++
 
         // Step 2: Resolve stream URL
         const resolveRes = await fetch('/api/extensions/resolve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             addonUrl: addon.url,
             trackId: matchData.candidate.id,
           }),
         })
 
-        if (!resolveRes.ok) continue
+        if (!resolveRes.ok) {
+          this.telemetry.extensionCascadeFailures++
+          continue
+        }
         const resolveData = (await resolveRes.json()) as {
           success: boolean
           stream?: {
@@ -289,12 +304,17 @@ export class ExtensionManager {
             source: addon.name,
           }
         }
+        this.telemetry.extensionCascadeFailures++
       } catch {
+        this.telemetry.extensionCascadeFailures++
         // Try next addon in cascade
+      } finally {
+        clearTimeout(timer)
       }
     }
 
     this.telemetry.fallbackCount++
+    this.telemetry.fallbackToYouTubeCount++
     return null
   }
 
@@ -308,6 +328,8 @@ export class ExtensionManager {
       matchesFound: 0,
       resolutionSuccesses: 0,
       fallbackCount: 0,
+      fallbackToYouTubeCount: 0,
+      extensionCascadeFailures: 0,
     }
   }
 }
