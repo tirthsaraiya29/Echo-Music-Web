@@ -176,3 +176,53 @@ test('AudioEngine: setAudioOutput persists sink only on success and updates engi
   // Storage is NOT overwritten with the failed device
   assert.strictEqual(globalThis.localStorage.getItem('echo_audio_output_device_id'), 'sink-headphones-ok')
 })
+
+test('DeckController: Dual-deck crossfade invariants, input validation, and cancellation [SMALL-03]', async () => {
+  const graph = new WebAudioGraph()
+  const deck = new DeckController(graph)
+
+  // 1. Clamped settings validation
+  deck.setCrossfadeDuration(99)
+  assert.strictEqual(deck.crossfadeDuration, 12)
+  deck.setCrossfadeDuration(-5)
+  assert.strictEqual(deck.crossfadeDuration, 0)
+
+  // 2. Input validation on loadActive
+  const validTrack = {
+    id: 'track-v1',
+    title: 'Valid Track',
+    artistName: 'Artist 1',
+    albumTitle: 'Album 1',
+    durationMs: 180000,
+    durationSeconds: 180,
+    playCount: 0,
+  }
+  // @ts-expect-error invalid track test
+  await assert.rejects(async () => deck.loadActive({ id: '', title: '' }, 'http://example.com/audio.mp3'))
+  await assert.rejects(async () => deck.loadActive(validTrack, ''))
+
+  // 3. Valid load & prebuffer
+  await deck.loadActive(validTrack, 'http://example.com/audio.mp3', false)
+  assert.strictEqual(deck.getActiveTrack()?.id, 'track-v1')
+
+  const standbyTrack = {
+    id: 'track-v2',
+    title: 'Standby Track',
+    artistName: 'Artist 2',
+    albumTitle: 'Album 2',
+    durationMs: 200000,
+    durationSeconds: 200,
+    playCount: 0,
+  }
+  deck.prebufferStandby(standbyTrack, 'http://example.com/audio2.mp3')
+  assert.strictEqual(deck.getStandbyTrack()?.id, 'track-v2')
+
+  const status = deck.getCrossfadeStatus()
+  assert.strictEqual(status.activeDeck, 'A')
+  assert.strictEqual(status.standbyDeck, 'B')
+  assert.strictEqual(status.hasStandbyTrack, true)
+
+  // 4. Cancellation
+  deck.cancelCrossfade()
+  assert.strictEqual(deck.getMetrics().crossfadesCancelled, 0)
+})

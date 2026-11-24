@@ -1,9 +1,27 @@
 import type { DeckId, PlaybackState, Track } from '../types/audio.ts'
 import type { WebAudioGraph } from './WebAudioGraph.ts'
+import { isValidTrack } from './QueueManager.ts'
 
 export interface DeckControllerOptions {
   crossfadeDuration?: number
   prebufferWindowMs?: number
+}
+
+export interface CrossfadeMetrics {
+  crossfadeCount: number
+  crossfadeFailures: number
+  crossfadesCancelled: number
+  lastCrossfadeDurationMs: number
+}
+
+export interface CrossfadeStatus {
+  isCrossfading: boolean
+  crossfadeDurationSeconds: number
+  activeDeck: DeckId
+  standbyDeck: DeckId
+  hasStandbyTrack: boolean
+  standbyReadyState: number
+  metrics: CrossfadeMetrics
 }
 
 export class DeckController {
@@ -25,6 +43,13 @@ export class DeckController {
   private isPrebufferingTriggered = false
   private isCrossfading = false
   private crossfadeTimer: number | null = null
+
+  private metrics: CrossfadeMetrics = {
+    crossfadeCount: 0,
+    crossfadeFailures: 0,
+    crossfadesCancelled: 0,
+    lastCrossfadeDurationMs: 0,
+  }
 
   private playbackState: PlaybackState = 'IDLE'
   private currentPlayOperationId = 0
@@ -71,11 +96,56 @@ export class DeckController {
   }
 
   public setCrossfadeDuration(seconds: number): void {
-    this.crossfadeDurationSeconds = Math.max(0, Math.min(12, seconds))
+    this.crossfadeDurationSeconds = Math.max(0, Math.min(12, Number.isFinite(seconds) ? seconds : 3))
   }
 
   public setPrebufferWindowMs(ms: number): void {
-    this.prebufferWindowMs = Math.max(5000, ms)
+    this.prebufferWindowMs = Math.max(5000, Math.min(60000, Number.isFinite(ms) ? ms : 15000))
+  }
+
+  public getMetrics(): Readonly<CrossfadeMetrics> {
+    return { ...this.metrics }
+  }
+
+  public getCrossfadeStatus(): CrossfadeStatus {
+    const standbyEl = this.getStandbyElement()
+    return {
+      isCrossfading: this.isCrossfading,
+      crossfadeDurationSeconds: this.crossfadeDurationSeconds,
+      activeDeck: this.activeDeckId,
+      standbyDeck: this.standbyDeck,
+      hasStandbyTrack: Boolean(this.getStandbyTrack()),
+      standbyReadyState: standbyEl.readyState,
+      metrics: this.getMetrics(),
+    }
+  }
+
+  public cancelCrossfade(): void {
+    if (this.crossfadeTimer !== null) {
+      window.clearTimeout(this.crossfadeTimer)
+      this.crossfadeTimer = null
+    }
+    if (this.isCrossfading) {
+      this.isCrossfading = false
+      const now = this.graph.context.currentTime
+      const fromDeck = this.activeDeckId
+      const toDeck = this.standbyDeck
+      const fromGain = fromDeck === 'A' ? this.graph.deckAGain : this.graph.deckBGain
+      const toGain = toDeck === 'A' ? this.graph.deckAGain : this.graph.deckBGain
+      fromGain.gain.cancelScheduledValues(now)
+      toGain.gain.cancelScheduledValues(now)
+      fromGain.gain.setValueAtTime(1.0, now)
+      toGain.gain.setValueAtTime(0.0, now)
+
+      const standbyEl = this.getStandbyElement()
+      this.releaseMediaElement(standbyEl)
+      if (toDeck === 'A') {
+        this.activeTrackDeckA = null
+      } else {
+        this.activeTrackDeckB = null
+      }
+      this.metrics.crossfadesCancelled++
+    }
   }
 
   public getActiveTrack(): Track | null {
@@ -105,6 +175,9 @@ export class DeckController {
   }
 
   public async loadActive(track: Track, url: string, autoPlay = true): Promise<void> {
+    if (!isValidTrack(track) || typeof url !== 'string' || !url.trim()) {
+      throw new Error('Invalid track or URL provided to loadActive')
+    }
     const loadId = ++this.currentLoadOperationId
     const deck = this.activeDeckId
     if (deck === 'A') {
@@ -153,6 +226,9 @@ export class DeckController {
   }
 
   public prebufferStandby(track: Track, url: string): void {
+    if (!isValidTrack(track) || typeof url !== 'string' || !url.trim()) {
+      return
+    }
     const deck = this.standbyDeck
     if (deck === 'A') {
       this.activeTrackDeckA = track
@@ -284,6 +360,8 @@ export class DeckController {
     }
 
     this.isCrossfading = true
+    this.metrics.crossfadeCount++
+    const crossfadeStartTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const duration = this.crossfadeDurationSeconds
     const fromDeck = this.activeDeckId
     const toDeck = this.standbyDeck
@@ -296,6 +374,7 @@ export class DeckController {
       const error = err instanceof Error ? err : new Error(String(err))
       this.onError?.(error)
       this.isCrossfading = false
+      this.metrics.crossfadeFailures++
       this.onCrossfadeFailed?.(fromDeck, toDeck, error)
       return
     }
@@ -344,6 +423,8 @@ export class DeckController {
 
         this.setDeckGain(fromDeck, 0.0)
         this.setDeckGain(toDeck, 1.0)
+        this.metrics.lastCrossfadeDurationMs =
+          (typeof performance !== 'undefined' ? performance.now() : Date.now()) - crossfadeStartTime
 
         this.onCrossfadeComplete?.(toDeck)
       },
