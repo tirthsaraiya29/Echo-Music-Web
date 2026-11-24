@@ -1,0 +1,31 @@
+name: Echo Web CI
+
+on:
+  push:
+    branches: [main, feature/echo-web-integration]
+    paths:
+      - 'Echo-Web/**'
+      - '.github/workflows/echo-web-ci.yml'
+  pull_request:
+    paths:
+      - 'Echo-Web/**'
+      - '.github/workflows/echo-web-ci.yml'
+
+jobs:
+  web-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Echo-Web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Echo-Web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
     "test": "node --test test/*.test.ts",
+    "ci": "npm run lint && npm test && npm run typecheck && npm run build",
     "server": "node server/index.ts",
     "postinstall": "node scripts/patch-picomatch.js"
   },
