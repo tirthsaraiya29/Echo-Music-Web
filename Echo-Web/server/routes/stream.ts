@@ -3,7 +3,12 @@ import { Ytdl, chooseFormat } from '@distube/ytdl-core'
 import { Readable } from 'node:stream'
 import { z } from 'zod'
 import type { StreamFormat, StreamResolutionResult } from '../../src/types/innertube.ts'
-import { isAllowedStreamingDomain, safeProxyFetch } from '../utils/ssrf.ts'
+import {
+  isAllowedStreamingDomain,
+  safeProxyFetch,
+  proxyTargetUrlSchema,
+  getProxySecurityMetrics,
+} from '../utils/ssrf.ts'
 
 export const streamRouter = new Hono()
 const ytdl = new Ytdl()
@@ -507,11 +512,25 @@ streamRouter.get('/listen', async (c) => {
   }
 })
 
+streamRouter.get('/proxy-telemetry', (c) => {
+  return c.json(getProxySecurityMetrics())
+})
+
 streamRouter.get('/proxy', async (c) => {
-  const targetUrl = c.req.query('url')
-  if (!targetUrl || !isAllowedStreamingDomain(targetUrl)) {
+  if (c.req.raw.signal?.aborted) {
+    return new Response(null, { status: 499 })
+  }
+
+  const rawUrl = c.req.query('url')
+  if (!rawUrl) {
     return c.text('URL parameter is missing or targets an unauthorized domain', 403)
   }
+
+  const parsedUrl = proxyTargetUrlSchema.safeParse(rawUrl)
+  if (!parsedUrl.success || !isAllowedStreamingDomain(parsedUrl.data)) {
+    return c.text('URL parameter is missing or targets an unauthorized domain', 403)
+  }
+  const targetUrl = parsedUrl.data
 
   const rangeHeader = c.req.header('range')
   const headers: Record<string, string> = {
@@ -537,6 +556,8 @@ streamRouter.get('/proxy', async (c) => {
     const upstream = await safeProxyFetch(targetUrl, {
       headers,
       domainValidator: isAllowedStreamingDomain,
+      signal: c.req.raw.signal,
+      timeoutMs: 15000,
     })
     const responseHeaders = new Headers()
 

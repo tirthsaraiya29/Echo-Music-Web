@@ -7,6 +7,9 @@ import {
   isPrivateIp,
   validateDestinationUrl,
   safeProxyFetch,
+  proxyTargetUrlSchema,
+  getProxySecurityMetrics,
+  resetProxySecurityMetrics,
 } from '../server/utils/ssrf.ts'
 import { streamRouter } from '../server/routes/stream.ts'
 import { canvasRouter } from '../server/routes/canvas.ts'
@@ -213,4 +216,57 @@ test('Security: safeProxyFetch blocks open redirect to internal IP addresses and
     globalThis.fetch = originalFetch
   }
 })
+
+test('Security: proxyTargetUrlSchema validates schemas and rejects malformed URLs [SMALL-10]', () => {
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('https://music.youtube.com/watch?v=123').success, true)
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('http://rr1---sn-uxa-i54e.googlevideo.com/videoplayback').success, true)
+
+  // Disallowed schemes
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('javascript:alert(1)').success, false)
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('data:text/html,evil').success, false)
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('ftp://example.com/audio.mp3').success, false)
+  assert.strictEqual(proxyTargetUrlSchema.safeParse('not-a-url').success, false)
+})
+
+test('Security: safeProxyFetch header sanitization, metrics, and /proxy-telemetry [SMALL-10]', async () => {
+  resetProxySecurityMetrics()
+  const originalFetch = globalThis.fetch
+  let capturedHeaders: Record<string, string> | undefined
+
+  try {
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      capturedHeaders = init?.headers as Record<string, string>
+      return new Response('audio data', { status: 200 })
+    }) as any
+
+    await safeProxyFetch('https://music.youtube.com/audio.mp3', {
+      headers: {
+        'User-Agent': 'EchoWeb/1.0',
+        'Authorization': 'Bearer secret-token',
+        'Cookie': 'session=abc',
+        'X-Forwarded-For': '127.0.0.1',
+      },
+      domainValidator: isAllowedStreamingDomain,
+    })
+
+    assert.ok(capturedHeaders)
+    assert.strictEqual(capturedHeaders['User-Agent'], 'EchoWeb/1.0')
+    assert.strictEqual(capturedHeaders['Authorization'], undefined)
+    assert.strictEqual(capturedHeaders['Cookie'], undefined)
+    assert.strictEqual(capturedHeaders['X-Forwarded-For'], undefined)
+
+    const metrics = getProxySecurityMetrics()
+    assert.ok(metrics.totalEvaluated > 0)
+
+    // Test /proxy-telemetry endpoint on streamRouter
+    const telemetryRes = await streamRouter.fetch(new Request('http://localhost/proxy-telemetry'))
+    assert.strictEqual(telemetryRes.status, 200)
+    const telemetry = await telemetryRes.json() as ReturnType<typeof getProxySecurityMetrics>
+    assert.strictEqual(typeof telemetry.totalEvaluated, 'number')
+    assert.strictEqual(typeof telemetry.ssrfBlocked, 'number')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 

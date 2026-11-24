@@ -1,5 +1,46 @@
 import { isIP } from 'node:net'
 import { promises as dns } from 'node:dns'
+import { z } from 'zod'
+
+export const proxyTargetUrlSchema = z.string().url().refine((val) => {
+  try {
+    const u = new URL(val)
+    return u.protocol === 'https:' || u.protocol === 'http:'
+  } catch {
+    return false
+  }
+}, { message: 'URL must have http: or https: scheme' })
+
+export interface ProxySecurityMetrics {
+  totalEvaluated: number
+  ssrfBlocked: number
+  domainRejected: number
+  redirectsFollowed: number
+  redirectLoopsBlocked: number
+  timeoutsBlocked: number
+}
+
+const proxyMetrics: ProxySecurityMetrics = {
+  totalEvaluated: 0,
+  ssrfBlocked: 0,
+  domainRejected: 0,
+  redirectsFollowed: 0,
+  redirectLoopsBlocked: 0,
+  timeoutsBlocked: 0,
+}
+
+export function getProxySecurityMetrics(): ProxySecurityMetrics {
+  return { ...proxyMetrics }
+}
+
+export function resetProxySecurityMetrics(): void {
+  proxyMetrics.totalEvaluated = 0
+  proxyMetrics.ssrfBlocked = 0
+  proxyMetrics.domainRejected = 0
+  proxyMetrics.redirectsFollowed = 0
+  proxyMetrics.redirectLoopsBlocked = 0
+  proxyMetrics.timeoutsBlocked = 0
+}
 
 export function isPrivateIp(ip: string): boolean {
   const ipType = isIP(ip)
@@ -99,12 +140,15 @@ export async function validateDestinationUrl(
   urlStr: string,
   domainValidator: (url: string) => boolean,
 ): Promise<{ valid: boolean; url: URL | null }> {
+  proxyMetrics.totalEvaluated++
   try {
     const parsed = new URL(urlStr)
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      proxyMetrics.domainRejected++
       return { valid: false, url: null }
     }
     if (!domainValidator(urlStr)) {
+      proxyMetrics.domainRejected++
       return { valid: false, url: null }
     }
 
@@ -112,37 +156,48 @@ export async function validateDestinationUrl(
 
     // If host is a literal IP
     if (isIP(host)) {
-      if (isPrivateIp(host)) return { valid: false, url: null }
+      if (isPrivateIp(host)) {
+        proxyMetrics.ssrfBlocked++
+        return { valid: false, url: null }
+      }
       return { valid: true, url: parsed }
     }
 
     // Resolve DNS and ensure no private IPs are returned
     const lookups = await dns.lookup(host, { all: true }).catch(() => [])
     if (lookups.length === 0) {
+      proxyMetrics.ssrfBlocked++
       return { valid: false, url: null }
     }
 
     for (const record of lookups) {
       if (isPrivateIp(record.address)) {
+        proxyMetrics.ssrfBlocked++
         return { valid: false, url: null }
       }
     }
 
     return { valid: true, url: parsed }
   } catch {
+    proxyMetrics.domainRejected++
     return { valid: false, url: null }
   }
 }
 
+export interface SafeProxyFetchOptions {
+  headers?: Record<string, string>
+  domainValidator: (url: string) => boolean
+  maxRedirects?: number
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
 export async function safeProxyFetch(
   targetUrl: string,
-  options: {
-    headers?: Record<string, string>
-    domainValidator: (url: string) => boolean
-    maxRedirects?: number
-  },
+  options: SafeProxyFetchOptions,
 ): Promise<Response> {
   const maxRedirects = options.maxRedirects ?? 5
+  const timeoutMs = options.timeoutMs ?? 15000
   let currentUrl = targetUrl
   let redirectsCount = 0
 
@@ -152,13 +207,55 @@ export async function safeProxyFetch(
       throw new Error(`SSRF blocked: Destination or redirect URL is forbidden (${currentUrl})`)
     }
 
+    // Sanitize headers: strip sensitive credentials & internal proxy headers
+    const sanitizedHeaders: Record<string, string> = {}
+    if (options.headers) {
+      for (const [k, v] of Object.entries(options.headers)) {
+        const lowerKey = k.toLowerCase()
+        if (
+          lowerKey === 'authorization' ||
+          lowerKey === 'cookie' ||
+          lowerKey === 'x-forwarded-for' ||
+          lowerKey === 'x-real-ip'
+        ) {
+          continue
+        }
+        sanitizedHeaders[k] = v
+      }
+    }
+
+    // Setup bounded timeout controller combined with caller's signal
+    const timeoutController = new AbortController()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+    if (timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        proxyMetrics.timeoutsBlocked++
+        timeoutController.abort(new Error(`Proxy request timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+    }
+
+    let combinedSignal: AbortSignal = timeoutController.signal
+    if (options.signal) {
+      if (options.signal.aborted) {
+        if (timeoutId) clearTimeout(timeoutId)
+        throw options.signal.reason
+      }
+      options.signal.addEventListener('abort', () => timeoutController.abort(options.signal?.reason))
+    }
+
     const init: RequestInit = {
       redirect: 'manual',
+      headers: sanitizedHeaders,
+      signal: combinedSignal,
     }
-    if (options.headers) {
-      init.headers = options.headers
+
+    let res: Response
+    try {
+      res = await fetch(currentUrl, init)
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
     }
-    const res = await fetch(currentUrl, init)
 
     // Check for redirect status codes (301, 302, 303, 307, 308)
     if ([301, 302, 303, 307, 308].includes(res.status)) {
@@ -168,11 +265,13 @@ export async function safeProxyFetch(
       }
       currentUrl = new URL(location, currentUrl).toString()
       redirectsCount++
+      proxyMetrics.redirectsFollowed++
       continue
     }
 
     return res
   }
 
+  proxyMetrics.redirectLoopsBlocked++
   throw new Error(`Too many redirects (limit: ${maxRedirects})`)
 }
