@@ -35,6 +35,7 @@ import {
   type EpisodeSortOrder,
 } from '../services/podcast/podcastOrderingService.ts'
 import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
+import { SpotifyPlaylistDetailPage } from './SpotifyPlaylistDetailPage.tsx'
 
 function getRandomIndex(length: number): number {
   return length > 0 ? Math.floor(Math.random() * length) : 0
@@ -226,6 +227,11 @@ function DeletePlaylistDialog({
 
 export function PlaylistPage() {
   const { playlistId = '' } = useParams()
+
+  if (playlistId.startsWith('spotify_') || playlistId === 'spotify-liked' || playlistId.startsWith('sp_')) {
+    return <SpotifyPlaylistDetailPage playlistIdOverride={playlistId} />
+  }
+
   const userPlaylist = useEchoStore((state) =>
     state.playlists.find((item) => item.id === playlistId),
   )

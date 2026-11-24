@@ -284,7 +284,7 @@ export function SpotifyLibraryTab() {
               {/* Pinned Liked Songs Card */}
               {likedCount !== null && (
                 <div
-                  onClick={() => navigate('/library?tab=liked')}
+                  onClick={() => navigate('/playlists/spotify_liked')}
                   className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-3 transition-all hover:border-[#1DB954]/30 hover:bg-white/[0.06] hover:shadow-lg"
                 >
                   <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#450AF5] via-[#8E8EE5] to-[#ABEDD8]">

@@ -90,6 +90,8 @@ function AppRoutes() {
           <Route path="genre/:id" element={<MoodGenrePage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="playlists/:playlistId" element={<PlaylistPage />} />
+          <Route path="playlist/:playlistId" element={<PlaylistPage />} />
+          <Route path="spotify/playlist/:playlistId" element={<PlaylistPage />} />
           <Route path="albums/:albumId" element={<AlbumPage />} />
           <Route path="artists/:artistId" element={<ArtistPage />} />
           <Route path="*" element={<NotFoundPage />} />
