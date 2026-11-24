@@ -14,6 +14,7 @@ import {
   SkipBack,
   SkipForward,
   Sliders,
+  Video,
   Volume2,
   VolumeX,
   Sparkles,
@@ -35,6 +36,7 @@ import { MusicDnaDrawer } from './MusicDnaDrawer.tsx'
 import { SleepTimerPopover } from './SleepTimerPopover.tsx'
 import { AudioOutputPicker } from './AudioOutputPicker.tsx'
 import { KeyboardShortcutsModal } from '../modals/KeyboardShortcutsModal.tsx'
+import { PodcastVideoModal } from '../podcast/PodcastVideoModal.tsx'
 import { shareTrack } from '../../services/sharing/playlistPortability.ts'
 import { recordDesktopPlayerMetric } from './desktopPlayerTypes.ts'
 import {
@@ -102,6 +104,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false)
   const [isOutputPickerOpen, setIsOutputPickerOpen] = useState(false)
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false)
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false)
 
   const telemetry = getAudioTelemetry()
 
@@ -158,7 +161,8 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
         setIsShortcutsOpen((v) => !v)
       } else if (e.key === 'Escape') {
         recordDesktopPlayerMetric('keyboardShortcutsTriggered')
-        if (isEqOpen) setIsEqOpen(false)
+        if (isVideoModalOpen) setIsVideoModalOpen(false)
+        else if (isEqOpen) setIsEqOpen(false)
         else if (isDnaOpen) setIsDnaOpen(false)
         else if (isSleepTimerOpen) setIsSleepTimerOpen(false)
         else if (isOutputPickerOpen) setIsOutputPickerOpen(false)
@@ -173,6 +177,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
       isSleepTimerOpen,
       isOutputPickerOpen,
       isShortcutsOpen,
+      isVideoModalOpen,
       togglePlayback,
       seekTo,
       skipPodcastForward,
@@ -325,6 +330,19 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
               <Sparkles size={15} className="text-[#b09cff]" />
               <span className="hidden sm:inline">DNA</span>
             </button>
+
+            {currentTrack && (currentTrack.isPodcast || currentTrack.videoId) && (
+              <button
+                type="button"
+                onClick={() => setIsVideoModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-[#7c5cff]/20 px-2.5 py-1.5 text-xs font-semibold text-[#7c5cff] transition-all hover:bg-[#7c5cff]/30 hover:text-white"
+                title="Watch Fullscreen Video Episode"
+                aria-label="Watch Video Episode"
+              >
+                <Video size={16} />
+                <span className="hidden sm:inline">Watch Video</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -737,6 +755,15 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
 
       {/* Keyboard Shortcuts Modal */}
       <KeyboardShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+
+      {/* Fullscreen Video Podcast Player Modal */}
+      {currentTrack && (
+        <PodcastVideoModal
+          track={currentTrack}
+          isOpen={isVideoModalOpen}
+          onClose={() => setIsVideoModalOpen(false)}
+        />
+      )}
     </div>
   )
 }

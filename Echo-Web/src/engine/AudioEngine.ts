@@ -382,6 +382,10 @@ export class AudioEngine {
     return this.queueManager.currentTrack
   }
 
+  public getDuration(): number {
+    return this.deckController.getDuration()
+  }
+
   public skipPodcastBackward(customSeconds?: number): number {
     const prefs = useEchoStore.getState().preferences
     const skipSec = customSeconds ?? prefs.podcastSkipBackwardSeconds ?? 15
