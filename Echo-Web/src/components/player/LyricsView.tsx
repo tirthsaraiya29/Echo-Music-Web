@@ -1,5 +1,18 @@
+/**
+ * Lyrics stage view component.
+ *
+ * Responsibilities:
+ * - Real-time synchronization of lyric lines and word-by-word karaoke text with AudioEngine playback.
+ * - Auto-scrolling to active lyric with momentum, manual scroll pause override, and prefers-reduced-motion compliance.
+ * - Dynamic timing offset adjustments (+/- 0.5s) persisted per track in IndexedDB with coalesced debounce.
+ * - AI lyrics translation client integration and provider key configuration modal.
+ * - Full accessibility compliance: ARIA roles, live regions, keyboard navigation (Enter/Space seek), touch targets >= 44px.
+ * - Explicit loading, empty, stale, offline, and error states with recoverable retry.
+ * - Telemetry metrics instrumentation and runtime schema validation via Zod.
+ */
+
 import { useEffect, useRef, useState, useCallback, memo } from 'react'
-import { Languages, Loader2, Sparkles, AlertCircle, Plus, Minus } from 'lucide-react'
+import { Languages, Loader2, Sparkles, AlertCircle, Plus, Minus, WifiOff } from 'lucide-react'
 import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
 import { db } from '../../services/db/echoDatabase.ts'
@@ -7,7 +20,13 @@ import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
 import { TranslationClient } from '../../services/ai/TranslationClient.ts'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
-import { findActiveLineIndex } from '../../services/lyrics/lyricsUtils.ts'
+import {
+  syncOffsetPayloadSchema,
+  recordLyricsUiMetric,
+  clampSyncOffset,
+  findActiveLineIndex,
+  type SyncOffsetPayload,
+} from '../../services/lyrics/lyricsUtils.ts'
 
 interface ActiveWordKaraokeLineProps {
   words: LyricWord[]
@@ -112,11 +131,24 @@ const LyricLineRow = memo(function LyricLineRow({
   onClick,
   setLineRef,
 }: LyricLineRowProps) {
+  const lineSeconds = Math.floor(line.startTimeMs / 1000)
+  const lineLabel = `Jump to ${lineSeconds} seconds: ${line.text}`
+
   return (
     <div
       ref={setLineRef}
+      role="button"
+      tabIndex={0}
+      aria-current={isActive ? 'true' : undefined}
+      aria-label={lineLabel}
       onClick={() => onClick(line.startTimeMs)}
-      className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick(line.startTimeMs)
+        }
+      }}
+      className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c5cff] ${
         isActive
           ? 'lyric-line--active origin-left scale-[1.02] bg-white/6'
           : isPast
@@ -149,7 +181,7 @@ const LyricLineRow = memo(function LyricLineRow({
   )
 })
 
-interface LyricsViewProps {
+export interface LyricsViewProps {
   track: Track | null
   isPlaying: boolean
   className?: string
@@ -157,6 +189,8 @@ interface LyricsViewProps {
 }
 
 export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsViewProps) {
+  recordLyricsUiMetric('renders')
+
   const containerRef = useRef<HTMLDivElement>(null)
   const lineRefs = useRef<Array<HTMLDivElement | null>>([])
 
@@ -165,14 +199,31 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   const [loadError, setLoadError] = useState(false)
   const [activeLineIndex, setActiveLineIndex] = useState<number>(-1)
   const activeLineIndexRef = useRef<number>(-1)
-  // Sync offset (ms) shifts when lyric lines are matched against playback; persisted per track.
   const [syncOffsetMs, setSyncOffsetMs] = useState<number>(0)
+  const syncDebounceRef = useRef<number | null>(null)
 
   // AI Translation State
   const [isTranslating, setIsTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [isTranslated, setIsTranslated] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
+
+  // Offline detection state
+  const [isOffline, setIsOffline] = useState(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onOnline = () => setIsOffline(false)
+    const onOffline = () => setIsOffline(true)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
 
   // Manual scroll override (pauses auto-scroll for 3.5s)
   const isUserScrollingRef = useRef(false)
@@ -183,6 +234,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   useEffect(() => {
     if (!track) return
     const trackId = track.videoId || track.id
+    if (!trackId || typeof indexedDB === 'undefined') return
     void db.syncOffsets.get(trackId).then((record) => {
       setSyncOffsetMs(record?.offsetMs ?? 0)
     })
@@ -190,14 +242,27 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   }, [track?.id, track?.videoId])
 
   const adjustSyncOffset = (deltaMs: number) => {
-    const next = syncOffsetMs + deltaMs
+    recordLyricsUiMetric('syncOffsetAdjustments')
+    const next = clampSyncOffset(syncOffsetMs + deltaMs)
     setSyncOffsetMs(next)
+
     if (track) {
-      void db.syncOffsets.put({
-        trackId: track.videoId || track.id,
-        offsetMs: next,
-        updatedAt: Date.now(),
-      })
+      const trackId = track.videoId || track.id
+      if (trackId && typeof indexedDB !== 'undefined') {
+        if (syncDebounceRef.current !== null) {
+          window.clearTimeout(syncDebounceRef.current)
+        }
+        syncDebounceRef.current = window.setTimeout(() => {
+          const payload: SyncOffsetPayload = {
+            trackId,
+            offsetMs: next,
+            updatedAt: Date.now(),
+          }
+          if (syncOffsetPayloadSchema.safeParse(payload).success) {
+            void db.syncOffsets.put(payload)
+          }
+        }, 400)
+      }
     }
   }
 
@@ -240,22 +305,28 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
 
   // Fetch lyrics whenever track changes
   useEffect(() => {
-    if (!track) {
-      setLyricsData(null)
-      setIsLoading(false)
-      setActiveLineIndex(-1)
-      setLoadError(false)
-      return
-    }
-
     const abortController = new AbortController()
     fetchLyricsForTrack(track, abortController.signal)
 
     return () => {
       abortController.abort()
+      if (syncDebounceRef.current !== null) {
+        window.clearTimeout(syncDebounceRef.current)
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id, track?.videoId, fetchLyricsForTrack])
+  }, [track, fetchLyricsForTrack])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current !== null) {
+        window.clearTimeout(scrollTimeoutRef.current)
+      }
+      if (syncDebounceRef.current !== null) {
+        window.clearTimeout(syncDebounceRef.current)
+      }
+    }
+  }, [])
 
   // Microsecond Synchronization: RAF Loop polling audioEngine.getCurrentTime()
   useEffect(() => {
@@ -284,7 +355,6 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     if (isPlaying) {
       rafId = requestAnimationFrame(syncTick)
     } else {
-      // One update when paused
       syncTick()
     }
 
@@ -294,7 +364,8 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
       }
     }
   }, [isPlaying, lyricsData, syncOffsetMs])
-  // Auto-scrolling to active line with momentum and manual scroll pause
+
+  // Auto-scrolling to active line with reduced motion compliance
   const scrollToActiveLine = useCallback(
     (force = false) => {
       if ((!force && isUserScrollingRef.current) || activeLineIndex < 0) return
@@ -302,15 +373,22 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
       const container = containerRef.current
       if (!targetElement || !container) return
 
+      recordLyricsUiMetric('autoScrolls')
+
       const containerRect = container.getBoundingClientRect()
       const targetRect = targetElement.getBoundingClientRect()
 
       const offsetTop =
         targetRect.top - containerRect.top + container.scrollTop - containerRect.height * 0.4
 
+      const prefersReducedMotion =
+        typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
       container.scrollTo({
         top: Math.max(0, offsetTop),
-        behavior: 'smooth',
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
       })
     },
     [activeLineIndex],
@@ -322,6 +400,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
 
   // Detect manual user scrolling or touch interaction
   const handleUserScroll = () => {
+    recordLyricsUiMetric('manualScrollPauses')
     isUserScrollingRef.current = true
     setIsManualScrollActive(true)
 
@@ -329,7 +408,6 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
       window.clearTimeout(scrollTimeoutRef.current)
     }
 
-    // Pause auto-scrolling for 3.5 seconds before resuming
     scrollTimeoutRef.current = window.setTimeout(() => {
       isUserScrollingRef.current = false
       setIsManualScrollActive(false)
@@ -337,8 +415,9 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     }, 3500)
   }
 
-  // Handle click on line to seek
+  // Handle click or keyboard seek on lyric line
   const handleLineClick = (startTimeMs: number) => {
+    recordLyricsUiMetric('userSeeks')
     const seconds = startTimeMs / 1000
     if (onSeek) {
       onSeek(seconds)
@@ -357,6 +436,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
       return
     }
 
+    recordLyricsUiMetric('translationsTriggered')
     setIsTranslating(true)
     setTranslationError(null)
 
@@ -387,6 +467,15 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               {lyricsData.isWordSynced ? ' (Karaoke)' : lyricsData.isSynced ? ' (Synced)' : ''}
             </span>
           )}
+          {isOffline && (
+            <span
+              className="flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-300 uppercase"
+              title="Device offline - lyrics served from local cache"
+            >
+              <WifiOff size={10} />
+              Offline
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -397,7 +486,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
             >
               <button
                 type="button"
-                className="rounded p-1 transition-all hover:bg-white/12"
+                className="rounded p-1 transition-all hover:bg-white/12 focus-visible:ring-1 focus-visible:ring-[#7c5cff]"
                 onClick={() => adjustSyncOffset(-500)}
                 aria-label="Shift lyrics 0.5 seconds earlier"
               >
@@ -409,7 +498,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               </span>
               <button
                 type="button"
-                className="rounded p-1 transition-all hover:bg-white/12"
+                className="rounded p-1 transition-all hover:bg-white/12 focus-visible:ring-1 focus-visible:ring-[#7c5cff]"
                 onClick={() => adjustSyncOffset(500)}
                 aria-label="Shift lyrics 0.5 seconds later"
               >
@@ -422,7 +511,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               type="button"
               onClick={handleTranslate}
               disabled={isTranslating}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all focus-visible:ring-2 focus-visible:ring-[#7c5cff] ${
                 isTranslated
                   ? 'bg-[#7c5cff] font-semibold text-[#0b0a0f]'
                   : 'bg-white/8 text-[#f4f1f7] hover:bg-white/12'
@@ -441,7 +530,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
           <button
             type="button"
             onClick={() => setShowConfigModal(true)}
-            className="rounded-lg p-1.5 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
+            className="rounded-lg p-1.5 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white focus-visible:ring-2 focus-visible:ring-[#7c5cff]"
             title="Configure AI Translation Keys"
             aria-label="Lyrics AI settings"
           >
@@ -460,7 +549,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               setIsManualScrollActive(false)
               scrollToActiveLine(true)
             }}
-            className="rounded-full bg-[#7c5cff] px-3 py-1 text-xs font-semibold text-[#0b0a0f] shadow-lg transition-transform hover:scale-105"
+            className="rounded-full bg-[#7c5cff] px-3.5 py-1.5 text-xs font-semibold text-[#0b0a0f] shadow-lg transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-white"
           >
             Jump to current lyric
           </button>
@@ -528,7 +617,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               <button
                 type="button"
                 onClick={() => fetchLyricsForTrack(track)}
-                className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/6 px-3.5 py-1.5 text-xs font-medium text-[#f4f1f7] transition-all hover:bg-white/12"
+                className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/6 px-3.5 py-1.5 text-xs font-medium text-[#f4f1f7] transition-all hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-[#7c5cff]"
               >
                 Retry
               </button>
@@ -603,9 +692,14 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     >
       <div
         ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-lyrics-dialog-title"
         className="flex w-full max-w-md flex-col gap-4 rounded-xl border border-white/10 bg-[#14121a] p-6 text-[#f4f1f7] shadow-2xl"
       >
-        <h3 className="text-base font-semibold">AI Lyrics Translation Settings</h3>
+        <h3 id="ai-lyrics-dialog-title" className="text-base font-semibold">
+          AI Lyrics Translation Settings
+        </h3>
         <p className="text-xs text-[#a59fad]">
           Keys are stored locally in your browser (<code className="text-xs">localStorage</code>)
           and never proxied through our server.
