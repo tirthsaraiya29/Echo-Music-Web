@@ -49,6 +49,7 @@ import { AudioOutputPicker } from './player/AudioOutputPicker.tsx'
 import { listenTogether } from '../services/listenTogether/listenTogetherClient.ts'
 import { useIsMobileDevice } from '../hooks/useIsMobileDevice.ts'
 import { MobileApkLanding } from './MobileApkLanding.tsx'
+import { recordLayoutMetric } from './layout/layoutTypes.ts'
 
 const primaryLinks = [
   { to: '/', label: 'Home', icon: Home, end: true },
@@ -66,10 +67,30 @@ interface SidebarProps {
 }
 
 function Sidebar({ onOpenEchoFind, onOpenListenTogether, onOpenSpotifyImport }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('echo_sidebar_collapsed')
+      return saved ? Boolean(JSON.parse(saved)) : false
+    } catch {
+      return false
+    }
+  })
   const [createOpen, setCreateOpen] = useState(false)
   const playlists = useEchoStore((state) => state.playlists)
   const location = useLocation()
+
+  const handleToggleCollapse = () => {
+    setCollapsed((value) => {
+      const next = !value
+      recordLayoutMetric('sidebarToggles')
+      try {
+        localStorage.setItem('echo_sidebar_collapsed', JSON.stringify(next))
+      } catch {
+        // ignore storage error
+      }
+      return next
+    })
+  }
 
   return (
     <>
@@ -86,11 +107,11 @@ function Sidebar({ onOpenEchoFind, onOpenListenTogether, onOpenSpotifyImport }: 
             )}
           </Link>
           <button
-            className="icon-button sidebar__collapse"
+            className="icon-button sidebar__collapse min-h-[44px] min-w-[44px]"
             type="button"
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!collapsed}
-            onClick={() => setCollapsed((value) => !value)}
+            onClick={handleToggleCollapse}
           >
             {collapsed ? <ChevronRight size={17} /> : <ChevronLeft size={17} />}
           </button>
@@ -195,25 +216,33 @@ function Sidebar({ onOpenEchoFind, onOpenListenTogether, onOpenSpotifyImport }: 
         </div>
 
         <nav className="sidebar__playlists" aria-label="Your playlists">
-          {playlists.map((playlist) => (
-            <NavLink
-              key={playlist.id}
-              to={`/playlists/${playlist.id}`}
-              className={({ isActive }) => classNames('playlist-nav', isActive && 'is-active')}
-              title={collapsed ? playlist.title : undefined}
-            >
-              <img
-                src={playlist.image || artwork(playlist.title || 'echo-playlist', 80)}
-                alt=""
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  const fallback = artwork(playlist.title || 'echo-playlist', 80)
-                  if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
-                }}
-              />
-              <span>{playlist.title}</span>
-            </NavLink>
-          ))}
+          {playlists.length === 0 ? (
+            !collapsed && (
+              <div className="px-3 py-2 text-xs text-[#a59fad]/60 italic">
+                No playlists created yet
+              </div>
+            )
+          ) : (
+            playlists.map((playlist) => (
+              <NavLink
+                key={playlist.id}
+                to={`/playlists/${playlist.id}`}
+                className={({ isActive }) => classNames('playlist-nav', isActive && 'is-active')}
+                title={collapsed ? playlist.title : undefined}
+              >
+                <img
+                  src={playlist.image || artwork(playlist.title || 'echo-playlist', 80)}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const fallback = artwork(playlist.title || 'echo-playlist', 80)
+                    if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
+                  }}
+                />
+                <span>{playlist.title}</span>
+              </NavLink>
+            ))
+          )}
         </nav>
 
         <div className="sidebar__bottom">
@@ -633,6 +662,12 @@ export default function AppLayout() {
   return (
     <>
       <div className="app-shell">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-[#8b79e8] focus:px-4 focus:py-2 focus:font-semibold focus:text-black focus:outline-none focus:ring-2 focus:ring-white"
+        >
+          Skip to main content
+        </a>
         <Sidebar
           onOpenEchoFind={() => setEchoFindOpen(true)}
           onOpenListenTogether={() => setListenTogetherOpen(true)}
@@ -650,18 +685,24 @@ export default function AppLayout() {
                 </span>
               </Link>
               <button
-                className="icon-button topbar__history"
+                className="icon-button topbar__history min-h-[44px] min-w-[44px]"
                 type="button"
                 aria-label="Go back"
-                onClick={() => navigate(-1)}
+                onClick={() => {
+                  recordLayoutMetric('historyBackNavigations')
+                  navigate(-1)
+                }}
               >
                 <ArrowLeft size={18} />
               </button>
               <button
-                className="icon-button topbar__history"
+                className="icon-button topbar__history min-h-[44px] min-w-[44px]"
                 type="button"
                 aria-label="Go forward"
-                onClick={() => navigate(1)}
+                onClick={() => {
+                  recordLayoutMetric('historyForwardNavigations')
+                  navigate(1)
+                }}
               >
                 <ArrowRight size={18} />
               </button>
@@ -690,7 +731,10 @@ export default function AppLayout() {
 
               <button
                 type="button"
-                onClick={() => setShortcutsOpen(true)}
+                onClick={() => {
+                  recordLayoutMetric('shortcutsModalOpens')
+                  setShortcutsOpen(true)
+                }}
                 className="hidden rounded-lg bg-white/4 p-1.5 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white md:block"
                 title="Keyboard Shortcuts (?)"
               >
