@@ -30,6 +30,9 @@ export interface ListeningHistoryRecord {
   completed: boolean
   skipped: boolean
   timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night'
+  deviceId?: string | undefined
+  deviceName?: string | undefined
+  source?: ('youtube' | 'local' | 'spotify' | 'cloud' | 'podcast') | undefined
 }
 
 export interface LocalFileRecord {
