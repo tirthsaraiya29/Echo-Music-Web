@@ -53,6 +53,9 @@ export interface PodcastProgressRecord {
   episodeTitle: string
   positionMs: number
   durationMs: number
+  positionSeconds?: number | undefined
+  durationSeconds?: number | undefined
+  artworkUrl?: string | undefined
   completed: boolean
   dismissed: boolean
   updatedAt: number
@@ -412,5 +415,28 @@ export async function resolveMissingTrack(id: string): Promise<Track | null> {
     playCount: 0,
     videoId: id,
     unresolved: true,
+  }
+}
+
+export async function getPodcastProgress(episodeId: string): Promise<PodcastProgressRecord | undefined> {
+  return db.podcastProgress.get(episodeId)
+}
+
+export async function savePodcastProgress(record: PodcastProgressRecord): Promise<void> {
+  await db.podcastProgress.put(record)
+}
+
+export async function getAllPodcastProgress(includeCompleted = false): Promise<PodcastProgressRecord[]> {
+  const all = await db.podcastProgress.toArray()
+  return all
+    .filter((p) => !p.dismissed && (includeCompleted || !p.completed))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export async function dismissPodcastProgress(episodeId: string): Promise<void> {
+  const existing = await db.podcastProgress.get(episodeId)
+  if (existing) {
+    existing.dismissed = true
+    await db.podcastProgress.put(existing)
   }
 }

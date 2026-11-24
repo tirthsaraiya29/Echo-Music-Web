@@ -51,6 +51,7 @@ import { MobileApkLanding } from './MobileApkLanding.tsx'
 const primaryLinks = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/discover', label: 'Discover', icon: Compass },
+  { to: '/podcasts', label: 'Podcasts', icon: Radio },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/library', label: 'Your library', icon: Library },
 ]

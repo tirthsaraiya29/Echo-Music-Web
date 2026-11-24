@@ -684,11 +684,15 @@ export class AudioEngine {
       if (now - this.lastPodcastSaveMs >= 5000 && duration > 0) {
         this.lastPodcastSaveMs = now
         const isPodcast = Boolean(
+          currentTrack.isPodcast ||
           (currentTrack.durationSeconds && currentTrack.durationSeconds > 600) ||
+          (currentTrack.durationMs && currentTrack.durationMs > 600000) ||
           currentTrack.albumTitle?.toLowerCase().includes('podcast'),
         )
         if (isPodcast) {
           const episodeId = currentTrack.videoId || currentTrack.id
+          const posSec = Math.round(current)
+          const durSec = Math.round(duration)
           const posMs = Math.round(current * 1000)
           const durMs = Math.round(duration * 1000)
           void db.podcastProgress
@@ -696,6 +700,9 @@ export class AudioEngine {
               episodeId,
               showTitle: currentTrack.artistName || 'Podcast',
               episodeTitle: currentTrack.title || 'Episode',
+              artworkUrl: currentTrack.artwork || currentTrack.thumbnailUrl,
+              positionSeconds: posSec,
+              durationSeconds: durSec,
               positionMs: posMs,
               durationMs: durMs,
               completed: durMs > 0 && posMs / durMs >= 0.95,
@@ -888,13 +895,12 @@ export class AudioEngine {
     if (episodeId) {
       try {
         const progress = await db.podcastProgress.get(episodeId)
-        if (
-          progress &&
-          !progress.completed &&
-          progress.positionMs > 5000 &&
-          progress.positionMs / progress.durationMs < 0.95
-        ) {
-          this.seek(progress.positionMs / 1000)
+        if (progress && !progress.completed) {
+          const posSec = progress.positionSeconds ?? (progress.positionMs ? progress.positionMs / 1000 : 0)
+          const durSec = progress.durationSeconds ?? (progress.durationMs ? progress.durationMs / 1000 : 0)
+          if (posSec > 5 && durSec > 0 && posSec / durSec < 0.95) {
+            this.seek(posSec)
+          }
         }
       } catch {
         // Non-fatal

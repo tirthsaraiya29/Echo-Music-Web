@@ -39,6 +39,9 @@ const QueuePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 )
+const PodcastsPage = lazy(() =>
+  import('./pages/PodcastsPage').then((module) => ({ default: module.PodcastsPage })),
+)
 
 let hasHandledInitialStartup = typeof window !== 'undefined' && window.location.pathname !== '/'
 
@@ -70,6 +73,7 @@ function AppRoutes() {
         <Route path="liked" element={<LikedPage />} />
         <Route path="recently-played" element={<RecentlyPlayedPage />} />
         <Route path="queue" element={<QueuePage />} />
+        <Route path="podcasts" element={<PodcastsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="albums/:albumId" element={<AlbumPage />} />

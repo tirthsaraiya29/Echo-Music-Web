@@ -62,6 +62,27 @@ export interface Track {
   cleanTitle?: string | undefined
   // True when metadata could not be resolved and the title/artist are honest placeholders
   unresolved?: boolean | undefined
+  isPodcast?: boolean | undefined
+  podcastShowId?: string | undefined
+  episodeNumber?: number | undefined
+  publishedAt?: string | undefined
+}
+
+export interface PodcastEpisode extends Track {
+  isPodcast: true
+  podcastShowId?: string | undefined
+  showTitle?: string | undefined
+  publishedAt?: string | undefined
+}
+
+export interface PodcastShow {
+  id: string
+  title: string
+  author: string
+  description?: string | undefined
+  artworkUrl: string
+  episodeCount?: number | undefined
+  isFollowed?: boolean | undefined
 }
 
 export interface HomeShelf {
