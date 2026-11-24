@@ -22,6 +22,7 @@ export const audioEngineActions = {
   clearQueue: () => AudioEngine.getInstance().clearQueue(),
   clearSourceUpcoming: () => AudioEngine.getInstance().clearSourceUpcoming(),
   clearEntireQueue: () => AudioEngine.getInstance().clearEntireQueue(),
+  clearHistory: () => AudioEngine.getInstance().clearHistory(),
   getDetailedQueue: () => AudioEngine.getInstance().getDetailedQueue(),
   setVolume: (volume: number) => AudioEngine.getInstance().setVolume(volume),
   setMuted: (muted: boolean) => AudioEngine.getInstance().setMuted(muted),

@@ -227,6 +227,10 @@ export class QueueManager {
     this.radioQueueList = []
   }
 
+  public clearHistory(): void {
+    this.historyList = []
+  }
+
   public addRadioTracks(tracks: Track[]): void {
     this.radioQueueList.push(...tracks.map(cloneTrack))
   }

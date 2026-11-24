@@ -1,5 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert'
+
+if (typeof globalThis.localStorage === 'undefined') {
+  const mem = new Map<string, string>()
+  globalThis.localStorage = {
+    getItem: (key: string) => mem.get(key) ?? null,
+    setItem: (key: string, val: string) => mem.set(key, String(val)),
+    removeItem: (key: string) => mem.delete(key),
+    clear: () => mem.clear(),
+    key: (i: number) => Array.from(mem.keys())[i] ?? null,
+    length: 0,
+  } as unknown as Storage
+}
+
 import { exportFullBackup, importFullBackup } from '../src/services/db/echoDatabase.ts'
 
 test('Backup & Restore: exportFullBackup incorporates canonical playlists and importFullBackup returns restoredPlaylists [BUG-11]', async () => {
@@ -49,4 +62,32 @@ test('Backup & Restore: exportFullBackup incorporates canonical playlists and im
   assert.ok(restoredP1)
   assert.strictEqual(restoredP1.title, 'Roadtrip Anthems')
   assert.deepStrictEqual(restoredP1.trackIds, ['t1', 't2', 't3'])
+})
+
+test('History clearing: clearRecentHistory and QueueManager.clearHistory clear all recent projections [BUG-12]', async () => {
+  const { useEchoStore } = await import('../src/stores/useEchoStore.ts')
+  const { QueueManager } = await import('../src/engine/QueueManager.ts')
+
+  // Populate store and queue with history
+  useEchoStore.setState({
+    recentlyPlayedIds: ['track-1', 'track-2'],
+    recentItems: [
+      { id: 'track-1', kind: 'track', title: 'Song 1', subtitle: 'Artist', image: '', at: Date.now() },
+    ],
+  })
+
+  const qm = new QueueManager([
+    { id: 'track-1', title: 'Song 1', artistName: 'Artist', durationSeconds: 100 },
+    { id: 'track-2', title: 'Song 2', artistName: 'Artist', durationSeconds: 120 },
+  ], 0)
+  qm.next()
+  assert.strictEqual(qm.history.length, 1)
+
+  // Clear history projections
+  useEchoStore.getState().clearRecentHistory()
+  qm.clearHistory()
+
+  assert.deepStrictEqual(useEchoStore.getState().recentlyPlayedIds, [])
+  assert.deepStrictEqual(useEchoStore.getState().recentItems, [])
+  assert.deepStrictEqual(qm.history, [])
 })

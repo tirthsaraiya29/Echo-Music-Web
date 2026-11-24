@@ -286,6 +286,12 @@ export class AudioEngine {
     this.emitState()
   }
 
+  public clearHistory(): void {
+    this.queueManager.clearHistory()
+    this.emit('queueChange')
+    this.emitState()
+  }
+
   public getDetailedQueue() {
     return this.queueManager.getDetailedQueue()
   }

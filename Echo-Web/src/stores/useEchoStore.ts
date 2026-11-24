@@ -99,6 +99,7 @@ type EchoState = {
   removeFromQueue: (index: number) => void
   moveQueueItem: (from: number, to: number) => void
   clearQueue: () => void
+  clearRecentHistory: () => void
   recordMedia: (item: Omit<RecentlyPlayedItem, 'at'>) => void
   setPreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void
   setToast: (message: string) => void
@@ -457,6 +458,13 @@ export const useEchoStore = create<EchoState>()(
         const engine = AudioEngine.getInstance()
         engine.clearQueue()
         set({ queueIds: [] })
+      },
+
+      clearRecentHistory: () => {
+        set({
+          recentlyPlayedIds: [],
+          recentItems: [],
+        })
       },
 
       recordMedia: (item) =>

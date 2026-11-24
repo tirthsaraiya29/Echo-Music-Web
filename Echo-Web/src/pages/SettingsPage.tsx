@@ -113,7 +113,7 @@ export function SettingsPage() {
   const setPreference = useEchoStore((state) => state.setPreference)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const notify = useEchoStore((state) => state.setToast)
-  const { setCrossfadeDuration, setVolumeNormalization, getAudioTelemetry } = useAudioEngine()
+  const { setCrossfadeDuration, setVolumeNormalization, getAudioTelemetry, clearHistory } = useAudioEngine()
 
   const [activeSection, setActiveSection] = useState('all')
   const [settingsFilter, setSettingsFilter] = useState('')
@@ -318,7 +318,9 @@ export function SettingsPage() {
 
   const handleClearHistoryAction = async () => {
     await clearListeningHistory()
-    notify('Cleared listening history')
+    useEchoStore.getState().clearRecentHistory()
+    clearHistory()
+    notify('Cleared listening history, recent items, and playback queue history')
     await refreshStorageData()
   }
 
