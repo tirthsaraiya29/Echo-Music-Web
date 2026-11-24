@@ -113,3 +113,90 @@ test('MetadataCache: stale background revalidation is deduplicated across concur
   assert.strictEqual(updated.isStale, false)
 })
 
+test('MetadataCache: enforceHardCap evicts expired rows and oldest fresh rows to enforce hard limit [BUG-20]', async () => {
+  const { db } = await import('../src/services/db/echoDatabase.ts')
+  const { enforceHardCap } = await import('../src/services/cache/metadataCache.ts')
+
+  // In-memory mock database records
+  interface MockRecord {
+    key: string
+    updatedAt: number
+    expiresAt: number
+  }
+
+  let store: MockRecord[] = [
+    // 3 expired records
+    { key: 'rec-1', updatedAt: 1000, expiresAt: Date.now() - 5000 },
+    { key: 'rec-2', updatedAt: 2000, expiresAt: Date.now() - 3000 },
+    { key: 'rec-3', updatedAt: 3000, expiresAt: Date.now() - 1000 },
+    // 5 fresh records with different updatedAt timestamps
+    { key: 'rec-4', updatedAt: 4000, expiresAt: Date.now() + 100000 },
+    { key: 'rec-5', updatedAt: 5000, expiresAt: Date.now() + 100000 },
+    { key: 'rec-6', updatedAt: 6000, expiresAt: Date.now() + 100000 },
+    { key: 'rec-7', updatedAt: 7000, expiresAt: Date.now() + 100000 },
+    { key: 'rec-8', updatedAt: 8000, expiresAt: Date.now() + 100000 },
+  ]
+
+  const originalMetadataCache = db.metadataCache
+  const originalTransaction = db.transaction
+
+  try {
+    // Mock db.transaction to execute callback immediately
+    db.transaction = (async (_mode: any, _table: any, fn: () => Promise<any>) => {
+      return await fn()
+    }) as any
+
+    // Mock db.metadataCache operations
+    db.metadataCache = {
+      count: async () => store.length,
+      where: (field: string) => ({
+        below: (threshold: number) => ({
+          primaryKeys: async () => {
+            if (field === 'expiresAt') {
+              return store.filter((r) => r.expiresAt < threshold).map((r) => r.key)
+            }
+            return []
+          },
+        }),
+      }),
+      orderBy: (field: string) => ({
+        limit: (n: number) => ({
+          primaryKeys: async () => {
+            if (field === 'updatedAt') {
+              const sorted = [...store].sort((a, b) => a.updatedAt - b.updatedAt)
+              return sorted.slice(0, n).map((r) => r.key)
+            }
+            return []
+          },
+        }),
+      }),
+      bulkDelete: async (keys: string[]) => {
+        const keySet = new Set(keys)
+        store = store.filter((r) => !keySet.has(r.key))
+      },
+    } as any
+
+    // Case 1: Cap at 4 records (currently 8 records: 3 expired, 5 fresh)
+    // Eviction should delete 3 expired records (leaving 5), then 1 oldest fresh record ('rec-4'), leaving exactly 4: rec-5, rec-6, rec-7, rec-8
+    await enforceHardCap(4)
+    assert.strictEqual(store.length, 4)
+    assert.deepStrictEqual(
+      store.map((r) => r.key).sort(),
+      ['rec-5', 'rec-6', 'rec-7', 'rec-8'],
+    )
+
+    // Case 2: Cap at 2 records (currently 4 fresh records)
+    // Eviction has 0 expired records, so it must evict the 2 oldest fresh records ('rec-5' and 'rec-6')
+    await enforceHardCap(2)
+    assert.strictEqual(store.length, 2)
+    assert.deepStrictEqual(
+      store.map((r) => r.key).sort(),
+      ['rec-7', 'rec-8'],
+    )
+  } finally {
+    db.metadataCache = originalMetadataCache
+    db.transaction = originalTransaction
+  }
+})
+
+

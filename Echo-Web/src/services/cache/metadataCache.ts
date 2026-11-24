@@ -2,8 +2,44 @@ import { db, type MetadataCacheRecord } from '../db/echoDatabase.ts'
 
 const inFlightRequests = new Map<string, Promise<unknown>>()
 const memoryCache = new Map<string, { data: unknown; expiresAt: number; updatedAt: number }>()
-const MEMORY_CACHE_MAX = 60
-const DB_CACHE_MAX = 500
+export const MEMORY_CACHE_MAX = 60
+export const DB_CACHE_MAX = 500
+
+export async function enforceHardCap(maxRecords = DB_CACHE_MAX): Promise<void> {
+  const now = Date.now()
+  try {
+    const totalCount = await db.metadataCache.count()
+    if (totalCount <= maxRecords) {
+      return
+    }
+
+    await db.transaction('rw', db.metadataCache, async () => {
+      // 1. Evict expired entries first
+      const expiredKeys = await db.metadataCache
+        .where('expiresAt')
+        .below(now)
+        .primaryKeys()
+      if (expiredKeys.length > 0) {
+        await db.metadataCache.bulkDelete(expiredKeys)
+      }
+
+      // 2. If count still exceeds maxRecords, evict oldest entries by updatedAt to enforce hard cap
+      const currentCount = await db.metadataCache.count()
+      if (currentCount > maxRecords) {
+        const excess = currentCount - maxRecords
+        const oldestKeys = await db.metadataCache
+          .orderBy('updatedAt')
+          .limit(excess)
+          .primaryKeys()
+        if (oldestKeys.length > 0) {
+          await db.metadataCache.bulkDelete(oldestKeys)
+        }
+      }
+    })
+  } catch {
+    // Non-fatal if storage/IndexedDB is unavailable
+  }
+}
 
 function setMemoryCache(key: string, data: unknown, ttlMs: number, updatedAt: number): void {
   if (memoryCache.size >= MEMORY_CACHE_MAX) {
@@ -62,13 +98,10 @@ export async function setCachedMetadata<T>(
       expiresAt,
     })
 
-    // Bounded cleanup
+    // Hard cap transactional cleanup
     const count = await db.metadataCache.count()
     if (count > DB_CACHE_MAX) {
-      const expired = await db.metadataCache.where('expiresAt').below(now).limit(50).primaryKeys()
-      if (expired.length > 0) {
-        await db.metadataCache.bulkDelete(expired)
-      }
+      await enforceHardCap(DB_CACHE_MAX)
     }
   } catch {
     // Non-fatal
