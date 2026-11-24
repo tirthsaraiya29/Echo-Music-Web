@@ -102,10 +102,18 @@ export async function clearAllMetadataCache(): Promise<void> {
   }
 }
 
+export function getInFlightRequestCount(): number {
+  return inFlightRequests.size
+}
+
+export function hasInFlightRequest(key: string): boolean {
+  return inFlightRequests.has(key)
+}
+
 /**
  * Fetch with intelligent caching:
  * - Deduplicates simultaneous requests
- * - Stale-while-revalidate: returns cached content immediately while updating in background
+ * - Stale-while-revalidate: returns cached content immediately while updating in background (deduplicated)
  * - Offline fallback: returns expired cache when network fails
  */
 export async function fetchWithCache<T>(
@@ -121,8 +129,17 @@ export async function fetchWithCache<T>(
       return cached.data
     }
 
-    // Stale: trigger background revalidation without blocking caller
-    void executeFetch(key, kind, fetcher, ttlMs).catch(() => {})
+    // Stale: trigger background revalidation without blocking caller,
+    // deduplicating via inFlightRequests so concurrent callers do not trigger duplicate revalidations.
+    if (!inFlightRequests.has(key)) {
+      const revalidationPromise = executeFetch(key, kind, fetcher, ttlMs)
+        .catch(() => {})
+        .finally(() => {
+          inFlightRequests.delete(key)
+        })
+      inFlightRequests.set(key, revalidationPromise)
+    }
+
     return cached.data
   }
 

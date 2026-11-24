@@ -70,3 +70,46 @@ test('MetadataCache: invalidateMetadata clears cached records', async () => {
   cached = await getCachedMetadata(key)
   assert.strictEqual(cached, null, 'Cache record should be null after invalidation')
 })
+
+test('MetadataCache: stale background revalidation is deduplicated across concurrent callers [BUG-19]', async () => {
+  const key = 'test:stale:dedup'
+  const staleData = { id: 'stale-1', count: 0 }
+  const freshData = { id: 'stale-1', count: 99 }
+
+  // Set with -100ms TTL so it is already stale
+  await setCachedMetadata(key, 'artist', staleData, -100)
+
+  let revalidationCount = 0
+  const slowFetcher = async () => {
+    revalidationCount++
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    return freshData
+  }
+
+  // Fire 5 concurrent calls when cache is stale
+  const results = await Promise.all([
+    fetchWithCache(key, 'artist', slowFetcher, 60_000),
+    fetchWithCache(key, 'artist', slowFetcher, 60_000),
+    fetchWithCache(key, 'artist', slowFetcher, 60_000),
+    fetchWithCache(key, 'artist', slowFetcher, 60_000),
+    fetchWithCache(key, 'artist', slowFetcher, 60_000),
+  ])
+
+  // All 5 should immediately receive the stale data without waiting
+  for (const res of results) {
+    assert.strictEqual(res.count, 0)
+  }
+
+  // Exactly 1 background fetch should have been spawned, not 5
+  assert.strictEqual(revalidationCount, 1, 'Only one background revalidation should be initiated for stale cache')
+
+  // Wait for background revalidation to finish
+  await new Promise((resolve) => setTimeout(resolve, 100))
+
+  // Subsequent read should get the fresh data
+  const updated = await getCachedMetadata<typeof freshData>(key)
+  assert.ok(updated !== null)
+  assert.strictEqual(updated.data.count, 99)
+  assert.strictEqual(updated.isStale, false)
+})
+
