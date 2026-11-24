@@ -152,7 +152,24 @@ class GoogleCastService {
     }
   }
 
-  public async castTrack(track: Track, streamUrl: string, currentTime = 0): Promise<boolean> {
+  public inferMimeType(url: string): string {
+    const cleanUrl = url.split('?')[0]?.toLowerCase() ?? ''
+    if (cleanUrl.endsWith('.mp3')) return 'audio/mpeg'
+    if (cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.m4a')) return 'audio/mp4'
+    if (cleanUrl.endsWith('.aac')) return 'audio/aac'
+    if (cleanUrl.endsWith('.flac')) return 'audio/flac'
+    if (cleanUrl.endsWith('.wav')) return 'audio/wav'
+    if (cleanUrl.endsWith('.ogg')) return 'audio/ogg'
+    if (cleanUrl.endsWith('.webm') || cleanUrl.endsWith('.opus')) return 'audio/webm'
+    return 'audio/webm'
+  }
+
+  public async castTrack(
+    track: Track,
+    streamUrl: string,
+    currentTime = 0,
+    mimeType?: string,
+  ): Promise<boolean> {
     if (
       typeof window === 'undefined' ||
       !this.isConnected ||
@@ -170,7 +187,11 @@ class GoogleCastService {
         ? window.location.origin + streamUrl
         : streamUrl
 
-      const mediaInfo = new window.chrome.cast.media.MediaInfo(fullStreamUrl, 'audio/webm')
+      const normalizedMimeType =
+        (mimeType ? mimeType.split(';')[0]?.trim() : '') ||
+        this.inferMimeType(fullStreamUrl)
+
+      const mediaInfo = new window.chrome.cast.media.MediaInfo(fullStreamUrl, normalizedMimeType)
       mediaInfo.metadata = {
         metadataType: window.chrome.cast.media.MetadataType.MUSIC_TRACK,
         title: track.title,

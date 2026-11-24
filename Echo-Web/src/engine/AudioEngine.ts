@@ -41,7 +41,7 @@ export class AudioEngine {
 
   // LRU-bounded stream URL cache and registry of created blob object URLs, which are revoked
   // when evicted so IndexedDB blobs are not pinned in memory.
-  private streamCache = new Map<string, string>()
+  private streamCache = new Map<string, { url: string; mimeType?: string | undefined }>()
   private static readonly STREAM_CACHE_MAX = 200
   private objectUrls = new Set<string>()
   private isFetchingRadioContinuation = false
@@ -555,9 +555,14 @@ export class AudioEngine {
         const current = this.queueManager.currentTrack
         if (current) {
           const currentTime = this.getCurrentTime()
-          void this.resolveStreamUrl(current)
-            .then((streamUrl) => {
-              void castService.castTrack(current, streamUrl, currentTime)
+          void this.resolveStreamInfo(current)
+            .then((streamInfo) => {
+              void castService.castTrack(
+                current,
+                streamInfo.url,
+                currentTime,
+                streamInfo.mimeType,
+              )
               this.deckController.pause()
               this.emitState()
             })
@@ -761,14 +766,14 @@ export class AudioEngine {
     this.mediaSession.updateTrack(track)
     this.emit('trackChange', track)
 
-    const streamUrl = await this.resolveStreamUrl(track)
+    const streamInfo = await this.resolveStreamInfo(track)
     if (requestId !== this.currentLoadRequestId) {
       return
     }
 
     if (castService.getIsConnected()) {
       this.deckController.pause()
-      await castService.castTrack(track, streamUrl, 0)
+      await castService.castTrack(track, streamInfo.url, 0, streamInfo.mimeType)
       this.consecutiveErrorCount = 0
       this.lastFmScrobbled = false
       this.loudnessMeasured = false
@@ -776,7 +781,7 @@ export class AudioEngine {
       return
     }
 
-    await this.deckController.loadActive(track, streamUrl, autoPlay)
+    await this.deckController.loadActive(track, streamInfo.url, autoPlay)
     if (requestId !== this.currentLoadRequestId) {
       return
     }
@@ -880,9 +885,13 @@ export class AudioEngine {
     return false
   }
 
-  private async resolveStreamUrl(track: Track): Promise<string> {
+  private async resolveStreamInfo(track: Track): Promise<{ url: string; mimeType?: string | undefined }> {
     if (track.streamUrl && !this.isUrlExpired(track.streamUrl)) {
-      return track.streamUrl
+      const cached = this.streamCache.get(track.id)
+      return {
+        url: track.streamUrl,
+        mimeType: cached?.mimeType,
+      }
     }
 
     // Check offline storage: local imported files
@@ -891,16 +900,19 @@ export class AudioEngine {
       if (localRec?.audioBlob) {
         const objectUrl = this.createObjectUrl(localRec.audioBlob)
         track.streamUrl = objectUrl
-        return objectUrl
+        const mimeType = localRec.mimeType || localRec.audioBlob.type || undefined
+        const streamInfo = { url: objectUrl, mimeType }
+        this.streamCache.set(track.id, streamInfo)
+        return streamInfo
       }
     }
 
     const cached = this.streamCache.get(track.id)
-    if (cached && !this.isUrlExpired(cached)) {
+    if (cached && !this.isUrlExpired(cached.url)) {
       // LRU refresh
       this.streamCache.delete(track.id)
       this.streamCache.set(track.id, cached)
-      track.streamUrl = cached
+      track.streamUrl = cached.url
       return cached
     }
 
@@ -917,7 +929,10 @@ export class AudioEngine {
           const data = (await res.json()) as StreamResolutionResult
           if (data.streamUrl) {
             this.lastStreamFormat = data.format
-            this.streamCache.set(track.id, data.streamUrl)
+            const mimeType =
+              data.format.mimeType?.split(';')[0]?.trim() || data.format.mimeType || undefined
+            const streamInfo = { url: data.streamUrl, mimeType }
+            this.streamCache.set(track.id, streamInfo)
             if (this.streamCache.size > AudioEngine.STREAM_CACHE_MAX) {
               const oldest = this.streamCache.keys().next().value
               if (oldest !== undefined) this.streamCache.delete(oldest)
@@ -926,7 +941,7 @@ export class AudioEngine {
             if (data.durationMs && !track.durationMs) {
               track.durationMs = data.durationMs
             }
-            return data.streamUrl
+            return streamInfo
           }
         }
       } catch (err) {
@@ -939,6 +954,11 @@ export class AudioEngine {
     throw new Error(
       `Could not resolve stream URL for track "${track.title}" (ID: ${track.id}). Network stream resolution is required.`,
     )
+  }
+
+  private async resolveStreamUrl(track: Track): Promise<string> {
+    const info = await this.resolveStreamInfo(track)
+    return info.url
   }
 
   private checkAutoRadio(): void {
