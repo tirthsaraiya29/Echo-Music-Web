@@ -12,7 +12,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 
 | Phase ID | Priority | Description | Target Files | Status | Commit SHA | Verified |
 |---|---|---|---|---|---|---|
-| BUG-01 | P0 | Crossfade queue promotion is missing | `src/engine/AudioEngine.ts, src/engine/DeckController.ts, src/engine/QueueManager.ts` | Pending | - | - |
+| BUG-01 | P0 | Crossfade queue promotion is missing | `src/engine/AudioEngine.ts, src/engine/DeckController.ts, src/engine/QueueManager.ts` | Completed | c9acb71963329872881908c209edf2f1a15383ef | Yes (verified on origin/main) |
 | BUG-02 | P0 | Zustand queue actions mutate the same queue twice | `src/stores/useEchoStore.ts, src/hooks/useAudioEngine.ts, src/engine/AudioEngine.ts` | Pending | - | - |
 | BUG-03 | P0 | Track object identity changes on playback ticks | `src/engine/QueueManager.ts, src/engine/AudioEngine.ts, src/hooks/useAudioEngine.ts, src/components/player/LyricsView.tsx, src/components/player/CanvasVideo.tsx` | Pending | - | - |
 | BUG-04 | P0 | Production API deployment is not defined in the repository | `vite.config.ts, server/index.ts, src/services/api.ts` | Pending | - | - |
