@@ -546,3 +546,27 @@ export async function dismissPodcastProgress(episodeId: string): Promise<void> {
     await db.podcastProgress.put(existing)
   }
 }
+
+export async function markPodcastCompleted(episodeId: string): Promise<void> {
+  const existing = await db.podcastProgress.get(episodeId)
+  if (existing) {
+    existing.completed = true
+    existing.positionMs = 0
+    existing.positionSeconds = 0
+    existing.updatedAt = Date.now()
+    await db.podcastProgress.put(existing)
+  }
+}
+
+export async function restorePodcastProgress(episodeId: string): Promise<void> {
+  const existing = await db.podcastProgress.get(episodeId)
+  if (existing && existing.dismissed) {
+    existing.dismissed = false
+    existing.updatedAt = Date.now()
+    await db.podcastProgress.put(existing)
+  }
+}
+
+export async function clearPodcastProgress(episodeId: string): Promise<void> {
+  await db.podcastProgress.delete(episodeId)
+}

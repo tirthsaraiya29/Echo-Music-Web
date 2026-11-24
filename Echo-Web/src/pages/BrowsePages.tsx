@@ -43,6 +43,7 @@ import type { SearchFilterKey } from '../services/innertube/client.ts'
 import { getCachedTrack, useEchoStore } from '../stores/useEchoStore.ts'
 import { classNames } from '../utils/classNames.ts'
 import { artwork } from '../utils/artwork.ts'
+import { formatDuration } from '../utils/format.ts'
 import {
   CreatePlaylistDialog,
   MediaCard,
@@ -60,7 +61,12 @@ import {
   getDailyTasteMix,
   type TasteMix,
 } from '../services/recommendations/localTasteEngine.ts'
-import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
+import {
+  resolveMissingTrack,
+  getAllPodcastProgress,
+  dismissPodcastProgress,
+  type PodcastProgressRecord,
+} from '../services/db/echoDatabase.ts'
 import { parseM3UPlaylist, parseCSVPlaylist } from '../services/sharing/playlistPortability.ts'
 import { LocalMusicSection } from '../components/library/LocalMusicSection.tsx'
 import { SpotifyImportModal } from '../components/modals/SpotifyImportModal.tsx'
@@ -1481,6 +1487,24 @@ export function LibraryPage() {
   const setToast = useEchoStore((state) => state.setToast)
   const followedPodcasts = useEchoStore((state) => state.followedPodcasts)
   const unfollowPodcast = useEchoStore((state) => state.unfollowPodcast)
+  const currentTrack = useEchoStore((state) => state.currentTrack)
+  const isPlaying = useEchoStore((state) => state.isPlaying)
+  const playTrack = useEchoStore((state) => state.playTrack)
+  const togglePlayback = useEchoStore((state) => state.togglePlayback)
+  const [inProgressPodcasts, setInProgressPodcasts] = useState<PodcastProgressRecord[]>([])
+
+  useEffect(() => {
+    if (tab !== 'Podcasts' && tab !== 'All') return
+    let cancelled = false
+    getAllPodcastProgress(false)
+      .then((records) => {
+        if (!cancelled) setInProgressPodcasts(records)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [tab, currentTrack?.id])
 
   // Resolve any liked tracks missing from memory/cache
   useEffect(() => {
@@ -1741,6 +1765,106 @@ export function LibraryPage() {
       )}
 
       {/* Tab: Followed Podcasts */}
+      {(tab === 'All' || tab === 'Podcasts') && inProgressPodcasts.length > 0 && (
+        <section className="page-section">
+          <SectionHeading title="Continue listening" to="/podcasts" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {inProgressPodcasts.slice(0, 4).map((item) => {
+              const posSec = item.positionSeconds ?? Math.round(item.positionMs / 1000)
+              const durSec = item.durationSeconds ?? Math.round(item.durationMs / 1000)
+              const pct = durSec > 0 ? Math.min(100, Math.round((posSec / durSec) * 100)) : 0
+              const remainingSec = Math.max(0, durSec - posSec)
+              const isCurrent = currentTrack?.id === item.episodeId || currentTrack?.videoId === item.episodeId
+              const itemPlaying = isCurrent && isPlaying
+
+              return (
+                <div
+                  key={item.episodeId}
+                  className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/6 bg-white/[0.03] p-4 transition-all hover:border-white/12 hover:bg-white/[0.06] hover:shadow-lg"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/5">
+                      <img
+                        src={artwork(item.artworkUrl || '', 128)}
+                        alt={item.episodeTitle}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isCurrent) {
+                            togglePlayback()
+                          } else {
+                            playTrack({
+                              id: item.episodeId,
+                              videoId: item.episodeId,
+                              title: item.episodeTitle,
+                              artistId: `podcast_${item.showTitle.toLowerCase().replace(/\s+/g, '_')}`,
+                              artistName: item.showTitle,
+                              albumId: 'podcasts',
+                              albumTitle: item.showTitle,
+                              albumImage: item.artworkUrl || '',
+                              artwork: item.artworkUrl || '',
+                              durationMs: item.durationMs || durSec * 1000,
+                              durationSeconds: durSec,
+                              explicit: false,
+                              playCount: 1,
+                              isPodcast: true,
+                              podcastShowId: `podcast_${item.showTitle.toLowerCase().replace(/\s+/g, '_')}`,
+                              showTitle: item.showTitle,
+                            })
+                          }
+                        }}
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                        aria-label={itemPlaying ? 'Pause episode' : 'Resume episode'}
+                      >
+                        {itemPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
+                      </button>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[11px] font-medium text-[#b09cff]">
+                        {item.showTitle}
+                      </p>
+                      <h3 className="line-clamp-2 text-xs font-semibold text-white/90">
+                        {item.episodeTitle}
+                      </h3>
+                      <p className="mt-1 text-[10px] text-[#a59fad]">
+                        {remainingSec > 0 ? `${formatDuration(remainingSec)} left` : 'Completed'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        await dismissPodcastProgress(item.episodeId)
+                        setInProgressPodcasts((prev) => prev.filter((p) => p.episodeId !== item.episodeId))
+                      }}
+                      className="text-white/40 hover:text-white"
+                      title="Dismiss from history"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#7c5cff] to-[#b09cff]"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Tab: Followed Podcasts */}
       {(tab === 'All' || tab === 'Podcasts') && filteredPodcasts.length > 0 && (
         <section className="page-section">
           {tab === 'All' && <SectionHeading title="Followed podcasts" to="/library?tab=podcasts" />}
@@ -1801,7 +1925,7 @@ export function LibraryPage() {
         </section>
       )}
 
-      {tab === 'Podcasts' && filteredPodcasts.length === 0 && (
+      {tab === 'Podcasts' && filteredPodcasts.length === 0 && inProgressPodcasts.length === 0 && (
         <div className="empty-state">
           <Radio size={27} />
           <h3>No followed podcasts yet</h3>

@@ -34,6 +34,11 @@ import { echoBrainService } from '../services/recommendations/echoBrainService.t
 import type { EchoBrainTelemetry } from '../services/recommendations/echoBrainTypes.ts'
 import { InnerTubeClient } from '../services/innertube/client.ts'
 import {
+  shouldResumeEpisode,
+  isNearEnd,
+  recordPodcastProgressMetric,
+} from '../services/podcast/podcastProgressService.ts'
+import {
   bluetoothReconnectService,
   type BluetoothReconnectTelemetry,
 } from '../services/audio/bluetoothReconnectService.ts'
@@ -1099,19 +1104,24 @@ export class AudioEngine {
           const durSec = Math.round(duration)
           const posMs = Math.round(current * 1000)
           const durMs = Math.round(duration * 1000)
+          const isNear = isNearEnd(posMs, durMs)
           void db.podcastProgress
             .put({
               episodeId,
-              showTitle: currentTrack.artistName || 'Podcast',
+              showTitle: currentTrack.showTitle || currentTrack.artistName || 'Podcast',
               episodeTitle: currentTrack.title || 'Episode',
               artworkUrl: currentTrack.artwork || currentTrack.thumbnailUrl,
               positionSeconds: posSec,
               durationSeconds: durSec,
               positionMs: posMs,
               durationMs: durMs,
-              completed: durMs > 0 && posMs / durMs >= 0.95,
+              completed: isNear,
               dismissed: false,
               updatedAt: now,
+            })
+            .then(() => {
+              recordPodcastProgressMetric('progressSaved')
+              if (isNear) recordPodcastProgressMetric('episodesCompleted')
             })
             .catch(() => {})
         }
@@ -1301,7 +1311,12 @@ export class AudioEngine {
         void db.podcastProgress
           .update(episodeId, {
             completed: true,
+            positionMs: 0,
+            positionSeconds: 0,
             updatedAt: Date.now(),
+          })
+          .then(() => {
+            recordPodcastProgressMetric('episodesCompleted')
           })
           .catch(() => {})
       }
@@ -1363,12 +1378,10 @@ export class AudioEngine {
     if (episodeId) {
       try {
         const progress = await db.podcastProgress.get(episodeId)
-        if (progress && !progress.completed) {
-          const posSec = progress.positionSeconds ?? (progress.positionMs ? progress.positionMs / 1000 : 0)
-          const durSec = progress.durationSeconds ?? (progress.durationMs ? progress.durationMs / 1000 : 0)
-          if (posSec > 5 && durSec > 0 && posSec / durSec < 0.95) {
-            this.seek(posSec)
-          }
+        const { shouldResume, seekPositionSeconds } = shouldResumeEpisode(progress)
+        if (shouldResume) {
+          this.seek(seekPositionSeconds)
+          recordPodcastProgressMetric('resumesTriggered')
         }
       } catch {
         // Non-fatal
