@@ -2,6 +2,15 @@ import { Hono, type Context } from 'hono'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { getConnInfo } from '@hono/node-server/conninfo'
 import { z } from 'zod'
+import {
+  DEFAULT_ROOM_LIMITS,
+  recordRoomSecurityMetric,
+  getRoomSecurityMetrics,
+  resetRoomSecurityMetrics,
+  isSafeArtworkUrl,
+} from './roomSecurity.ts'
+
+export { resetRoomSecurityMetrics }
 
 export const createRoomServerInputSchema = z.object({
   hostName: z.string().trim().min(1, 'Host nickname cannot be empty').max(32).optional(),
@@ -187,7 +196,11 @@ export function isJoinRateLimited(ip: string): boolean {
     return false
   }
   entry.count++
-  return entry.count > JOIN_LIMIT_PER_WINDOW
+  if (entry.count > JOIN_LIMIT_PER_WINDOW) {
+    recordRoomSecurityMetric('rateLimitedJoins')
+    return true
+  }
+  return false
 }
 
 export function resetJoinRateLimits(): void {
@@ -212,7 +225,11 @@ export function isCreateRateLimited(ip: string): boolean {
     return false
   }
   entry.count++
-  return entry.count > CREATE_LIMIT_PER_WINDOW
+  if (entry.count > CREATE_LIMIT_PER_WINDOW) {
+    recordRoomSecurityMetric('rateLimitedCreations')
+    return true
+  }
+  return false
 }
 
 export function resetCreateRateLimits(): void {
@@ -339,12 +356,19 @@ export function sanitizeTrackPayload(raw: unknown): Record<string, unknown> | nu
   const artist = typeof obj['artist'] === 'string' ? obj['artist'].trim().slice(0, MAX_TRACK_STRING_LENGTH) : ''
   const album = typeof obj['album'] === 'string' ? obj['album'].trim().slice(0, MAX_TRACK_STRING_LENGTH) : undefined
   const artwork = typeof obj['artwork'] === 'string' ? obj['artwork'].trim().slice(0, MAX_TRACK_URL_LENGTH) : undefined
-  const artworkUrl = typeof obj['artworkUrl'] === 'string' ? obj['artworkUrl'].trim().slice(0, MAX_TRACK_URL_LENGTH) : artwork
+  const rawArtworkUrl = typeof obj['artworkUrl'] === 'string' ? obj['artworkUrl'].trim().slice(0, MAX_TRACK_URL_LENGTH) : artwork
+  const artworkUrl = rawArtworkUrl && isSafeArtworkUrl(rawArtworkUrl) ? rawArtworkUrl : undefined
 
   let durationMs: number | undefined
   if (typeof obj['durationMs'] === 'number' && Number.isFinite(obj['durationMs'])) {
+    if (obj['durationMs'] > 86400000 || obj['durationMs'] < 0) {
+      recordRoomSecurityMetric('oversizedTrackSanitizations')
+    }
     durationMs = Math.max(0, Math.min(obj['durationMs'], 86400000))
   } else if (typeof obj['duration'] === 'number' && Number.isFinite(obj['duration'])) {
+    if (obj['duration'] * 1000 > 86400000 || obj['duration'] < 0) {
+      recordRoomSecurityMetric('oversizedTrackSanitizations')
+    }
     durationMs = Math.max(0, Math.min(obj['duration'] * 1000, 86400000))
   }
 
@@ -396,6 +420,15 @@ listenTogetherRouter.get('/telemetry', async (c) => {
     ok: true,
     activeRooms,
     metrics: getServerListenTogetherMetrics(),
+  })
+})
+
+// Security audit endpoint: returns active limits and security telemetry
+listenTogetherRouter.get('/security-audit', async (c) => {
+  return c.json({
+    ok: true,
+    limits: DEFAULT_ROOM_LIMITS,
+    metrics: getRoomSecurityMetrics(),
   })
 })
 
@@ -557,6 +590,7 @@ listenTogetherRouter.post('/sync', async (c) => {
   // create/join time is not a member, so it cannot act for (or observe) the room.
   if (!member || member.token !== body.token) {
     recordServerListenTogetherMetric('authFailures')
+    recordRoomSecurityMetric('tokenAuthFailures')
     return c.json({ error: 'Not a room member' }, 403)
   }
 
@@ -588,6 +622,9 @@ listenTogetherRouter.post('/sync', async (c) => {
       room.isPlaying = body.isPlaying
     }
     if (typeof body.playbackPositionSeconds === 'number' && Number.isFinite(body.playbackPositionSeconds)) {
+      if (body.playbackPositionSeconds > MAX_PLAYBACK_POSITION_SECONDS) {
+        recordRoomSecurityMetric('payloadClampedOperations')
+      }
       room.playbackPositionSeconds = Math.max(0, Math.min(body.playbackPositionSeconds, MAX_PLAYBACK_POSITION_SECONDS))
     }
     room.lastUpdatedServerTime = Date.now()
