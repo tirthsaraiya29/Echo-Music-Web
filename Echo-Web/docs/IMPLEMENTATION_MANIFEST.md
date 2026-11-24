@@ -49,7 +49,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-35 | P2 | Range parsing is incomplete | `server/routes/stream.ts` | Completed | ff3cad00 | Yes (verified on origin/main) |
 | BUG-36 | P2 | Stream-info requests are not deduplicated | `server/routes/stream.ts` | Completed | 88dd7c1a | Yes (verified on origin/main) |
 | BUG-37 | P2 | Data Saver description overpromises | `src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts` | Completed | 1f5d00b8 | Yes (verified on origin/main) |
-| BUG-38 | P2 | Lossless marketing metadata is inconsistent | `index.html, server/routes/stream.ts, src/pages/SettingsPage.tsx` | Pending | - | - |
+| BUG-38 | P2 | Lossless marketing metadata is inconsistent | `index.html, server/routes/stream.ts, src/pages/SettingsPage.tsx` | Completed | 655a9f54 | Yes (verified on origin/main) |
 | BUG-39 | P2 | Podcast data exists without a complete podcast product surface | `src/services/db/echoDatabase.ts, src/engine/AudioEngine.ts, src/App.tsx` | Pending | - | - |
 | BUG-40 | P2 | Music Flow is absent | `src/App.tsx, src/pages, src/components` | Pending | - | - |
 | BUG-41 | P2 | Cloud media providers are absent | `src/services, server/routes` | Pending | - | - |
