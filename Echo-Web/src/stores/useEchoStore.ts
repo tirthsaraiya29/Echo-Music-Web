@@ -119,6 +119,7 @@ const defaultPreferences: UserPreferences = {
   romanizeLyrics: false,
   romanizeLanguages: ['ja', 'ko', 'zh'],
   romanizeAsMain: false,
+  activeLyricsSyncProfileId: 'default',
   dataSaver: false,
   discordRpc: false,
   discordBridgeUrl: 'http://127.0.0.1:6463',

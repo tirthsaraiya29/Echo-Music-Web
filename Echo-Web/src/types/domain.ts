@@ -172,6 +172,7 @@ export interface UserPreferences {
   romanizeLyrics?: boolean | undefined
   romanizeLanguages?: Array<'ja' | 'ko' | 'zh' | 'ru' | 'uk' | 'sr' | 'bg' | 'pa'> | undefined
   romanizeAsMain?: boolean | undefined
+  activeLyricsSyncProfileId?: string | undefined
   lastfmSession?: { sessionKey: string; username: string } | undefined
   lastfmScrobbling?: boolean | undefined
   discordRpc?: boolean | undefined

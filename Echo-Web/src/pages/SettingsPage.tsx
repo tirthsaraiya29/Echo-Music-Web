@@ -30,6 +30,7 @@ import {
   ChevronDown,
 } from 'lucide-react'
 import { recordProviderReorder } from '../services/lyrics/LyricsOrchestrator.ts'
+import { lyricsSyncProfileService } from '../services/lyrics/LyricsSyncProfileService.ts'
 import {
   broadcastLibrarySnapshot,
   requestSyncFromPeers,
@@ -1516,6 +1517,85 @@ export function SettingsPage() {
                 />
               </div>
             )}
+
+            {/* Lyrics Synchronization & Calibration Profiles */}
+            <div className="mt-4 rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <strong className="block text-sm text-white">
+                    Lyrics Synchronization & Calibration
+                  </strong>
+                  <p className="text-xs text-[#a59fad]">
+                    Global latency profiles and provider-specific timing calibration
+                  </p>
+                </div>
+                <span className="rounded bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] uppercase text-[#b09cff]">
+                  {preferences.activeLyricsSyncProfileId || 'default'}
+                </span>
+              </div>
+
+              {/* Profile Selector */}
+              <div className="setting-row">
+                <span>
+                  <strong>Active sync profile</strong>
+                  <small>Adjusts global lyric timing compensation for audio device latency.</small>
+                </span>
+                <select
+                  aria-label="Active sync profile"
+                  className="rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white focus:outline-none"
+                  value={preferences.activeLyricsSyncProfileId || 'default'}
+                  onChange={async (e) => {
+                    const nextId = e.target.value
+                    save('activeLyricsSyncProfileId', nextId)
+                    await lyricsSyncProfileService.setActiveProfile(nextId)
+                  }}
+                >
+                  <option value="default">Default (Direct / Low Latency) [0ms]</option>
+                  <option value="bluetooth">Bluetooth A2DP [+180ms]</option>
+                  <option value="network-cast">AirPlay & Cast [+350ms]</option>
+                  <option value="anticipated-lead">Anticipated Lead [-200ms]</option>
+                </select>
+              </div>
+
+              {/* Provider Calibration Grid */}
+              <div className="mt-3 flex flex-col gap-2 border-t border-white/5 pt-3">
+                <span className="text-xs font-semibold text-[#e7e4ed]">
+                  Provider Calibration Offsets (ms)
+                </span>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    { id: 'LRCLIB', label: 'LRCLIB' },
+                    { id: 'BETTER_LYRICS', label: 'BetterLyrics' },
+                    { id: 'YOUTUBE', label: 'YouTube Subtitles' },
+                    { id: 'KUGOU', label: 'KuGou' },
+                  ].map((prov) => (
+                    <div
+                      key={prov.id}
+                      className="flex flex-col gap-1 rounded-lg border border-white/5 bg-white/4 p-2 text-xs"
+                    >
+                      <span className="font-medium text-[#dcd7e5]">{prov.label}</span>
+                      <div className="flex items-center gap-1 font-mono text-[11px]">
+                        <input
+                          type="number"
+                          step={50}
+                          min={-5000}
+                          max={5000}
+                          defaultValue={prov.id === 'YOUTUBE' ? -200 : 0}
+                          onChange={async (e) => {
+                            const val = parseInt(e.target.value, 10)
+                            if (!isNaN(val)) {
+                              await lyricsSyncProfileService.setProviderCalibration(prov.id, val)
+                            }
+                          }}
+                          className="w-full rounded border border-white/10 bg-black/40 px-2 py-1 text-right text-white focus:outline-none"
+                        />
+                        <span className="text-[#a59fad]">ms</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </section>
         )}
 

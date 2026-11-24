@@ -26,16 +26,21 @@ import {
   FileDown,
   Copy,
   Check,
+  Sliders,
 } from 'lucide-react'
 import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
-import { db } from '../../services/db/echoDatabase.ts'
 import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
 import {
   lyricsExporter,
   buildLyricsFileName,
   type LyricsExportFormat,
 } from '../../services/lyrics/LyricsExporter.ts'
+import {
+  lyricsSyncProfileService,
+  type LyricsSyncProfile,
+  type SyncCalibrationSummary,
+} from '../../services/lyrics/LyricsSyncProfileService.ts'
 import {
   TranslationClient,
   type ConnectionTestResult,
@@ -45,12 +50,10 @@ import { useModalFocusTrap } from '../../hooks/useModalFocusTrap.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
 import { useEchoStore } from '../../stores/useEchoStore.ts'
 import {
-  syncOffsetPayloadSchema,
   recordLyricsUiMetric,
   clampSyncOffset,
   findActiveLineIndex,
   getWordProgressState,
-  type SyncOffsetPayload,
 } from '../../services/lyrics/lyricsUtils.ts'
 
 interface ActiveWordKaraokeLineProps {
@@ -379,17 +382,33 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   const isUserScrollingRef = useRef(false)
   const scrollTimeoutRef = useRef<number | null>(null)
   const [isManualScrollActive, setIsManualScrollActive] = useState(false)
+  const [showCalibrationModal, setShowCalibrationModal] = useState(false)
+  const [syncCalibration, setSyncCalibration] = useState<SyncCalibrationSummary | null>(null)
 
-  // Load the saved sync offset for this track
+  // Load the saved sync offset & calibration for this track and provider
   useEffect(() => {
-    if (!track) return
+    if (!track) {
+      setSyncOffsetMs(0)
+      setSyncCalibration(null)
+      return
+    }
     const trackId = track.videoId || track.id
-    if (!trackId || typeof indexedDB === 'undefined') return
-    void db.syncOffsets.get(trackId).then((record) => {
-      setSyncOffsetMs(record?.offsetMs ?? 0)
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id, track?.videoId])
+    if (!trackId) return
+
+    let cancelled = false
+    void lyricsSyncProfileService
+      .resolveEffectiveOffset(trackId, lyricsData?.provider)
+      .then((summary) => {
+        if (!cancelled) {
+          setSyncOffsetMs(summary.effectiveOffsetMs)
+          setSyncCalibration(summary)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [track?.id, track?.videoId, lyricsData?.provider])
 
   const adjustSyncOffset = (deltaMs: number) => {
     recordLyricsUiMetric('syncOffsetAdjustments')
@@ -398,19 +417,18 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
 
     if (track) {
       const trackId = track.videoId || track.id
-      if (trackId && typeof indexedDB !== 'undefined') {
+      if (trackId) {
         if (syncDebounceRef.current !== null) {
           window.clearTimeout(syncDebounceRef.current)
         }
         syncDebounceRef.current = window.setTimeout(() => {
-          const payload: SyncOffsetPayload = {
-            trackId,
-            offsetMs: next,
-            updatedAt: Date.now(),
-          }
-          if (syncOffsetPayloadSchema.safeParse(payload).success) {
-            void db.syncOffsets.put(payload)
-          }
+          void lyricsSyncProfileService
+            .saveTrackOffset(trackId, next, lyricsData?.provider)
+            .then(() => {
+              void lyricsSyncProfileService
+                .resolveEffectiveOffset(trackId, lyricsData?.provider)
+                .then((summary) => setSyncCalibration(summary))
+            })
         }, 400)
       }
     }
@@ -632,7 +650,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
           {lyricsData?.isSynced !== false && (
             <div
               className="flex items-center gap-1 rounded-lg bg-white/8 px-1.5 py-1 text-[#e7e4ed]"
-              title="Adjust lyric sync timing (persisted per track)"
+              title={`Lyric sync timing (${syncCalibration?.profileName || 'Default'})`}
             >
               <button
                 type="button"
@@ -642,10 +660,19 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               >
                 <Minus size={12} />
               </button>
-              <span className="w-12 text-center font-mono text-[10px]" aria-live="polite">
-                {syncOffsetMs >= 0 ? '+' : ''}
-                {(syncOffsetMs / 1000).toFixed(1)}s
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(true)}
+                className="flex items-center gap-1 px-1 font-mono text-[10px] text-white/90 transition hover:text-[#b09cff]"
+                title="Open Sync Profiles & Calibration"
+                aria-label="Open Sync Profiles and Calibration"
+              >
+                <Sliders size={11} className="text-[#a59fad]" />
+                <span aria-live="polite">
+                  {syncOffsetMs >= 0 ? '+' : ''}
+                  {(syncOffsetMs / 1000).toFixed(1)}s
+                </span>
+              </button>
               <button
                 type="button"
                 className="rounded p-1 transition-all hover:bg-white/12 focus-visible:ring-1 focus-visible:ring-[#7c5cff]"
@@ -832,6 +859,25 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
           lyrics={lyricsData}
           syncOffsetMs={syncOffsetMs}
           onClose={() => setShowExportModal(false)}
+        />
+      )}
+
+      {/* Lyrics Sync Calibration Modal */}
+      {showCalibrationModal && track && (
+        <SyncCalibrationModal
+          track={track}
+          provider={lyricsData?.provider}
+          currentOffsetMs={syncOffsetMs}
+          onOffsetChanged={(newEffectiveMs) => {
+            setSyncOffsetMs(newEffectiveMs)
+            const trackId = track.videoId || track.id
+            if (trackId) {
+              void lyricsSyncProfileService
+                .resolveEffectiveOffset(trackId, lyricsData?.provider)
+                .then((s) => setSyncCalibration(s))
+            }
+          }}
+          onClose={() => setShowCalibrationModal(false)}
         />
       )}
     </div>
@@ -1466,6 +1512,276 @@ function ExportLyricsModal({
               Close
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SyncCalibrationModal({
+  track,
+  provider,
+  currentOffsetMs,
+  onOffsetChanged,
+  onClose,
+}: {
+  track: Track
+  provider?: string | undefined
+  currentOffsetMs: number
+  onOffsetChanged: (newEffectiveMs: number) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(dialogRef, onClose)
+
+  const [profiles, setProfiles] = useState<LyricsSyncProfile[]>([])
+  const [activeProfileId, setActiveProfileId] = useState('default')
+  const [calibration, setCalibration] = useState<SyncCalibrationSummary | null>(null)
+  const [trackOffset, setTrackOffset] = useState(0)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+
+  const trackId = track.videoId || track.id || ''
+
+  const loadCalibrationData = useCallback(async () => {
+    const allProfiles = await lyricsSyncProfileService.getProfiles()
+    setProfiles(allProfiles)
+    const active = await lyricsSyncProfileService.getActiveProfile()
+    setActiveProfileId(active.id)
+
+    if (trackId) {
+      const savedTrackOffset = await lyricsSyncProfileService.getTrackOffset(trackId, provider)
+      setTrackOffset(savedTrackOffset)
+      const summary = await lyricsSyncProfileService.resolveEffectiveOffset(trackId, provider)
+      setCalibration(summary)
+    }
+  }, [trackId, provider])
+
+  useEffect(() => {
+    void loadCalibrationData()
+  }, [loadCalibrationData])
+
+  const handleAdjustTrackOffset = async (deltaMs: number) => {
+    const next = clampSyncOffset(trackOffset + deltaMs)
+    setTrackOffset(next)
+    await lyricsSyncProfileService.saveTrackOffset(trackId, next, provider)
+    const summary = await lyricsSyncProfileService.resolveEffectiveOffset(trackId, provider)
+    setCalibration(summary)
+    onOffsetChanged(summary.effectiveOffsetMs)
+  }
+
+  const handleResetTrackOffset = async () => {
+    setTrackOffset(0)
+    await lyricsSyncProfileService.resetTrackOffset(trackId, provider)
+    const summary = await lyricsSyncProfileService.resolveEffectiveOffset(trackId, provider)
+    setCalibration(summary)
+    onOffsetChanged(summary.effectiveOffsetMs)
+    setStatusMessage('Track offset reset to 0ms')
+    setTimeout(() => setStatusMessage(null), 2000)
+  }
+
+  const handleSwitchProfile = async (newProfileId: string) => {
+    setActiveProfileId(newProfileId)
+    await lyricsSyncProfileService.setActiveProfile(newProfileId)
+    const summary = await lyricsSyncProfileService.resolveEffectiveOffset(trackId, provider)
+    setCalibration(summary)
+    onOffsetChanged(summary.effectiveOffsetMs)
+    setStatusMessage(`Switched to ${summary.profileName}`)
+    setTimeout(() => setStatusMessage(null), 2000)
+  }
+
+  const handleSaveAsProviderCalibration = async () => {
+    if (!provider) return
+    const offsetToSave = trackOffset
+    await lyricsSyncProfileService.setProviderCalibration(provider, offsetToSave, activeProfileId)
+    const summary = await lyricsSyncProfileService.resolveEffectiveOffset(trackId, provider)
+    setCalibration(summary)
+    onOffsetChanged(summary.effectiveOffsetMs)
+    setStatusMessage(
+      `Saved ${offsetToSave >= 0 ? '+' : ''}${offsetToSave}ms calibration for ${provider}`,
+    )
+    setTimeout(() => setStatusMessage(null), 3000)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sync-calibration-dialog-title"
+        className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-white/10 bg-[#14121a] p-6 text-[#f4f1f7] shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-white/8 pb-3">
+          <div>
+            <h3 id="sync-calibration-dialog-title" className="text-base font-semibold text-white">
+              Lyrics Sync Profiles & Calibration
+            </h3>
+            <p className="text-xs text-[#a59fad]">
+              {track.title} &bull; {provider || 'Standard Provider'}
+            </p>
+          </div>
+          <span className="rounded bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-[#b09cff]">
+            {calibration
+              ? calibration.effectiveOffsetMs >= 0
+                ? `+${calibration.effectiveOffsetMs}ms`
+                : `${calibration.effectiveOffsetMs}ms`
+              : `${currentOffsetMs}ms`}
+          </span>
+        </div>
+
+        {/* Timing Composition Breakdown Card */}
+        <div className="grid grid-cols-4 gap-2 rounded-lg border border-white/8 bg-white/4 p-3 text-center">
+          <div>
+            <span className="block text-[10px] text-[#a59fad]">Track Offset</span>
+            <span className="font-mono text-xs font-semibold text-white">
+              {trackOffset >= 0 ? `+${trackOffset}` : trackOffset}ms
+            </span>
+          </div>
+          <div>
+            <span className="block text-[10px] text-[#a59fad]">Profile Latency</span>
+            <span className="font-mono text-xs font-semibold text-white">
+              {calibration?.globalOffsetMs && calibration.globalOffsetMs > 0
+                ? `+${calibration.globalOffsetMs}`
+                : (calibration?.globalOffsetMs ?? 0)}
+              ms
+            </span>
+          </div>
+          <div>
+            <span className="block text-[10px] text-[#a59fad]">Provider Cal.</span>
+            <span className="font-mono text-xs font-semibold text-white">
+              {calibration?.providerCalibrationMs && calibration.providerCalibrationMs > 0
+                ? `+${calibration.providerCalibrationMs}`
+                : (calibration?.providerCalibrationMs ?? 0)}
+              ms
+            </span>
+          </div>
+          <div className="border-l border-white/10 pl-2">
+            <span className="block text-[10px] text-[#b09cff]">Effective Total</span>
+            <span className="font-mono text-xs font-bold text-[#b09cff]">
+              {calibration
+                ? calibration.effectiveOffsetMs >= 0
+                  ? `+${calibration.effectiveOffsetMs}`
+                  : calibration.effectiveOffsetMs
+                : 0}
+              ms
+            </span>
+          </div>
+        </div>
+
+        {/* Track Fine-Tune Adjustments */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-[#a59fad]">Track Timing Adjustment</label>
+          <div className="grid grid-cols-5 gap-1.5">
+            <button
+              type="button"
+              onClick={() => handleAdjustTrackOffset(-500)}
+              className="rounded-lg border border-white/8 bg-white/5 py-1.5 font-mono text-xs text-white hover:bg-white/10"
+            >
+              -0.5s
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAdjustTrackOffset(-100)}
+              className="rounded-lg border border-white/8 bg-white/5 py-1.5 font-mono text-xs text-white hover:bg-white/10"
+            >
+              -0.1s
+            </button>
+            <button
+              type="button"
+              onClick={handleResetTrackOffset}
+              className="rounded-lg border border-white/8 bg-white/5 py-1.5 font-mono text-xs text-white hover:bg-white/10"
+            >
+              Reset (0)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAdjustTrackOffset(100)}
+              className="rounded-lg border border-white/8 bg-white/5 py-1.5 font-mono text-xs text-white hover:bg-white/10"
+            >
+              +0.1s
+            </button>
+            <button
+              type="button"
+              onClick={() => handleAdjustTrackOffset(500)}
+              className="rounded-lg border border-white/8 bg-white/5 py-1.5 font-mono text-xs text-white hover:bg-white/10"
+            >
+              +0.5s
+            </button>
+          </div>
+        </div>
+
+        {/* Sync Profile Selector */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-[#a59fad]">Active Sync Profile</label>
+          <div className="flex flex-col gap-1.5">
+            {profiles.map((p) => {
+              const isActive = p.id === activeProfileId
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleSwitchProfile(p.id)}
+                  className={`flex items-center justify-between rounded-lg border p-2 text-left text-xs transition ${
+                    isActive
+                      ? 'border-[#7c5cff] bg-[#7c5cff]/15 text-white'
+                      : 'border-white/8 bg-white/[0.02] text-[#a59fad] hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  <div>
+                    <span className="font-semibold text-white">{p.name}</span>
+                    {p.description && <p className="text-[11px] text-[#a59fad]">{p.description}</p>}
+                  </div>
+                  <span className="font-mono text-[11px] text-[#b09cff]">
+                    {p.globalOffsetMs >= 0 ? `+${p.globalOffsetMs}` : p.globalOffsetMs}ms
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Provider Calibration Action */}
+        {provider && (
+          <div className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+            <div>
+              <span className="text-xs font-medium text-white">Save as Provider Calibration</span>
+              <p className="text-[11px] text-[#a59fad]">
+                Applies current track offset ({trackOffset >= 0 ? `+${trackOffset}` : trackOffset}
+                ms) to all songs from {provider}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveAsProviderCalibration}
+              className="rounded-lg border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10"
+            >
+              Save for {provider}
+            </button>
+          </div>
+        )}
+
+        {/* Status Message */}
+        {statusMessage && (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <Check size={13} />
+            <span>{statusMessage}</span>
+          </div>
+        )}
+
+        {/* Close Action */}
+        <div className="flex justify-end border-t border-white/8 pt-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-white/8 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-white/12"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>

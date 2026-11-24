@@ -76,6 +76,18 @@ export interface RecommendationExclusionRecord {
 export interface SyncOffsetRecord {
   trackId: string
   offsetMs: number
+  provider?: string | undefined
+  profileId?: string | undefined
+  updatedAt: number
+}
+
+export interface LyricsSyncProfileRecord {
+  id: string
+  name: string
+  description?: string | undefined
+  globalOffsetMs: number
+  providerOffsets: Record<string, number>
+  isDefault: boolean
   updatedAt: number
 }
 
@@ -103,6 +115,7 @@ export class EchoDatabase extends Dexie {
   recommendationExclusions!: EntityTable<RecommendationExclusionRecord, 'trackId'>
   cachedLyrics!: EntityTable<CachedLyricsRecord, 'trackId'>
   syncOffsets!: EntityTable<SyncOffsetRecord, 'trackId'>
+  syncProfiles!: EntityTable<LyricsSyncProfileRecord, 'id'>
   metadataCache!: EntityTable<MetadataCacheRecord, 'key'>
 
   constructor() {
@@ -120,6 +133,7 @@ export class EchoDatabase extends Dexie {
     this.version(2).stores({ tracks: null })
     this.version(3).stores({ syncOffsets: 'trackId, updatedAt' })
     this.version(4).stores({ metadataCache: 'key, kind, updatedAt, expiresAt' })
+    this.version(5).stores({ syncProfiles: 'id, name, isDefault, updatedAt' })
   }
 }
 
