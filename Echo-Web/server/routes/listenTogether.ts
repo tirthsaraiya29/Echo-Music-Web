@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, randomBytes } from 'node:crypto'
 
 export const listenTogetherRouter = new Hono()
 
@@ -115,6 +115,7 @@ if (typeof cleanupTimer?.unref === 'function') {
 
 // Room code contract: standard 6-character room codes from unambiguous alphabet.
 // Accepts 6 to 8 alphanumeric characters for client validation compatibility.
+export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 32 symbols
 export const ROOM_CODE_LENGTH = 6
 
 export function isValidRoomCode(code: string): boolean {
@@ -123,13 +124,13 @@ export function isValidRoomCode(code: string): boolean {
   return (clean.length === 6 || clean.length === 8) && /^[A-Z0-9]+$/.test(clean)
 }
 
-function generateRoomCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+export function generateRoomCode(): string {
+  const bytes = randomBytes(ROOM_CODE_LENGTH)
   let result = ''
-  const bytes = randomUUID().replace(/-/g, '')
   for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
-    const nibble = Number.parseInt(bytes[i % bytes.length]!, 16)
-    result += chars.charAt(nibble % chars.length)
+    // 256 is an exact multiple of 32 (8 * 32 = 256), yielding uniform distribution without modulo bias
+    const idx = bytes[i]! % ROOM_CODE_ALPHABET.length
+    result += ROOM_CODE_ALPHABET.charAt(idx)
   }
   return result
 }

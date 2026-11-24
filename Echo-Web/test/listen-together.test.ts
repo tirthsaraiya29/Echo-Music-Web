@@ -5,6 +5,8 @@ import {
   MemoryRoomStore,
   setRoomStore,
   ROOM_CODE_LENGTH,
+  ROOM_CODE_ALPHABET,
+  generateRoomCode,
   isValidRoomCode,
 } from '../server/routes/listenTogether.ts'
 
@@ -154,5 +156,40 @@ describe('Listen Together Room Storage & Endpoints', () => {
     })
     const validRes = await listenTogetherRouter.fetch(validJoinReq)
     assert.strictEqual(validRes.status, 200)
+  })
+
+  it('generateRoomCode indexes full 32-character alphabet with full entropy [BUG-32]', () => {
+    assert.strictEqual(ROOM_CODE_ALPHABET.length, 32)
+    const upperHalfChars = new Set(ROOM_CODE_ALPHABET.slice(16).split(''))
+    let upperHalfCount = 0
+    const observedSymbols = new Set<string>()
+
+    const SAMPLE_COUNT = 300
+    for (let i = 0; i < SAMPLE_COUNT; i++) {
+      const code = generateRoomCode()
+      assert.strictEqual(code.length, ROOM_CODE_LENGTH)
+      for (const char of code) {
+        assert.ok(ROOM_CODE_ALPHABET.includes(char), `Character ${char} must be in alphabet`)
+        observedSymbols.add(char)
+        if (upperHalfChars.has(char)) {
+          upperHalfCount++
+        }
+      }
+    }
+
+    const totalChars = SAMPLE_COUNT * ROOM_CODE_LENGTH
+    // Upper half should account for approximately 50% of characters (e.g. between 40% and 60%)
+    const upperHalfRatio = upperHalfCount / totalChars
+    assert.ok(
+      upperHalfRatio > 0.4 && upperHalfRatio < 0.6,
+      `Expected ~50% upper-half symbols, got ${(upperHalfRatio * 100).toFixed(1)}% (previously 0%)`,
+    )
+
+    // All 32 distinct symbols should be observed in 1800 character samples
+    assert.strictEqual(
+      observedSymbols.size,
+      32,
+      `All 32 alphabet symbols must be generated across samples (observed ${observedSymbols.size})`,
+    )
   })
 })
