@@ -133,7 +133,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-011 | Correct crossfade promotion | Completed | 65397072 | Yes (verified on origin/main) |
 | FEATURE-012 | Gapless playback | Completed | af799c2d | Yes (verified on origin/main) |
 | FEATURE-013 | Equal-power crossfade profiles | Completed | 7ef179ca | Yes (verified on origin/main) |
-| FEATURE-014 | Queue ownership snapshots | Pending | - | - |
+| FEATURE-014 | Queue ownership snapshots | Completed | e96dc127 | Yes (verified on origin/main) |
 | FEATURE-015 | Queue continuation paging | Pending | - | - |
 | FEATURE-016 | Radio retry and recovery | Pending | - | - |
 | FEATURE-017 | Echo Brain momentum queue | Pending | - | - |
