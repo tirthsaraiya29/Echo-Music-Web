@@ -877,6 +877,12 @@ export class AudioEngine {
   }
 
   private async handlePrebuffer(): Promise<void> {
+    const prefs = useEchoStore.getState().preferences
+    if (prefs.dataSaver) {
+      // Data Saver suspends background track preloading to minimize network/bandwidth usage
+      return
+    }
+
     const nextTrack = this.queueManager.peekNext()
     if (!nextTrack) {
       this.checkAutoRadio()

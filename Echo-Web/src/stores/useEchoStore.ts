@@ -37,6 +37,7 @@ const defaultPreferences: UserPreferences = {
   contentRegion: 'US',
   crossfadeDuration: 3,
   preferredLyricsProvider: 'LRCLIB',
+  dataSaver: false,
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID
@@ -500,7 +501,29 @@ export const useEchoStore = create<EchoState>()(
     }),
     {
       name: 'echo-web-state-v2',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            return window.localStorage
+          }
+          if (typeof localStorage !== 'undefined') {
+            localStorage.getItem('__echo_storage_test')
+            return localStorage
+          }
+        } catch {
+          // Node without --localstorage-file or restricted environment
+        }
+        const mem = new Map<string, string>()
+        return {
+          getItem: (key: string) => mem.get(key) ?? null,
+          setItem: (key: string, val: string) => {
+            mem.set(key, String(val))
+          },
+          removeItem: (key: string) => {
+            mem.delete(key)
+          },
+        }
+      }),
       partialize: (state) => {
         // Collect IDs of essential tracks that must be preserved
         const essentialIds = new Set<string>([

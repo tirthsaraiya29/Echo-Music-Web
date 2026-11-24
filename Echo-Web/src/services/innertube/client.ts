@@ -9,7 +9,7 @@ import {
   parseSearchResults,
 } from './parser.ts'
 import { fetchWithCache } from '../cache/metadataCache.ts'
-import { cacheTracks } from '../../stores/useEchoStore.ts'
+import { useEchoStore, cacheTracks } from '../../stores/useEchoStore.ts'
 
 export const SEARCH_FILTERS = {
   songs: 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D',
@@ -30,17 +30,41 @@ export interface SearchResultCatalog {
 }
 
 export class InnerTubeClient {
+  public static getClientContext(): Record<string, unknown> {
+    const prefs = useEchoStore.getState().preferences
+    const gl = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    return {
+      client: {
+        gl,
+        hl: 'en',
+      },
+      user: {
+        lockedSafetyMode: !showExplicit,
+      },
+    }
+  }
+
   public static async fetchHomeFeed(): Promise<HomeShelf[]> {
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const cacheKey = `shelf:home:${region}:${showExplicit ? 'exp' : 'clean'}`
+
     return await fetchWithCache(
-      'shelf:home',
+      cacheKey,
       'shelf',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_home' }),
+          body: JSON.stringify({ browseId: 'FEmusic_home', context }),
         })
         const shelves = parseHomeFeed(data)
         for (const shelf of shelves) {
+          if (!showExplicit) {
+            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+          }
           const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
           if (tracks.length > 0) cacheTracks(tracks)
         }
@@ -51,20 +75,29 @@ export class InnerTubeClient {
   }
 
   public static async fetchCharts(countryCode?: string): Promise<HomeShelf[]> {
-    const key = `shelf:charts:${countryCode || 'default'}`
+    const prefs = useEchoStore.getState().preferences
+    const region = countryCode || prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const key = `shelf:charts:${region}:${showExplicit ? 'exp' : 'clean'}`
+
     return await fetchWithCache(
       key,
       'shelf',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
           body: JSON.stringify({
             browseId: 'FEmusic_charts',
-            ...(countryCode ? { formData: { selectedValues: [countryCode] } } : {}),
+            context,
+            formData: { selectedValues: [region] },
           }),
         })
         const shelves = parseHomeFeed(data)
         for (const shelf of shelves) {
+          if (!showExplicit) {
+            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+          }
           const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
           if (tracks.length > 0) cacheTracks(tracks)
         }
@@ -75,13 +108,18 @@ export class InnerTubeClient {
   }
 
   public static async fetchMoodsAndGenres(): Promise<HomeShelf[]> {
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const key = `shelf:moods:${region}`
+
     return await fetchWithCache(
-      'shelf:moods',
+      key,
       'shelf',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_moods_and_genres' }),
+          body: JSON.stringify({ browseId: 'FEmusic_moods_and_genres', context }),
         })
         return parseHomeFeed(data)
       },
@@ -90,16 +128,25 @@ export class InnerTubeClient {
   }
 
   public static async fetchTrending(): Promise<HomeShelf[]> {
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const key = `shelf:trending:${region}:${showExplicit ? 'exp' : 'clean'}`
+
     return await fetchWithCache(
-      'shelf:trending',
+      key,
       'shelf',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_trending' }),
+          body: JSON.stringify({ browseId: 'FEmusic_trending', context }),
         })
         const shelves = parseHomeFeed(data)
         for (const shelf of shelves) {
+          if (!showExplicit) {
+            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+          }
           const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
           if (tracks.length > 0) cacheTracks(tracks)
         }
@@ -118,12 +165,25 @@ export class InnerTubeClient {
       return { tracks: [], albums: [], artists: [], playlists: [] }
     }
 
-    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}`
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const explicitFlag = showExplicit ? 'exp' : 'clean'
+    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}:${region}:${explicitFlag}`
+
     return await fetchWithCache(
       key,
       'search',
       async () => {
-        const payload: { query: string; params?: string } = { query: trimmed }
+        const context = InnerTubeClient.getClientContext()
+        const payload: {
+          query: string
+          params?: string
+          context?: Record<string, unknown>
+        } = {
+          query: trimmed,
+          context,
+        }
         if (filter && filter !== 'all' && SEARCH_FILTERS[filter]) {
           payload.params = SEARCH_FILTERS[filter]
         }
@@ -134,6 +194,9 @@ export class InnerTubeClient {
         })
 
         const catalog = parseSearchResults(data)
+        if (!showExplicit) {
+          catalog.tracks = catalog.tracks.filter((t) => !t.explicit)
+        }
         if (catalog.tracks.length > 0) {
           cacheTracks(catalog.tracks)
         }
@@ -159,16 +222,24 @@ export class InnerTubeClient {
   }
 
   public static async fetchAlbum(browseId: string): Promise<{ album: Album; tracks: Track[] }> {
-    const key = `album:${browseId}`
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const key = `album:${browseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
+
     return await fetchWithCache(
       key,
       'album',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
-          body: JSON.stringify({ browseId }),
+          body: JSON.stringify({ browseId, context }),
         })
         const result = parseAlbumDetails(data)
+        if (!showExplicit) {
+          result.tracks = result.tracks.filter((t) => !t.explicit)
+        }
         if (result.tracks.length > 0) {
           cacheTracks(result.tracks)
         }
@@ -185,16 +256,24 @@ export class InnerTubeClient {
     singles: Album[]
     relatedArtists: Artist[]
   }> {
-    const key = `artist:${browseId}`
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
+    const key = `artist:${browseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
+
     return await fetchWithCache(
       key,
       'artist',
       async () => {
+        const context = InnerTubeClient.getClientContext()
         const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
           method: 'POST',
-          body: JSON.stringify({ browseId }),
+          body: JSON.stringify({ browseId, context }),
         })
         const result = parseArtistDetails(data)
+        if (!showExplicit) {
+          result.topTracks = result.topTracks.filter((t) => !t.explicit)
+        }
         if (result.topTracks.length > 0) {
           cacheTracks(result.topTracks)
         }
