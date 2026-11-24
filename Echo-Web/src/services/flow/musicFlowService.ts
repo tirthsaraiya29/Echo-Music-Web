@@ -1,30 +1,49 @@
-import type { QueueSnapshot, Track } from '../../types/audio.ts'
+import type { Track } from '../../types/audio.ts'
+import type { MusicFlowState, MusicFlowTelemetry } from '../../types/flow.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
 import { useEchoStore } from '../../stores/useEchoStore.ts'
 import { InnerTubeClient } from '../innertube/client.ts'
 
-export interface MusicFlowState {
-  isActive: boolean
-  ownershipToken: string | null
-  savedSnapshot: QueueSnapshot | null
-  feed: Track[]
-  currentIndex: number
-}
-
 export class MusicFlowService {
+  private static instance: MusicFlowService | null = null
+
   private state: MusicFlowState = {
     isActive: false,
+    isLoading: false,
     ownershipToken: null,
     savedSnapshot: null,
     feed: [],
     currentIndex: 0,
+    telemetry: {
+      swipesCount: 0,
+      tracksListenedCount: 0,
+      likesCount: 0,
+      skipsCount: 0,
+      feedsGeneratedCount: 0,
+      lastSwipeDirection: null,
+      lastSwipeTimestamp: null,
+    },
   }
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private listeners = new Set<(state: MusicFlowState) => void>()
+  private isFetchingMore = false
+
+  public constructor() {}
+
+  public static getInstance(): MusicFlowService {
+    if (!MusicFlowService.instance) {
+      MusicFlowService.instance = new MusicFlowService()
+    }
+    return MusicFlowService.instance
+  }
 
   public getState(): MusicFlowState {
-    return { ...this.state }
+    return {
+      ...this.state,
+      telemetry: { ...this.state.telemetry },
+      feed: [...this.state.feed],
+    }
   }
 
   public subscribe(listener: (state: MusicFlowState) => void): () => void {
@@ -42,32 +61,58 @@ export class MusicFlowService {
     }
   }
 
+  public getTelemetry(): Readonly<MusicFlowTelemetry> {
+    return { ...this.state.telemetry }
+  }
+
+  public resetTelemetry(): void {
+    this.state.telemetry = {
+      swipesCount: 0,
+      tracksListenedCount: 0,
+      likesCount: 0,
+      skipsCount: 0,
+      feedsGeneratedCount: 0,
+      lastSwipeDirection: null,
+      lastSwipeTimestamp: null,
+    }
+    this.emit()
+  }
+
+  public recordLike(): void {
+    this.state.telemetry.likesCount++
+    this.emit()
+  }
+
   /**
    * Enters Music Flow, taking ownership of playback with a queue snapshot.
    */
   public async enterFlow(initialFeed?: Track[]): Promise<void> {
     const engine = AudioEngine.getInstance()
     const token = `flow_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
     // Snapshot current queue before taking over, bound to ownership token
     const snapshot = engine.snapshotQueue('music-flow', token)
     engine.takeQueueOwnership('music-flow', token)
+
+    this.state.isActive = true
+    this.state.isLoading = true
+    this.state.ownershipToken = token
+    this.state.savedSnapshot = snapshot
+    this.state.currentIndex = 0
+    this.emit()
 
     let feed = initialFeed && initialFeed.length > 0 ? initialFeed : []
     if (feed.length === 0) {
       feed = await this.fetchDiscoveryFeed()
     }
 
-    this.state = {
-      isActive: true,
-      ownershipToken: token,
-      savedSnapshot: snapshot,
-      feed,
-      currentIndex: 0,
-    }
+    this.state.isLoading = false
+    this.state.feed = feed
+    this.state.telemetry.feedsGeneratedCount++
     this.emit()
 
     if (feed.length > 0 && feed[0]) {
-      // Handoff shared player to flow feed
+      this.state.telemetry.tracksListenedCount++
       useEchoStore.getState().playQueue(feed, 0)
     }
   }
@@ -85,17 +130,14 @@ export class MusicFlowService {
 
     const { savedSnapshot, ownershipToken } = this.state
 
-    // Reset flow active state
-    this.state = {
-      isActive: false,
-      ownershipToken: null,
-      savedSnapshot: null,
-      feed: [],
-      currentIndex: 0,
-    }
+    this.state.isActive = false
+    this.state.isLoading = false
+    this.state.ownershipToken = null
+    this.state.savedSnapshot = null
+    this.state.feed = []
+    this.state.currentIndex = 0
     this.emit()
 
-    // Restore previous queue only if requested and snapshot was preserved
     if (restoreQueue && savedSnapshot && ownershipToken) {
       const engine = AudioEngine.getInstance()
       await engine.restoreQueue(savedSnapshot, true, { ownerToken: ownershipToken })
@@ -110,6 +152,15 @@ export class MusicFlowService {
   public selectTrack(index: number, debounceMs = 280): void {
     if (!this.state.isActive || index < 0 || index >= this.state.feed.length) return
 
+    const direction: 'up' | 'down' = index > this.state.currentIndex ? 'up' : 'down'
+    this.state.telemetry.swipesCount++
+    this.state.telemetry.lastSwipeDirection = direction
+    this.state.telemetry.lastSwipeTimestamp = Date.now()
+
+    if (index > this.state.currentIndex) {
+      this.state.telemetry.skipsCount++
+    }
+
     this.state.currentIndex = index
     this.emit()
 
@@ -121,9 +172,9 @@ export class MusicFlowService {
       this.debounceTimer = null
       const track = this.state.feed[index]
       if (track) {
+        this.state.telemetry.tracksListenedCount++
         useEchoStore.getState().playTrack(track)
       }
-      // If approaching end of feed, fetch more tracks
       if (index >= this.state.feed.length - 3) {
         void this.appendMoreFeed()
       }
@@ -143,19 +194,33 @@ export class MusicFlowService {
   }
 
   /**
-   * Aggregates personalized and trending tracks for the flow feed.
+   * Aggregates personalized and trending tracks for the discovery reel.
    */
   public async fetchDiscoveryFeed(): Promise<Track[]> {
+    const cachedTracks = Object.values(useEchoStore.getState().trackCache)
+
     try {
-      const result = await InnerTubeClient.search('top hits trending songs', 'songs')
+      // Query trending songs from InnerTube
+      const result = await InnerTubeClient.search('trending hits global songs', 'songs')
       if (result.tracks && result.tracks.length > 0) {
+        // Interleave with cached favorite tracks if available
+        if (cachedTracks.length > 0) {
+          const combined: Track[] = []
+          const maxLen = Math.max(result.tracks.length, cachedTracks.length)
+          for (let i = 0; i < maxLen; i++) {
+            if (i < result.tracks.length && result.tracks[i]) combined.push(result.tracks[i]!)
+            if (i < cachedTracks.length && cachedTracks[i] && i % 2 === 0) combined.push(cachedTracks[i]!)
+          }
+          const unique = new Map<string, Track>()
+          for (const t of combined) unique.set(t.id, t)
+          return Array.from(unique.values())
+        }
         return result.tracks
       }
     } catch {
-      // Non-fatal fallback
+      // Fallback
     }
 
-    const cachedTracks = Object.values(useEchoStore.getState().trackCache)
     if (cachedTracks.length > 0) {
       return cachedTracks
     }
@@ -167,6 +232,8 @@ export class MusicFlowService {
   }
 
   private async appendMoreFeed(): Promise<void> {
+    if (this.isFetchingMore) return
+    this.isFetchingMore = true
     try {
       const current = this.state.feed[this.state.currentIndex]
       if (!current) return
@@ -182,8 +249,10 @@ export class MusicFlowService {
       }
     } catch {
       // Non-fatal
+    } finally {
+      this.isFetchingMore = false
     }
   }
 }
 
-export const musicFlowService = new MusicFlowService()
+export const musicFlowService = MusicFlowService.getInstance()
