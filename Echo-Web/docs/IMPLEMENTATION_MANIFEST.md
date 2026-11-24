@@ -155,7 +155,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-033 | Continue listening | Completed | fc3467f6 | Yes |
 | FEATURE-034 | Episode ordering | Completed | 61c9696e | Yes |
 | FEATURE-035 | Podcast playback speed | Completed | 54fbec54 | Yes |
-| FEATURE-036 | Podcast skip controls | Pending | - | - |
+| FEATURE-036 | Podcast skip controls | Completed | 9a1aeedd | Yes |
 | FEATURE-037 | Fullscreen video podcast player | Pending | - | - |
 | FEATURE-038 | Podcast queue | Pending | - | - |
 | FEATURE-039 | Podcast progress sync | Pending | - | - |
