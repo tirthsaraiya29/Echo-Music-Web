@@ -77,7 +77,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-12 | InnerTube parser | 10 tasks in backlog | Completed | e68bc1b4 | Yes (verified on origin/main) |
 | SMALL-13 | Radio continuation | 10 tasks in backlog | Completed | faee1036 | Yes (verified on origin/main) |
 | SMALL-14 | Metadata cache | 10 tasks in backlog | Completed | fec180ad | Yes (verified on origin/main) |
-| SMALL-15 | Home discovery shelves | 10 tasks in backlog | Pending | - | - |
+| SMALL-15 | Home discovery shelves | 10 tasks in backlog | Completed | 5364984d | Yes (verified on origin/main) |
 | SMALL-16 | Search and suggestions | 10 tasks in backlog | Pending | - | - |
 | SMALL-17 | Album detail pages | 10 tasks in backlog | Pending | - | - |
 | SMALL-18 | Artist detail pages | 10 tasks in backlog | Pending | - | - |
