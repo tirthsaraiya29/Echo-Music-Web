@@ -1,4 +1,36 @@
+import { z } from 'zod'
 import type { Track } from '../../types/domain'
+
+export const castTrackInputSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  artistName: z.string().optional(),
+  artwork: z.string().optional(),
+})
+
+export const castPayloadSchema = z.object({
+  streamUrl: z.string().min(1).refine((url) => {
+    return url.startsWith('/') || /^https?:\/\//i.test(url)
+  }, { message: 'Invalid stream URL scheme' }),
+  currentTime: z.number().finite().nonnegative().catch(0),
+  mimeType: z.string().optional(),
+})
+
+export type CastConnectionState =
+  | 'NO_DEVICES_AVAILABLE'
+  | 'NOT_CONNECTED'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'ERROR'
+
+export interface CastMetrics {
+  sessionRequests: number
+  sessionSuccesses: number
+  sessionFailures: number
+  tracksCasted: number
+  castErrors: number
+  lastError: string | null
+}
 
 declare global {
   interface Window {
@@ -78,14 +110,26 @@ declare global {
   }
 }
 
-class GoogleCastService {
+export class GoogleCastService {
   private static instance: GoogleCastService | null = null
   private isLoaded = false
   private isConnected = false
+  private connectionState: CastConnectionState = 'NOT_CONNECTED'
   private listeners = new Set<(connected: boolean) => void>()
+  private stateListeners = new Set<(state: CastConnectionState) => void>()
   private readyListeners = new Set<(ready: boolean) => void>()
   private readyPromise: Promise<boolean> | null = null
   private readyResolvers: Array<(ready: boolean) => void> = []
+  private activeSessionRequest: Promise<boolean> | null = null
+
+  private metrics: CastMetrics = {
+    sessionRequests: 0,
+    sessionSuccesses: 0,
+    sessionFailures: 0,
+    tracksCasted: 0,
+    castErrors: 0,
+    lastError: null,
+  }
 
   public static getInstance(): GoogleCastService {
     if (!GoogleCastService.instance) {
@@ -102,6 +146,17 @@ class GoogleCastService {
     this.readyListeners.add(listener)
     listener(this.isSdkReady())
     return () => this.readyListeners.delete(listener)
+  }
+
+  public subscribeState(listener: (state: CastConnectionState) => void): () => void {
+    this.stateListeners.add(listener)
+    listener(this.connectionState)
+    return () => this.stateListeners.delete(listener)
+  }
+
+  private setConnectionState(state: CastConnectionState): void {
+    this.connectionState = state
+    this.stateListeners.forEach((l) => l(state))
   }
 
   public init(): Promise<boolean> {
@@ -179,11 +234,20 @@ class GoogleCastService {
         (event) => {
           const connected = event.castState === window.cast?.framework.CastState.CONNECTED
           this.isConnected = connected
+          if (connected) {
+            this.setConnectionState('CONNECTED')
+          } else if (event.castState === window.cast?.framework.CastState.CONNECTING) {
+            this.setConnectionState('CONNECTING')
+          } else if (event.castState === window.cast?.framework.CastState.NO_DEVICES_AVAILABLE) {
+            this.setConnectionState('NO_DEVICES_AVAILABLE')
+          } else {
+            this.setConnectionState('NOT_CONNECTED')
+          }
           this.listeners.forEach((l) => l(connected))
         },
       )
     } catch {
-      // Ignore
+      // Ignore context registration failures
     }
   }
 
@@ -195,6 +259,25 @@ class GoogleCastService {
 
   public getIsConnected(): boolean {
     return this.isConnected
+  }
+
+  public getConnectionState(): CastConnectionState {
+    return this.connectionState
+  }
+
+  public getMetrics(): CastMetrics {
+    return { ...this.metrics }
+  }
+
+  public resetMetrics(): void {
+    this.metrics = {
+      sessionRequests: 0,
+      sessionSuccesses: 0,
+      sessionFailures: 0,
+      tracksCasted: 0,
+      castErrors: 0,
+      lastError: null,
+    }
   }
 
   public async ensureReady(timeoutMs = 6000): Promise<boolean> {
@@ -213,25 +296,47 @@ class GoogleCastService {
     return Promise.race([readyPromise, timeoutPromise])
   }
 
-  public async requestSession(timeoutMs = 8000): Promise<boolean> {
+  public requestSession(timeoutMs = 8000): Promise<boolean> {
     if (typeof window === 'undefined') {
-      return false
+      return Promise.resolve(false)
     }
 
-    const ready = await this.ensureReady(timeoutMs)
-    if (!ready || !window.cast?.framework) {
-      return false
+    // Deduplicate in-flight session requests
+    if (this.activeSessionRequest) {
+      return this.activeSessionRequest
     }
 
-    try {
-      const context = window.cast.framework.CastContext.getInstance()
-      await context.requestSession()
-      this.isConnected = true
-      this.listeners.forEach((l) => l(true))
-      return true
-    } catch {
-      return false
-    }
+    this.metrics.sessionRequests++
+    this.setConnectionState('CONNECTING')
+
+    this.activeSessionRequest = (async () => {
+      try {
+        const ready = await this.ensureReady(timeoutMs)
+        if (!ready || !window.cast?.framework) {
+          this.metrics.sessionFailures++
+          this.metrics.lastError = 'Cast SDK not available or timed out'
+          this.setConnectionState('ERROR')
+          return false
+        }
+
+        const context = window.cast.framework.CastContext.getInstance()
+        await context.requestSession()
+        this.isConnected = true
+        this.metrics.sessionSuccesses++
+        this.setConnectionState('CONNECTED')
+        this.listeners.forEach((l) => l(true))
+        return true
+      } catch (err) {
+        this.metrics.sessionFailures++
+        this.metrics.lastError = err instanceof Error ? err.message : 'Failed to request Cast session'
+        this.setConnectionState('ERROR')
+        return false
+      } finally {
+        this.activeSessionRequest = null
+      }
+    })()
+
+    return this.activeSessionRequest
   }
 
   public async disconnect(): Promise<void> {
@@ -242,9 +347,10 @@ class GoogleCastService {
         await context.endCurrentSession(true)
       }
     } catch {
-      // Ignore
+      // Ignore disconnection errors
     }
     this.isConnected = false
+    this.setConnectionState('NOT_CONNECTED')
     this.listeners.forEach((l) => l(false))
   }
 
@@ -266,13 +372,29 @@ class GoogleCastService {
     currentTime = 0,
     mimeType?: string,
   ): Promise<boolean> {
+    // 1. Runtime schema validation of inputs
+    const trackValidation = castTrackInputSchema.safeParse(track)
+    if (!trackValidation.success) {
+      this.metrics.castErrors++
+      this.metrics.lastError = 'Malformed track metadata for Cast'
+      return false
+    }
+
+    const payloadValidation = castPayloadSchema.safeParse({ streamUrl, currentTime, mimeType })
+    if (!payloadValidation.success) {
+      this.metrics.castErrors++
+      this.metrics.lastError = 'Malformed stream URL or playback parameters for Cast'
+      return false
+    }
+
     if (
       typeof window === 'undefined' ||
       !this.isConnected ||
       !window.cast?.framework ||
       !window.chrome?.cast?.media
-    )
+    ) {
       return false
+    }
 
     try {
       const context = window.cast.framework.CastContext.getInstance()
@@ -298,11 +420,14 @@ class GoogleCastService {
 
       const request = new window.chrome.cast.media.LoadRequest(mediaInfo)
       request.autoplay = true
-      request.currentTime = currentTime
+      request.currentTime = Math.max(0, currentTime)
 
       await session.loadMedia(request)
+      this.metrics.tracksCasted++
       return true
-    } catch {
+    } catch (err) {
+      this.metrics.castErrors++
+      this.metrics.lastError = err instanceof Error ? err.message : 'Error loading media onto Cast receiver'
       return false
     }
   }
@@ -329,12 +454,34 @@ class GoogleCastService {
 
   public seek(seconds: number): void {
     if (typeof window === 'undefined') return
+    const clampedSeconds = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
     const session = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession()
     session?.getMediaSession()?.seek(
-      { currentTime: seconds },
+      { currentTime: clampedSeconds },
       () => {},
       () => {},
     )
+  }
+
+  public stop(): void {
+    if (typeof window === 'undefined') return
+    const session = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession()
+    session?.getMediaSession()?.stop(
+      {},
+      () => {},
+      () => {},
+    )
+  }
+
+  public destroy(): void {
+    this.listeners.clear()
+    this.stateListeners.clear()
+    this.readyListeners.clear()
+    this.readyResolvers = []
+    this.readyPromise = null
+    this.activeSessionRequest = null
+    this.isConnected = false
+    this.connectionState = 'NOT_CONNECTED'
   }
 }
 

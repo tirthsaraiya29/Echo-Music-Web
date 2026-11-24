@@ -193,3 +193,74 @@ test('Cast Service: requestSession waits for SDK readiness instead of failing im
 
   ;(globalThis as unknown as { window: unknown }).window = originalWindow
 })
+
+import { castTrackInputSchema, castPayloadSchema } from '../src/services/cast/castService.ts'
+
+test('Cast Service: schema validation rejects malformed payloads and unsafe URLs [SMALL-07]', async () => {
+  // 1. Valid track
+  assert.strictEqual(castTrackInputSchema.safeParse({ id: 't1', title: 'Song' }).success, true)
+  // Missing id or title
+  assert.strictEqual(castTrackInputSchema.safeParse({ id: '', title: 'Song' }).success, false)
+  assert.strictEqual(castTrackInputSchema.safeParse({ id: 't1', title: '' }).success, false)
+
+  // 2. Stream URL validation: allow http, https, and relative; reject javascript: or data:
+  assert.strictEqual(castPayloadSchema.safeParse({ streamUrl: 'https://cdn.example.com/audio.mp3', currentTime: 10 }).success, true)
+  assert.strictEqual(castPayloadSchema.safeParse({ streamUrl: '/api/stream/listen?v=123', currentTime: 0 }).success, true)
+  assert.strictEqual(castPayloadSchema.safeParse({ streamUrl: 'javascript:alert(1)', currentTime: 0 }).success, false)
+  assert.strictEqual(castPayloadSchema.safeParse({ streamUrl: '', currentTime: 0 }).success, false)
+
+  // 3. Rejected castTrack invocation with invalid track
+  castService.resetMetrics()
+  // @ts-expect-error testing invalid track
+  const castResult = await castService.castTrack({ id: '', title: '' }, 'https://example.com/audio.mp3', 0)
+  assert.strictEqual(castResult, false)
+  const metrics = castService.getMetrics()
+  assert.strictEqual(metrics.castErrors, 1)
+  assert.ok(metrics.lastError)
+})
+
+test('Cast Service: requestSession deduplication and connection state subscription [SMALL-07]', async () => {
+  const originalWindow = globalThis.window
+  let capturedState = ''
+  const unsub = castService.subscribeState((state) => {
+    capturedState = state
+  })
+
+  ;(globalThis as unknown as { window: unknown }).window = {
+    location: { origin: 'http://localhost:5173' },
+    cast: {
+      framework: {
+        CastContext: {
+          getInstance: () => ({
+            setOptions: () => {},
+            addEventListener: () => {},
+            requestSession: () => new Promise((resolve) => setTimeout(resolve, 50)),
+            endCurrentSession: async () => {},
+          }),
+        },
+        CastState: { CONNECTED: 'CONNECTED' },
+        CastContextEventType: { CAST_STATE_CHANGED: 'CAST_STATE_CHANGED' },
+      },
+    },
+  }
+
+  // Ensure isLoaded
+  ;(castService as unknown as { isLoaded: boolean }).isLoaded = true
+
+  // Fire two concurrent requestSession calls
+  const req1 = castService.requestSession(2000)
+  const req2 = castService.requestSession(2000)
+  assert.strictEqual(req1, req2, 'Concurrent requestSession calls return the identical in-flight promise')
+
+  const [res1, res2] = await Promise.all([req1, req2])
+  assert.strictEqual(res1, true)
+  assert.strictEqual(res2, true)
+  assert.strictEqual(capturedState, 'CONNECTED')
+  assert.strictEqual(castService.getConnectionState(), 'CONNECTED')
+
+  unsub()
+  await castService.disconnect()
+  assert.strictEqual(castService.getConnectionState(), 'NOT_CONNECTED')
+  ;(globalThis as unknown as { window: unknown }).window = originalWindow
+})
+
