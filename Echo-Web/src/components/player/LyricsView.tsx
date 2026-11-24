@@ -11,7 +11,7 @@
  * - Telemetry metrics instrumentation and runtime schema validation via Zod.
  */
 
-import { useEffect, useRef, useState, useCallback, memo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react'
 import {
   Languages,
   Loader2,
@@ -23,11 +23,15 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
+  FileDown,
+  Copy,
+  Check,
 } from 'lucide-react'
 import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
 import { db } from '../../services/db/echoDatabase.ts'
 import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
+import { lyricsExporter, type LyricsExportFormat } from '../../services/lyrics/LyricsExporter.ts'
 import {
   TranslationClient,
   type ConnectionTestResult,
@@ -348,6 +352,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [isTranslated, setIsTranslated] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
 
   // Offline detection state
   const [isOffline, setIsOffline] = useState(() =>
@@ -691,6 +696,18 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
             </button>
           )}
 
+          {lyricsData && (
+            <button
+              type="button"
+              onClick={() => setShowExportModal(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-white/8 px-3 py-1.5 text-xs font-medium text-[#f4f1f7] transition-all hover:bg-white/12 focus-visible:ring-2 focus-visible:ring-[#7c5cff]"
+              title="Export timed lyrics with track metadata"
+            >
+              <FileDown size={13} />
+              Export
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setShowConfigModal(true)}
@@ -801,6 +818,16 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               void handleTranslate()
             }
           }}
+        />
+      )}
+
+      {/* Lyrics Export Modal */}
+      {showExportModal && track && lyricsData && (
+        <ExportLyricsModal
+          track={track}
+          lyrics={lyricsData}
+          syncOffsetMs={syncOffsetMs}
+          onClose={() => setShowExportModal(false)}
         />
       )}
     </div>
@@ -1210,6 +1237,204 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           >
             Save Settings
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ExportLyricsModal({
+  track,
+  lyrics,
+  syncOffsetMs,
+  onClose,
+}: {
+  track: Track
+  lyrics: SynchronizedLyrics
+  syncOffsetMs: number
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalFocusTrap(dialogRef, onClose)
+
+  const [format, setFormat] = useState<LyricsExportFormat>('lrc')
+  const [includeMetadata, setIncludeMetadata] = useState(true)
+  const [includeTranslation, setIncludeTranslation] = useState(true)
+  const [includeWordTimings, setIncludeWordTimings] = useState(true)
+  const [encoding, setEncoding] = useState<'UTF-8' | 'UTF-8-BOM'>('UTF-8')
+  const [copied, setCopied] = useState(false)
+
+  const exportResult = useMemo(() => {
+    return lyricsExporter.exportLyrics(track, lyrics, {
+      format,
+      includeMetadata,
+      includeTranslation,
+      includeWordTimings,
+      encoding,
+      offsetMs: syncOffsetMs,
+    })
+  }, [
+    track,
+    lyrics,
+    format,
+    includeMetadata,
+    includeTranslation,
+    includeWordTimings,
+    encoding,
+    syncOffsetMs,
+  ])
+
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(exportResult.content)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch {
+      // Ignore copy error
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lyrics-export-dialog-title"
+        className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-white/10 bg-[#14121a] p-6 text-[#f4f1f7] shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-white/8 pb-3">
+          <div>
+            <h3 id="lyrics-export-dialog-title" className="text-base font-semibold text-white">
+              Export Timed Lyrics
+            </h3>
+            <p className="text-xs text-[#a59fad]">
+              {track.title} &bull; {track.artistName}
+            </p>
+          </div>
+          <span className="rounded bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] uppercase text-[#b09cff]">
+            {exportResult.format.toUpperCase()}
+          </span>
+        </div>
+
+        {/* Format Selector */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-[#a59fad]">Export Format</label>
+          <div className="grid grid-cols-4 gap-2">
+            {(
+              [
+                { id: 'lrc', label: 'LRC' },
+                { id: 'ttml', label: 'TTML' },
+                { id: 'json', label: 'JSON' },
+                { id: 'txt', label: 'Plain TXT' },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFormat(f.id)}
+                className={`rounded-lg border py-1.5 text-xs font-medium ${
+                  format === f.id
+                    ? 'border-[#7c5cff] bg-[#7c5cff] font-semibold text-[#0b0a0f]'
+                    : 'border-white/8 bg-white/4 text-[#a59fad] hover:text-white'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Options */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5 hover:bg-white/[0.04]">
+            <input
+              type="checkbox"
+              checked={includeMetadata}
+              onChange={(e) => setIncludeMetadata(e.target.checked)}
+              className="rounded border-white/20 text-[#7c5cff] focus:ring-0"
+            />
+            <span className="text-[#e7e4ed]">Track Metadata Header</span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5 hover:bg-white/[0.04]">
+            <input
+              type="checkbox"
+              checked={includeTranslation}
+              onChange={(e) => setIncludeTranslation(e.target.checked)}
+              className="rounded border-white/20 text-[#7c5cff] focus:ring-0"
+            />
+            <span className="text-[#e7e4ed]">Include AI Translation</span>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5 hover:bg-white/[0.04]">
+            <input
+              type="checkbox"
+              checked={includeWordTimings}
+              onChange={(e) => setIncludeWordTimings(e.target.checked)}
+              className="rounded border-white/20 text-[#7c5cff] focus:ring-0"
+            />
+            <span className="text-[#e7e4ed]">Word-Level Timings</span>
+          </label>
+
+          <label className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] p-2.5">
+            <span className="text-[#e7e4ed]">Encoding:</span>
+            <select
+              value={encoding}
+              onChange={(e) => setEncoding(e.target.value as any)}
+              className="rounded border border-white/10 bg-black/40 px-2 py-0.5 text-[11px] text-white focus:outline-none"
+            >
+              <option value="UTF-8">UTF-8</option>
+              <option value="UTF-8-BOM">UTF-8 BOM</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Formatted Preview Box */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[11px] text-[#a59fad]">
+            <span>
+              Content Preview ({exportResult.lineCount} lines, {exportResult.characterCount} chars)
+            </span>
+            <span>Offset: {syncOffsetMs >= 0 ? `+${syncOffsetMs}` : syncOffsetMs}ms</span>
+          </div>
+          <textarea
+            readOnly
+            value={exportResult.content}
+            rows={7}
+            className="w-full rounded-lg border border-white/10 bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-[#dcd7e5] focus:outline-none"
+          />
+        </div>
+
+        {/* Modal Actions */}
+        <div className="flex items-center justify-between border-t border-white/8 pt-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10"
+            >
+              {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+              {copied ? 'Copied to Clipboard!' : 'Copy to Clipboard'}
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-white/6 px-4 py-1.5 text-xs font-medium text-[#a59fad] transition-colors hover:bg-white/10"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
