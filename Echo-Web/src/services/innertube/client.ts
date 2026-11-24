@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { Album, Artist, HomeShelf, PlaylistSummary, Track } from '../../types/domain.ts'
 import type { SponsorSegment } from '../../types/audio.ts'
 import type { StreamResolutionResult } from '../../types/innertube.ts'
@@ -10,6 +11,25 @@ import {
 } from './parser.ts'
 import { fetchWithCache } from '../cache/metadataCache.ts'
 import { useEchoStore, cacheTracks } from '../../stores/useEchoStore.ts'
+
+export const searchQuerySchema = z.string().trim().min(1).max(250)
+export const browseIdSchema = z.string().trim().min(1)
+
+export interface InnerTubeClientMetrics {
+  totalRequests: number
+  successfulRequests: number
+  failedRequests: number
+  cacheHits: number
+  lastError: string | null
+}
+
+const clientMetrics: InnerTubeClientMetrics = {
+  totalRequests: 0,
+  successfulRequests: 0,
+  failedRequests: 0,
+  cacheHits: 0,
+  lastError: null,
+}
 
 export const SEARCH_FILTERS = {
   songs: 'EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D',
@@ -30,6 +50,18 @@ export interface SearchResultCatalog {
 }
 
 export class InnerTubeClient {
+  public static getMetrics(): InnerTubeClientMetrics {
+    return { ...clientMetrics }
+  }
+
+  public static resetMetrics(): void {
+    clientMetrics.totalRequests = 0
+    clientMetrics.successfulRequests = 0
+    clientMetrics.failedRequests = 0
+    clientMetrics.cacheHits = 0
+    clientMetrics.lastError = null
+  }
+
   public static getClientContext(): Record<string, unknown> {
     const prefs = useEchoStore.getState().preferences
     const gl = prefs.contentRegion || 'US'
@@ -45,7 +77,8 @@ export class InnerTubeClient {
     }
   }
 
-  public static async fetchHomeFeed(): Promise<HomeShelf[]> {
+  public static async fetchHomeFeed(options?: { signal?: AbortSignal }): Promise<HomeShelf[]> {
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
@@ -55,26 +88,40 @@ export class InnerTubeClient {
       cacheKey,
       'shelf',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_home', context }),
-        })
-        const shelves = parseHomeFeed(data)
-        for (const shelf of shelves) {
-          if (!showExplicit) {
-            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({ browseId: 'FEmusic_home', context }),
           }
-          const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
-          if (tracks.length > 0) cacheTracks(tracks)
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const shelves = parseHomeFeed(data)
+          for (const shelf of shelves) {
+            if (!showExplicit) {
+              shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+            }
+            const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
+            if (tracks.length > 0) cacheTracks(tracks)
+          }
+          clientMetrics.successfulRequests++
+          return shelves
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        return shelves
       },
       30 * 60 * 1000, // 30 mins
     )
   }
 
-  public static async fetchCharts(countryCode?: string): Promise<HomeShelf[]> {
+  public static async fetchCharts(
+    countryCode?: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<HomeShelf[]> {
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = countryCode || prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
@@ -84,30 +131,41 @@ export class InnerTubeClient {
       key,
       'shelf',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({
-            browseId: 'FEmusic_charts',
-            context,
-            formData: { selectedValues: [region] },
-          }),
-        })
-        const shelves = parseHomeFeed(data)
-        for (const shelf of shelves) {
-          if (!showExplicit) {
-            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({
+              browseId: 'FEmusic_charts',
+              context,
+              formData: { selectedValues: [region] },
+            }),
           }
-          const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
-          if (tracks.length > 0) cacheTracks(tracks)
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const shelves = parseHomeFeed(data)
+          for (const shelf of shelves) {
+            if (!showExplicit) {
+              shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+            }
+            const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
+            if (tracks.length > 0) cacheTracks(tracks)
+          }
+          clientMetrics.successfulRequests++
+          return shelves
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        return shelves
       },
       60 * 60 * 1000, // 1 hour
     )
   }
 
-  public static async fetchMoodsAndGenres(): Promise<HomeShelf[]> {
+  public static async fetchMoodsAndGenres(options?: { signal?: AbortSignal }): Promise<HomeShelf[]> {
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const key = `shelf:moods:${region}`
@@ -116,18 +174,30 @@ export class InnerTubeClient {
       key,
       'shelf',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_moods_and_genres', context }),
-        })
-        return parseHomeFeed(data)
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({ browseId: 'FEmusic_moods_and_genres', context }),
+          }
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const res = parseHomeFeed(data)
+          clientMetrics.successfulRequests++
+          return res
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
+        }
       },
       120 * 60 * 1000, // 2 hours
     )
   }
 
-  public static async fetchTrending(): Promise<HomeShelf[]> {
+  public static async fetchTrending(options?: { signal?: AbortSignal }): Promise<HomeShelf[]> {
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
@@ -137,20 +207,30 @@ export class InnerTubeClient {
       key,
       'shelf',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({ browseId: 'FEmusic_trending', context }),
-        })
-        const shelves = parseHomeFeed(data)
-        for (const shelf of shelves) {
-          if (!showExplicit) {
-            shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({ browseId: 'FEmusic_trending', context }),
           }
-          const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
-          if (tracks.length > 0) cacheTracks(tracks)
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const shelves = parseHomeFeed(data)
+          for (const shelf of shelves) {
+            if (!showExplicit) {
+              shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
+            }
+            const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
+            if (tracks.length > 0) cacheTracks(tracks)
+          }
+          clientMetrics.successfulRequests++
+          return shelves
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        return shelves
       },
       30 * 60 * 1000,
     )
@@ -159,12 +239,15 @@ export class InnerTubeClient {
   public static async search(
     query: string,
     filter?: SearchFilterKey,
+    options?: { signal?: AbortSignal },
   ): Promise<SearchResultCatalog> {
-    const trimmed = query.trim()
-    if (!trimmed) {
+    const validation = searchQuerySchema.safeParse(query)
+    if (!validation.success) {
       return { tracks: [], albums: [], artists: [], playlists: [] }
     }
+    const trimmed = validation.data
 
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
@@ -175,41 +258,54 @@ export class InnerTubeClient {
       key,
       'search',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const payload: {
-          query: string
-          params?: string
-          context?: Record<string, unknown>
-        } = {
-          query: trimmed,
-          context,
-        }
-        if (filter && filter !== 'all' && SEARCH_FILTERS[filter]) {
-          payload.params = SEARCH_FILTERS[filter]
-        }
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const payload: {
+            query: string
+            params?: string
+            context?: Record<string, unknown>
+          } = {
+            query: trimmed,
+            context,
+          }
+          if (filter && filter !== 'all' && SEARCH_FILTERS[filter]) {
+            payload.params = SEARCH_FILTERS[filter]
+          }
 
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/search', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        })
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          }
+          if (options?.signal) fetchInit.signal = options.signal
 
-        const catalog = parseSearchResults(data)
-        if (!showExplicit) {
-          catalog.tracks = catalog.tracks.filter((t) => !t.explicit)
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/search', fetchInit)
+          const catalog = parseSearchResults(data)
+          if (!showExplicit) {
+            catalog.tracks = catalog.tracks.filter((t) => !t.explicit)
+          }
+          if (catalog.tracks.length > 0) {
+            cacheTracks(catalog.tracks)
+          }
+          clientMetrics.successfulRequests++
+          return catalog
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        if (catalog.tracks.length > 0) {
-          cacheTracks(catalog.tracks)
-        }
-        return catalog
       },
       15 * 60 * 1000, // 15 mins
     )
   }
 
-  public static async fetchSuggestions(query: string): Promise<string[]> {
+  public static async fetchSuggestions(
+    query: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<string[]> {
     const trimmed = query.trim()
     if (!trimmed) return []
 
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const key = `suggestions:${trimmed.toLowerCase()}:${region}`
@@ -217,71 +313,122 @@ export class InnerTubeClient {
       key,
       'suggestions',
       async () => {
-        return await apiFetch<string[]>(
-          `/api/innertube/suggestions?q=${encodeURIComponent(trimmed)}&gl=${encodeURIComponent(region)}`,
-        )
+        try {
+          const fetchInit: RequestInit = {}
+          if (options?.signal) fetchInit.signal = options.signal
+          const res = await apiFetch<string[]>(
+            `/api/innertube/suggestions?q=${encodeURIComponent(trimmed)}&gl=${encodeURIComponent(region)}`,
+            fetchInit,
+          )
+          clientMetrics.successfulRequests++
+          return res
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
+        }
       },
       10 * 60 * 1000,
     )
   }
 
-  public static async fetchAlbum(browseId: string): Promise<{ album: Album; tracks: Track[] }> {
+  public static async fetchAlbum(
+    browseId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ album: Album; tracks: Track[] }> {
+    const validation = browseIdSchema.safeParse(browseId)
+    if (!validation.success) {
+      throw new Error(`Invalid browseId: '${browseId}'`)
+    }
+    const validBrowseId = validation.data
+
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
-    const key = `album:${browseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
+    const key = `album:${validBrowseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
 
     return await fetchWithCache(
       key,
       'album',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({ browseId, context }),
-        })
-        const result = parseAlbumDetails(data)
-        if (!showExplicit) {
-          result.tracks = result.tracks.filter((t) => !t.explicit)
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({ browseId: validBrowseId, context }),
+          }
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const result = parseAlbumDetails(data)
+          if (!showExplicit) {
+            result.tracks = result.tracks.filter((t) => !t.explicit)
+          }
+          if (result.tracks.length > 0) {
+            cacheTracks(result.tracks)
+          }
+          clientMetrics.successfulRequests++
+          return result
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        if (result.tracks.length > 0) {
-          cacheTracks(result.tracks)
-        }
-        return result
       },
       24 * 60 * 60 * 1000, // 24 hours
     )
   }
 
-  public static async fetchArtist(browseId: string): Promise<{
+  public static async fetchArtist(
+    browseId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{
     artist: Artist
     topTracks: Track[]
     albums: Album[]
     singles: Album[]
     relatedArtists: Artist[]
   }> {
+    const validation = browseIdSchema.safeParse(browseId)
+    if (!validation.success) {
+      throw new Error(`Invalid browseId: '${browseId}'`)
+    }
+    const validBrowseId = validation.data
+
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
-    const key = `artist:${browseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
+    const key = `artist:${validBrowseId}:${region}:${showExplicit ? 'exp' : 'clean'}`
 
     return await fetchWithCache(
       key,
       'artist',
       async () => {
-        const context = InnerTubeClient.getClientContext()
-        const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', {
-          method: 'POST',
-          body: JSON.stringify({ browseId, context }),
-        })
-        const result = parseArtistDetails(data)
-        if (!showExplicit) {
-          result.topTracks = result.topTracks.filter((t) => !t.explicit)
+        try {
+          const context = InnerTubeClient.getClientContext()
+          const fetchInit: RequestInit = {
+            method: 'POST',
+            body: JSON.stringify({ browseId: validBrowseId, context }),
+          }
+          if (options?.signal) fetchInit.signal = options.signal
+
+          const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
+          const result = parseArtistDetails(data)
+          if (!showExplicit) {
+            result.topTracks = result.topTracks.filter((t) => !t.explicit)
+          }
+          if (result.topTracks.length > 0) {
+            cacheTracks(result.topTracks)
+          }
+          clientMetrics.successfulRequests++
+          return result
+        } catch (err) {
+          clientMetrics.failedRequests++
+          clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+          throw err
         }
-        if (result.topTracks.length > 0) {
-          cacheTracks(result.topTracks)
-        }
-        return result
       },
       24 * 60 * 60 * 1000, // 24 hours
     )
@@ -312,7 +459,9 @@ export class InnerTubeClient {
   public static async fetchRadioNext(
     videoId?: string,
     continuation?: string,
+    options?: { signal?: AbortSignal },
   ): Promise<{ tracks: Track[]; continuationToken?: string }> {
+    clientMetrics.totalRequests++
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
@@ -322,8 +471,21 @@ export class InnerTubeClient {
     queryParams.set('gl', region)
     queryParams.set('explicit', String(showExplicit))
 
-    return await apiFetch<{ tracks: Track[]; continuationToken?: string }>(
-      `/api/radio/continuation?${queryParams.toString()}`,
-    )
+    const fetchInit: RequestInit = {}
+    if (options?.signal) fetchInit.signal = options.signal
+
+    try {
+      const res = await apiFetch<{ tracks: Track[]; continuationToken?: string }>(
+        `/api/radio/continuation?${queryParams.toString()}`,
+        fetchInit,
+      )
+      clientMetrics.successfulRequests++
+      return res
+    } catch (err) {
+      clientMetrics.failedRequests++
+      clientMetrics.lastError = err instanceof Error ? err.message : String(err)
+      throw err
+    }
   }
 }
+

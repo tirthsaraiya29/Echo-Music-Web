@@ -1,8 +1,50 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import { getInnerTubeHeaders } from '../utils/headers.ts'
 import { buildClientContext, fetchVisitorData, type ClientContextType } from '../utils/potoken.ts'
 
 export const innertubeRouter = new Hono()
+
+export const browseRequestSchema = z.object({
+  browseId: z.string().min(1, 'browseId is required'),
+  context: z.record(z.string(), z.unknown()).optional(),
+  formData: z.record(z.string(), z.unknown()).optional(),
+  params: z.string().optional(),
+})
+
+export const searchRequestSchema = z.object({
+  query: z.string().min(1, 'query is required'),
+  params: z.string().optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
+})
+
+export interface InnerTubeRouterMetrics {
+  browseRequests: number
+  searchRequests: number
+  clientRotations: number
+  upstreamFailures: number
+  lastError: string | null
+}
+
+const routerMetrics: InnerTubeRouterMetrics = {
+  browseRequests: 0,
+  searchRequests: 0,
+  clientRotations: 0,
+  upstreamFailures: 0,
+  lastError: null,
+}
+
+export function getInnerTubeRouterMetrics(): InnerTubeRouterMetrics {
+  return { ...routerMetrics }
+}
+
+export function resetInnerTubeRouterMetrics(): void {
+  routerMetrics.browseRequests = 0
+  routerMetrics.searchRequests = 0
+  routerMetrics.clientRotations = 0
+  routerMetrics.upstreamFailures = 0
+  routerMetrics.lastError = null
+}
 
 const CLIENT_ROTATION_LIST: ClientContextType[] = ['ANDROID_MUSIC', 'IOS', 'WEB_REMIX']
 
@@ -79,13 +121,24 @@ export async function forwardInnerTubeRequest(
   throw new Error(`InnerTube request to ${endpoint} failed across all rotated client definitions`)
 }
 
+// Telemetry endpoint
+innertubeRouter.get('/telemetry', (c) => {
+  return c.json(getInnerTubeRouterMetrics())
+})
+
 // 1. POST /api/innertube/browse
 innertubeRouter.post('/browse', async (c) => {
-  let bodyData: Record<string, unknown> = {}
+  routerMetrics.browseRequests++
+  let bodyData: unknown = {}
   try {
-    bodyData = (await c.req.json()) as Record<string, unknown>
+    bodyData = await c.req.json()
   } catch {
-    bodyData = {}
+    return c.json({ error: 'Invalid JSON request body' }, 400)
+  }
+
+  const parsed = browseRequestSchema.safeParse(bodyData)
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || 'Invalid browse request' }, 400)
   }
 
   const visitorHeader = c.req.header('x-youtube-visitor-data')
@@ -93,13 +146,15 @@ innertubeRouter.post('/browse', async (c) => {
   try {
     const upstreamRes = await forwardInnerTubeRequest(
       'browse',
-      bodyData,
+      parsed.data as Record<string, unknown>,
       'WEB_REMIX',
       visitorHeader,
     )
     const data = (await upstreamRes.json()) as Record<string, unknown>
     return c.json(data, upstreamRes.status as 200)
   } catch (err: unknown) {
+    routerMetrics.upstreamFailures++
+    routerMetrics.lastError = err instanceof Error ? err.message : String(err)
     return c.json(
       {
         error: 'Upstream InnerTube browse error',
@@ -112,11 +167,17 @@ innertubeRouter.post('/browse', async (c) => {
 
 // 2. POST /api/innertube/search
 innertubeRouter.post('/search', async (c) => {
-  let bodyData: Record<string, unknown> = {}
+  routerMetrics.searchRequests++
+  let bodyData: unknown = {}
   try {
-    bodyData = (await c.req.json()) as Record<string, unknown>
+    bodyData = await c.req.json()
   } catch {
-    bodyData = {}
+    return c.json({ error: 'Invalid JSON request body' }, 400)
+  }
+
+  const parsed = searchRequestSchema.safeParse(bodyData)
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.issues[0]?.message || 'Invalid search request' }, 400)
   }
 
   const visitorHeader = c.req.header('x-youtube-visitor-data')
@@ -124,13 +185,15 @@ innertubeRouter.post('/search', async (c) => {
   try {
     const upstreamRes = await forwardInnerTubeRequest(
       'search',
-      bodyData,
+      parsed.data as Record<string, unknown>,
       'WEB_REMIX',
       visitorHeader,
     )
     const data = (await upstreamRes.json()) as Record<string, unknown>
     return c.json(data, upstreamRes.status as 200)
   } catch (err: unknown) {
+    routerMetrics.upstreamFailures++
+    routerMetrics.lastError = err instanceof Error ? err.message : String(err)
     return c.json(
       {
         error: 'Upstream InnerTube search error',
