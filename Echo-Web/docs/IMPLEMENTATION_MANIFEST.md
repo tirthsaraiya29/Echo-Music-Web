@@ -42,7 +42,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-28 | P2 | Local metadata parser does not implement its ID3v1 claim | `src/services/local/localMusicScanner.ts` | Completed | a04860e4 | Yes (verified on origin/main) |
 | BUG-29 | P2 | Audio output selection ignores failure | `src/components/player/AudioOutputPicker.tsx` | Completed | 7f5c8a90 | Yes (verified on origin/main) |
 | BUG-30 | P2 | First Cast click can silently fail | `src/services/cast/castService.ts, src/components/player/AudioOutputPicker.tsx` | Completed | 0e6be1d5 | Yes (verified on origin/main) |
-| BUG-31 | P2 | The room code UI length conflicts with generated codes | `src/components/modals/ListenTogetherModal.tsx, server/routes/listenTogether.ts` | Pending | - | - |
+| BUG-31 | P2 | The room code UI length conflicts with generated codes | `src/components/modals/ListenTogetherModal.tsx, server/routes/listenTogether.ts` | Completed | a275b8d3 | Yes (verified on origin/main) |
 | BUG-32 | P2 | Room code entropy is lower than the alphabet suggests | `server/routes/listenTogether.ts` | Pending | - | - |
 | BUG-33 | P2 | Room rate limiting trusts forwarded IP input | `server/routes/listenTogether.ts` | Pending | - | - |
 | BUG-34 | P2 | Room resource limits are incomplete | `server/routes/listenTogether.ts` | Pending | - | - |
