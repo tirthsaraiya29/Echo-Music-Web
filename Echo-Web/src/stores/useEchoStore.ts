@@ -12,14 +12,63 @@ import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
 import { db } from '../services/db/echoDatabase.ts'
 
-const playlistSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1, 'Give your playlist a name.')
-    .max(60, 'Playlist names can be up to 60 characters.'),
-  description: z.string().trim().max(240, 'Descriptions can be up to 240 characters.'),
+export const playlistTitleSchema = z
+  .string()
+  .trim()
+  .min(1, 'Give your playlist a name.')
+  .max(60, 'Playlist names can be up to 60 characters.')
+
+export const playlistDescriptionSchema = z
+  .string()
+  .trim()
+  .max(240, 'Descriptions can be up to 240 characters.')
+  .default('')
+
+export const playlistInputSchema = z.object({
+  title: playlistTitleSchema,
+  description: playlistDescriptionSchema,
 })
+
+export const playlistIdSchema = z.string().trim().min(1)
+export const playlistCoverSchema = z.string().trim().max(2048)
+
+export const playlistMetricsSchema = z.object({
+  createdCount: z.number().nonnegative(),
+  updatedCount: z.number().nonnegative(),
+  deletedCount: z.number().nonnegative(),
+  tracksAddedCount: z.number().nonnegative(),
+  tracksRemovedCount: z.number().nonnegative(),
+  tracksReorderedCount: z.number().nonnegative(),
+  coversUpdatedCount: z.number().nonnegative(),
+})
+
+export type PlaylistMetrics = z.infer<typeof playlistMetricsSchema>
+
+const playlistMetrics: PlaylistMetrics = {
+  createdCount: 0,
+  updatedCount: 0,
+  deletedCount: 0,
+  tracksAddedCount: 0,
+  tracksRemovedCount: 0,
+  tracksReorderedCount: 0,
+  coversUpdatedCount: 0,
+}
+
+export function getPlaylistMetrics(): PlaylistMetrics {
+  return { ...playlistMetrics }
+}
+
+export function resetPlaylistMetrics(): void {
+  playlistMetrics.createdCount = 0
+  playlistMetrics.updatedCount = 0
+  playlistMetrics.deletedCount = 0
+  playlistMetrics.tracksAddedCount = 0
+  playlistMetrics.tracksRemovedCount = 0
+  playlistMetrics.tracksReorderedCount = 0
+  playlistMetrics.coversUpdatedCount = 0
+}
+
+const playlistSchema = playlistInputSchema
 
 const defaultPreferences: UserPreferences = {
   themeMode: 'dark',
@@ -209,22 +258,28 @@ export const useEchoStore = create<EchoState>()(
           curated: false,
           createdAt: Date.now(),
         }
+        playlistMetrics.createdCount++
         set((state) => ({ playlists: [playlist, ...state.playlists] }))
-        db.playlists
-          .put({
-            id,
-            title: playlist.title,
-            description: playlist.description,
-            trackIds: [],
-            createdAt: playlist.createdAt,
-            updatedAt: playlist.createdAt,
-          })
-          .catch(() => {})
+        if (typeof indexedDB !== 'undefined') {
+          db.playlists
+            .put({
+              id,
+              title: playlist.title,
+              description: playlist.description,
+              trackIds: [],
+              createdAt: playlist.createdAt,
+              updatedAt: playlist.createdAt,
+            })
+            .catch(() => {})
+        }
         return id
       },
 
       updatePlaylist: (id, title, description) => {
+        const idParsed = playlistIdSchema.safeParse(id)
+        if (!idParsed.success) return
         const valid = parsePlaylistInput(title, description)
+        playlistMetrics.updatedCount++
         set((state) => ({
           playlists: state.playlists.map((playlist) =>
             playlist.id === id
@@ -232,21 +287,28 @@ export const useEchoStore = create<EchoState>()(
               : playlist,
           ),
         }))
-        db.playlists
-          .update(id, {
-            title: valid.title,
-            description: valid.description,
-            updatedAt: Date.now(),
-          })
-          .catch(() => {})
+        if (typeof indexedDB !== 'undefined') {
+          db.playlists
+            .update(id, {
+              title: valid.title,
+              description: valid.description,
+              updatedAt: Date.now(),
+            })
+            .catch(() => {})
+        }
       },
 
       deletePlaylist: (id) => {
+        const idParsed = playlistIdSchema.safeParse(id)
+        if (!idParsed.success) return
+        playlistMetrics.deletedCount++
         set((state) => ({
           playlists: state.playlists.filter((playlist) => playlist.id !== id),
           savedPlaylistIds: state.savedPlaylistIds.filter((savedId) => savedId !== id),
         }))
-        db.playlists.delete(id).catch(() => {})
+        if (typeof indexedDB !== 'undefined') {
+          db.playlists.delete(id).catch(() => {})
+        }
       },
 
       togglePlaylistLike: (id) =>
@@ -257,7 +319,13 @@ export const useEchoStore = create<EchoState>()(
         })),
 
       addTrackToPlaylist: (playlistId, trackOrId) => {
-        const trackId = typeof trackOrId === 'string' ? trackOrId : trackOrId.id
+        const idParsed = playlistIdSchema.safeParse(playlistId)
+        if (!idParsed.success) return
+        const validPlaylistId = idParsed.data
+
+        const trackId = typeof trackOrId === 'string' ? trackOrId : trackOrId?.id
+        if (!trackId || typeof trackId !== 'string') return
+
         const track =
           typeof trackOrId === 'object'
             ? trackOrId
@@ -267,8 +335,13 @@ export const useEchoStore = create<EchoState>()(
           get().cacheTrack(track)
         }
         set((state) => {
+          const currentPlaylist = state.playlists.find((p) => p.id === validPlaylistId)
+          if (!currentPlaylist || currentPlaylist.trackIds.includes(trackId)) {
+            return state
+          }
+          playlistMetrics.tracksAddedCount++
           const updatedPlaylists = state.playlists.map((playlist) =>
-            playlist.id === playlistId && !playlist.trackIds.includes(trackId)
+            playlist.id === validPlaylistId
               ? {
                   ...playlist,
                   trackIds: [...playlist.trackIds, trackId],
@@ -278,10 +351,10 @@ export const useEchoStore = create<EchoState>()(
                 }
               : playlist,
           )
-          const target = updatedPlaylists.find((p) => p.id === playlistId)
-          if (target) {
+          const target = updatedPlaylists.find((p) => p.id === validPlaylistId)
+          if (target && typeof indexedDB !== 'undefined') {
             db.playlists
-              .update(playlistId, {
+              .update(validPlaylistId, {
                 trackIds: target.trackIds,
                 coverUrl: target.image || undefined,
                 updatedAt: Date.now(),
@@ -292,62 +365,89 @@ export const useEchoStore = create<EchoState>()(
         })
       },
 
-      removeTrackFromPlaylist: (playlistId, trackId) =>
+      removeTrackFromPlaylist: (playlistId, trackId) => {
+        const idParsed = playlistIdSchema.safeParse(playlistId)
+        if (!idParsed.success) return
+        const validPlaylistId = idParsed.data
+
         set((state) => {
+          const currentPlaylist = state.playlists.find((p) => p.id === validPlaylistId)
+          if (!currentPlaylist || !currentPlaylist.trackIds.includes(trackId)) {
+            return state
+          }
+          playlistMetrics.tracksRemovedCount++
           const updatedPlaylists = state.playlists.map((playlist) =>
-            playlist.id === playlistId
+            playlist.id === validPlaylistId
               ? { ...playlist, trackIds: playlist.trackIds.filter((id) => id !== trackId) }
               : playlist,
           )
-          const target = updatedPlaylists.find((p) => p.id === playlistId)
-          if (target) {
+          const target = updatedPlaylists.find((p) => p.id === validPlaylistId)
+          if (target && typeof indexedDB !== 'undefined') {
             db.playlists
-              .update(playlistId, {
+              .update(validPlaylistId, {
                 trackIds: target.trackIds,
                 updatedAt: Date.now(),
               })
               .catch(() => {})
           }
           return { playlists: updatedPlaylists }
-        }),
+        })
+      },
 
-      reorderPlaylistTrack: (playlistId, from, to) =>
+      reorderPlaylistTrack: (playlistId, from, to) => {
+        if (from === to) return
+        const idParsed = playlistIdSchema.safeParse(playlistId)
+        if (!idParsed.success) return
+        const validPlaylistId = idParsed.data
+
         set((state) => {
-          const updatedPlaylists = state.playlists.map((playlist) => {
-            if (playlist.id !== playlistId) return playlist
-            const trackIds = [...playlist.trackIds]
-            if (from < 0 || to < 0 || from >= trackIds.length || to >= trackIds.length)
-              return playlist
-            const [moved] = trackIds.splice(from, 1)
-            if (!moved) return playlist
-            trackIds.splice(to, 0, moved)
-            return { ...playlist, trackIds }
-          })
-          const target = updatedPlaylists.find((p) => p.id === playlistId)
-          if (target) {
+          const currentPlaylist = state.playlists.find((p) => p.id === validPlaylistId)
+          if (!currentPlaylist) return state
+          const trackIds = [...currentPlaylist.trackIds]
+          if (from < 0 || to < 0 || from >= trackIds.length || to >= trackIds.length) {
+            return state
+          }
+          const [moved] = trackIds.splice(from, 1)
+          if (!moved) return state
+          trackIds.splice(to, 0, moved)
+          playlistMetrics.tracksReorderedCount++
+
+          const updatedPlaylists = state.playlists.map((playlist) =>
+            playlist.id === validPlaylistId ? { ...playlist, trackIds } : playlist,
+          )
+          if (typeof indexedDB !== 'undefined') {
             db.playlists
-              .update(playlistId, {
-                trackIds: target.trackIds,
+              .update(validPlaylistId, {
+                trackIds,
                 updatedAt: Date.now(),
               })
               .catch(() => {})
           }
           return { playlists: updatedPlaylists }
-        }),
+        })
+      },
 
-      setPlaylistCover: (playlistId, coverUrl) =>
+      setPlaylistCover: (playlistId, coverUrl) => {
+        const idParsed = playlistIdSchema.safeParse(playlistId)
+        if (!idParsed.success) return
+        const validPlaylistId = idParsed.data
+        const validCover = typeof coverUrl === 'string' ? coverUrl.trim() : ''
+        playlistMetrics.coversUpdatedCount++
         set((state) => {
           const updatedPlaylists = state.playlists.map((playlist) =>
-            playlist.id === playlistId ? { ...playlist, image: coverUrl ?? '' } : playlist,
+            playlist.id === validPlaylistId ? { ...playlist, image: validCover } : playlist,
           )
-          db.playlists
-            .update(playlistId, {
-              coverUrl: coverUrl ?? undefined,
-              updatedAt: Date.now(),
-            })
-            .catch(() => {})
+          if (typeof indexedDB !== 'undefined') {
+            db.playlists
+              .update(validPlaylistId, {
+                coverUrl: validCover || undefined,
+                updatedAt: Date.now(),
+              })
+              .catch(() => {})
+          }
           return { playlists: updatedPlaylists }
-        }),
+        })
+      },
 
       playTrack: (trackOrId) => {
         let track: Track | undefined

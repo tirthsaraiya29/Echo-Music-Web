@@ -518,7 +518,20 @@ export function PlaylistPage() {
             {playlistTracks.length} songs · {formatDurationLong(totalDuration)}
           </span>
         </div>
-        <TrackList items={playlistTracks} />
+        {playlistTracks.length === 0 ? (
+          <div
+            className="empty-state"
+            role="status"
+            aria-label="No tracks in playlist"
+            style={{ padding: '48px 16px', textAlign: 'center', opacity: 0.7 }}
+          >
+            <Disc3 size={36} style={{ margin: '0 auto 12px auto' }} />
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '6px' }}>Empty playlist</h3>
+            <p style={{ fontSize: '0.9rem' }}>This playlist currently contains no tracks.</p>
+          </div>
+        ) : (
+          <TrackList items={playlistTracks} />
+        )}
       </div>
     )
   }
