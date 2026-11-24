@@ -178,7 +178,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-056 | AI translation chunking | Completed | 0a4d71e0 | Yes |
 | FEATURE-057 | Translation provider testing | Completed | 082c25d6 | Yes |
 | FEATURE-058 | Lyrics export with metadata | Completed | 55b3b5cb | Yes |
-| FEATURE-059 | Lyrics download | Pending | - | - |
+| FEATURE-059 | Lyrics download | Completed | 40964af0 | Standardized local lyrics file export & download (.lrc, .ttml, .json, .txt), filename sanitization, Blob trigger, and metrics |
 | FEATURE-060 | Lyrics sync profiles | Pending | - | - |
 | FEATURE-061 | Default Echo Find provider | Pending | - | - |
 | FEATURE-062 | Recognition history | Pending | - | - |
