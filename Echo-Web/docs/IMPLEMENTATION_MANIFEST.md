@@ -127,7 +127,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-005 | Extension fallback chain | Completed | 2ae064c7 | Yes (verified on origin/main) |
 | FEATURE-006 | Extension matching confidence | Completed | c5f0033e | Yes (verified on origin/main) |
 | FEATURE-007 | Extension preloading | Completed | 2a321ee9 | Yes (verified on origin/main) |
-| FEATURE-008 | Extension health dashboard | Pending | - | - |
+| FEATURE-008 | Extension health dashboard | Completed | 1a54d5c9 | Yes (verified on origin/main) |
 | FEATURE-009 | Network-aware quality tiers | Pending | - | - |
 | FEATURE-010 | Verified stream telemetry | Pending | - | - |
 | FEATURE-011 | Correct crossfade promotion | Pending | - | - |
