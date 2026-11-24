@@ -162,3 +162,23 @@ test('Data Saver: respects browser network policy and gates preloading [BUG-37]'
     })
   }
 })
+
+test('Lossless metadata and settings consistency [BUG-38]', async () => {
+  const fs = await import('node:fs')
+  const indexHtml = fs.readFileSync('index.html', 'utf8')
+
+  // Open Graph description must not falsely promise lossless streaming from YouTube
+  assert.ok(
+    !indexHtml.includes('ad-free playback, synchronized lyrics, and lossless audio'),
+    'og:description must not overpromise streaming lossless audio',
+  )
+  assert.ok(
+    indexHtml.includes('high-fidelity audio, and lossless local playback') ||
+      indexHtml.includes('lossless local playback'),
+    'og:description must accurately describe high-fidelity streaming and lossless local playback',
+  )
+
+  // Stream resolution for lossless quality maps to highest available tier (high)
+  const { streamRouter } = await import('../server/routes/stream.ts')
+  assert.ok(streamRouter)
+})

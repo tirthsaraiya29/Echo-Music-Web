@@ -52,11 +52,11 @@ const accents: { value: AccentColor; label: string; color: string }[] = [
 const qualityOptions: { value: AudioQuality; label: string; description: string }[] = [
   { value: 'low', label: 'Low', description: 'Smallest data footprint (AAC ~128 kbps)' },
   { value: 'medium', label: 'Standard', description: 'Balanced Opus quality (~100 kbps)' },
-  { value: 'high', label: 'High', description: 'Highest available stream quality (~160 kbps)' },
+  { value: 'high', label: 'High', description: 'Highest available YouTube stream quality (Opus ~160 kbps)' },
   {
     value: 'lossless',
     label: 'Lossless',
-    description: 'Same as High for YouTube sources (lossless streams are not available)',
+    description: 'Bit-perfect playback for local and extension FLAC/WAV files (YouTube streams map to High ~160 kbps)',
   },
 ]
 

@@ -152,7 +152,9 @@ function selectBestAudioFormat(
   formats: readonly VideoFormat[],
   quality: StreamQuality = 'high',
 ): VideoFormat {
-  // YouTube serves at most ~160kbps opus (ITAG 251); 'lossless' maps to the highest tier.
+  // YouTube audio delivery maxes out at ~160kbps Opus (ITAG 251) or ~128kbps AAC (ITAG 140).
+  // Lossless formats (FLAC/WAV) are supported for local media and extension providers;
+  // for YouTube stream resolution, 'lossless' maps to the highest available Opus tier (ITAG 251).
   // ITAGs: 140 = AAC ~128kbps, 250 = opus ~70-100kbps, 251 = opus ~160kbps.
   const itagByQuality: Record<StreamQuality, number> = {
     low: 140,
