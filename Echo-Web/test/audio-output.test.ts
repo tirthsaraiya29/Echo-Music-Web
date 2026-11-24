@@ -226,3 +226,28 @@ test('DeckController: Dual-deck crossfade invariants, input validation, and canc
   deck.cancelCrossfade()
   assert.strictEqual(deck.getMetrics().crossfadesCancelled, 0)
 })
+
+test('AudioEngine: state versioning, event metrics, and lifecycle cleanup [SMALL-04]', () => {
+  const engine = AudioEngine.getInstance()
+  const initialVersion = engine.getState().stateVersion ?? 0
+
+  let observedVersion = 0
+  const unsubscribe = engine.subscribe((state) => {
+    observedVersion = state.stateVersion ?? 0
+  })
+
+  // Trigger state mutation
+  engine.setVolume(0.72)
+  assert.ok(observedVersion > initialVersion, 'State version increments on state mutation')
+
+  const metrics = engine.getMetrics()
+  assert.ok(metrics.stateEmissionsCount > 0)
+
+  // Verify state fields
+  const state = engine.getState()
+  assert.strictEqual(typeof state.isLoading, 'boolean')
+  assert.strictEqual(typeof state.hasError, 'boolean')
+
+  // Cleanup subscriber
+  unsubscribe()
+})

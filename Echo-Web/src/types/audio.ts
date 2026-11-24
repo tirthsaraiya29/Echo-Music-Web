@@ -90,6 +90,10 @@ export interface AudioEngineState {
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean
   audioSinkId?: string | undefined
+  isLoading?: boolean
+  hasError?: boolean
+  lastErrorMessage?: string | null
+  stateVersion?: number
 }
 
 export type AudioEngineEventMap = {

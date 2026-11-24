@@ -40,6 +40,14 @@ export function isDataSaverActive(): boolean {
   return false
 }
 
+export interface AudioEngineMetrics {
+  stateEmissionsCount: number
+  eventsEmittedCount: number
+  tracksLoadedCount: number
+  errorsCaughtCount: number
+  lastTransitionDurationMs: number
+}
+
 export class AudioEngine {
   private static instance: AudioEngine | null = null
 
@@ -55,6 +63,16 @@ export class AudioEngine {
   private volumeLevel = 0.8
   private isMuted = false
   private autoRadioEnabled = true
+
+  private stateVersion = 0
+  private lastErrorMessage: string | null = null
+  private metrics: AudioEngineMetrics = {
+    stateEmissionsCount: 0,
+    eventsEmittedCount: 0,
+    tracksLoadedCount: 0,
+    errorsCaughtCount: 0,
+    lastTransitionDurationMs: 0,
+  }
 
   // LRU-bounded stream URL cache and registry of created blob object URLs, which are revoked
   // when evicted so IndexedDB blobs are not pinned in memory.
@@ -136,6 +154,10 @@ export class AudioEngine {
     return AudioEngine.instance
   }
 
+  public getMetrics(): Readonly<AudioEngineMetrics> {
+    return { ...this.metrics }
+  }
+
   public getState(): AudioEngineState {
     const detailed = this.queueManager.getDetailedQueue()
     return {
@@ -162,6 +184,10 @@ export class AudioEngine {
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
       audioSinkId: this.deckController.getAudioSink(),
+      isLoading: this.deckController.state === 'BUFFERING' || this.isFetchingRadioContinuation,
+      hasError: this.deckController.state === 'ERROR' || this.consecutiveErrorCount > 0,
+      lastErrorMessage: this.lastErrorMessage,
+      stateVersion: this.stateVersion,
     }
   }
 
@@ -593,6 +619,11 @@ export class AudioEngine {
   }
 
   public destroy(): void {
+    if (this.sleepTimerInterval !== null) {
+      window.clearInterval(this.sleepTimerInterval)
+      this.sleepTimerInterval = null
+    }
+
     if (this.userInteractionCleanup) {
       this.userInteractionCleanup()
       this.userInteractionCleanup = null
@@ -604,6 +635,11 @@ export class AudioEngine {
     this.graph.destroy()
     this.listeners.clear()
     this.eventHandlers.clear()
+    for (const url of this.objectUrls) {
+      URL.revokeObjectURL(url)
+    }
+    this.objectUrls.clear()
+    this.streamCache.clear()
     AudioEngine.instance = null
   }
 
@@ -793,6 +829,8 @@ export class AudioEngine {
     }
 
     this.deckController.onError = (error) => {
+      this.lastErrorMessage = error.message
+      this.metrics.errorsCaughtCount++
       const current = this.queueManager.currentTrack
       if (current) {
         this.streamCache.delete(current.id)
@@ -936,6 +974,8 @@ export class AudioEngine {
       }
     }
 
+    this.lastErrorMessage = null
+    this.metrics.tracksLoadedCount++
     this.emitState()
   }
 
@@ -1154,6 +1194,7 @@ export class AudioEngine {
     event: K,
     ...args: Parameters<AudioEngineEventMap[K]>
   ): void {
+    this.metrics.eventsEmittedCount++
     const handlers = this.eventHandlers.get(event)
     if (handlers) {
       for (const handler of handlers) {
@@ -1163,6 +1204,8 @@ export class AudioEngine {
   }
 
   private emitState(): void {
+    this.stateVersion++
+    this.metrics.stateEmissionsCount++
     const state = this.getState()
     for (const listener of this.listeners) {
       listener(state)
