@@ -819,6 +819,14 @@ export function SettingsPage() {
             />
 
             <PreferenceToggle
+              label="Bluetooth reconnect resume"
+              description="Automatically resumes playback when a previously disconnected Bluetooth or external audio device reconnects."
+              preference="bluetoothResumeEnabled"
+              value={preferences.bluetoothResumeEnabled ?? false}
+              onChange={save}
+            />
+
+            <PreferenceToggle
               label="Echo Brain momentum queue"
               description="Dynamically adapts upcoming radio recommendations based on listening momentum, rapid skips, and session likes."
               preference="echoBrainEnabled"

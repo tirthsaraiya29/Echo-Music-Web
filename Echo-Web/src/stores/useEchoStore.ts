@@ -97,6 +97,7 @@ const defaultPreferences: UserPreferences = {
   echoBrainEnabled: true,
   varispeedEnabled: false,
   pauseOnMute: false,
+  bluetoothResumeEnabled: false,
   preferredLyricsProvider: 'LRCLIB',
   dataSaver: false,
   discordRpc: false,

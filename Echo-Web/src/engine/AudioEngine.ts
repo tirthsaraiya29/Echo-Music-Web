@@ -33,6 +33,10 @@ import { radioContinuationService } from '../services/radio/radioContinuationSer
 import { echoBrainService } from '../services/recommendations/echoBrainService.ts'
 import type { EchoBrainTelemetry } from '../services/recommendations/echoBrainTypes.ts'
 import {
+  bluetoothReconnectService,
+  type BluetoothReconnectTelemetry,
+} from '../services/audio/bluetoothReconnectService.ts'
+import {
   isDataSaverActive,
   isMeteredConnection,
   getEffectiveAudioQuality,
@@ -119,6 +123,7 @@ export class AudioEngine {
     this.deckController.setCrossfadeProfile(useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower')
     this.deckController.setVarispeed(useEchoStore.getState().preferences.varispeedEnabled ?? false)
     this.pauseOnMute = useEchoStore.getState().preferences.pauseOnMute ?? false
+    bluetoothReconnectService.init()
 
     this.queueManager = new QueueManager()
 
@@ -197,6 +202,8 @@ export class AudioEngine {
       varispeedEnabled: this.deckController.getVarispeed(),
       pitchShiftSemitones: this.deckController.getPitchShiftSemitones(),
       pauseOnMute: this.pauseOnMute,
+      bluetoothResumeEnabled: useEchoStore.getState().preferences.bluetoothResumeEnabled ?? false,
+      bluetoothTelemetry: bluetoothReconnectService.getTelemetry(),
       continuationState: this.queueManager.getContinuationState(),
       radioContinuationState: radioContinuationService.getState(),
       echoBrainTelemetry: echoBrainService.getTelemetry(),
@@ -516,6 +523,15 @@ export class AudioEngine {
     return this.pauseOnMute
   }
 
+  public getBluetoothTelemetry(): BluetoothReconnectTelemetry {
+    return bluetoothReconnectService.getTelemetry()
+  }
+
+  public resetBluetoothTelemetry(): void {
+    bluetoothReconnectService.resetTelemetry()
+    this.emitState()
+  }
+
   public setVolumeNormalization(enabled: boolean): void {
     this.graph.setVolumeNormalization(enabled)
     this.emitState()
@@ -623,6 +639,7 @@ export class AudioEngine {
     const cleanSinkId = sinkId.trim()
     const success = await this.deckController.setAudioSink(cleanSinkId)
     if (success) {
+      bluetoothReconnectService.notifyActiveSink(cleanSinkId)
       if (typeof localStorage !== 'undefined') {
         try {
           localStorage.setItem('echo_audio_output_device_id', cleanSinkId)
@@ -893,6 +910,7 @@ export class AudioEngine {
     }
     this.objectUrls.clear()
     this.streamCache.clear()
+    bluetoothReconnectService.destroy()
     AudioEngine.instance = null
   }
 
@@ -928,6 +946,7 @@ export class AudioEngine {
     })
 
     this.deckController.onPlaybackStateChange = (state: PlaybackState) => {
+      bluetoothReconnectService.notifyPlaybackState(state)
       this.emit('playbackStateChange', state)
       if (state === 'PLAYING') {
         this.mediaSession.updatePlaybackState('playing')

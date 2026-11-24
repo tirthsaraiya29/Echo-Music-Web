@@ -37,6 +37,7 @@ export const userPreferencesSchema = z.object({
   echoBrainEnabled: z.boolean().optional().default(true),
   varispeedEnabled: z.boolean().optional().default(false),
   pauseOnMute: z.boolean().optional().default(false),
+  bluetoothResumeEnabled: z.boolean().optional().default(false),
   preferredLyricsProvider: lyricsProviderSchema.optional().default('LRCLIB'),
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),

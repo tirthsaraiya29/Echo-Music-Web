@@ -139,6 +139,7 @@ export interface UserPreferences {
   echoBrainEnabled?: boolean | undefined
   varispeedEnabled?: boolean | undefined
   pauseOnMute?: boolean | undefined
+  bluetoothResumeEnabled?: boolean | undefined
   preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | undefined
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined

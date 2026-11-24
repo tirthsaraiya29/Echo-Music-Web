@@ -100,6 +100,18 @@ export interface EqualizerPreset {
   gains: number[]
 }
 
+export const bluetoothReconnectTelemetrySchema = z.object({
+  deviceChangeEvents: z.number().int().nonnegative(),
+  devicesConnectedCount: z.number().int().nonnegative(),
+  devicesDisconnectedCount: z.number().int().nonnegative(),
+  resumesTriggered: z.number().int().nonnegative(),
+  resumesFailed: z.number().int().nonnegative(),
+  lastReconnectedDevice: z.string().nullable(),
+  lastEventTimestamp: z.number().nullable(),
+})
+
+export type BluetoothReconnectTelemetry = z.infer<typeof bluetoothReconnectTelemetrySchema>
+
 export interface AudioEngineConfig {
   crossfadeDuration: number
   prebufferWindowMs: number
@@ -135,6 +147,8 @@ export interface AudioEngineState {
   varispeedEnabled?: boolean | undefined
   pitchShiftSemitones?: number | undefined
   pauseOnMute?: boolean | undefined
+  bluetoothResumeEnabled?: boolean | undefined
+  bluetoothTelemetry?: BluetoothReconnectTelemetry | undefined
   continuationState?: ContinuationPagingState | undefined
   radioContinuationState?: RadioContinuationState | undefined
   echoBrainTelemetry?: import('../services/recommendations/echoBrainTypes.ts').EchoBrainTelemetry | undefined

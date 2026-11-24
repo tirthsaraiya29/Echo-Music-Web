@@ -87,6 +87,8 @@ export const audioEngineActions = {
   getPitchShiftSemitones: () => AudioEngine.getInstance().getPitchShiftSemitones(),
   setPauseOnMute: (enabled: boolean) => AudioEngine.getInstance().setPauseOnMute(enabled),
   getPauseOnMute: () => AudioEngine.getInstance().getPauseOnMute(),
+  getBluetoothTelemetry: () => AudioEngine.getInstance().getBluetoothTelemetry(),
+  resetBluetoothTelemetry: () => AudioEngine.getInstance().resetBluetoothTelemetry(),
   setCrossfadeProfile: (profile: CrossfadeProfile) =>
     AudioEngine.getInstance().setCrossfadeProfile(profile),
   getContinuationState: () => AudioEngine.getInstance().getContinuationState(),
@@ -139,6 +141,8 @@ export function useAudioEngine() {
     varispeedEnabled: state.varispeedEnabled ?? false,
     pitchShiftSemitones: state.pitchShiftSemitones ?? 0,
     pauseOnMute: state.pauseOnMute ?? false,
+    bluetoothResumeEnabled: state.bluetoothResumeEnabled ?? false,
+    bluetoothTelemetry: state.bluetoothTelemetry,
     continuationState: state.continuationState,
     radioContinuationState: state.radioContinuationState,
     echoBrainTelemetry: state.echoBrainTelemetry,
