@@ -731,7 +731,7 @@ export function AlbumPage() {
               type="button"
               aria-label={liked ? 'Remove album from library' : 'Save album to library'}
               aria-pressed={liked}
-              onClick={() => toggleLike(albumId)}
+              onClick={() => toggleLike(albumId, album)}
             >
               <Heart size={20} fill={liked ? 'currentColor' : 'none'} />
             </button>

@@ -167,6 +167,7 @@ export function MediaCard({
           kind={isArtist ? 'artist' : isAlbum ? 'album' : isTrack ? 'track' : 'playlist'}
           id={item.id}
           track={isTrack ? (item as Track) : undefined}
+          album={isAlbum ? (item as Album) : undefined}
         />
       </div>
     </article>
@@ -310,11 +311,13 @@ function MediaMenu({
   kind,
   id,
   track,
+  album,
   onRemove,
 }: {
   kind: MenuKind
   id: string
   track?: Track | undefined
+  album?: Album | undefined
   onRemove?: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -447,7 +450,7 @@ function MediaMenu({
             menuItem(
               likedAlbum ? 'Remove from your library' : 'Save to your library',
               () => {
-                toggleAlbumLike(id)
+                toggleAlbumLike(id, album)
                 closeMenu()
               },
               <Heart size={15} />,

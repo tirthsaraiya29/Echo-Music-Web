@@ -8,7 +8,9 @@ import type {
   Track,
   UserPreferences,
   PodcastShow,
+  Album,
 } from '../types/domain.ts'
+import type { LikedAlbumEntity } from '../services/sync/likedAlbumsSyncService.ts'
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
 import { db } from '../services/db/echoDatabase.ts'
@@ -151,6 +153,7 @@ type EchoState = {
   savedPlaylistIds: string[]
   likedTrackIds: string[]
   likedAlbumIds: string[]
+  likedAlbums: LikedAlbumEntity[]
   followedArtistIds: string[]
   queueIds: string[]
   currentTrackId: string
@@ -174,7 +177,8 @@ type EchoState = {
   cacheTracks: (tracks: Track[]) => void
   getTrack: (id: string) => Track | undefined
   toggleTrackLike: (trackOrId: Track | string) => void
-  toggleAlbumLike: (id: string) => void
+  toggleAlbumLike: (idOrAlbum: string | Album, metadata?: Partial<Album>) => void
+  setLikedAlbums: (albums: LikedAlbumEntity[]) => void
   toggleArtistFollow: (id: string) => void
   createPlaylist: (title: string, description?: string) => string
   updatePlaylist: (id: string, title: string, description: string) => void
@@ -221,6 +225,7 @@ export const useEchoStore = create<EchoState>()(
       savedPlaylistIds: [],
       likedTrackIds: [],
       likedAlbumIds: [],
+      likedAlbums: [],
       followedArtistIds: [],
       queueIds: [],
       currentTrackId: '',
@@ -276,11 +281,43 @@ export const useEchoStore = create<EchoState>()(
         }))
       },
 
-      toggleAlbumLike: (id) =>
-        set((state) => ({
-          likedAlbumIds: state.likedAlbumIds.includes(id)
+      toggleAlbumLike: (idOrAlbum, metadata) =>
+        set((state) => {
+          const id = typeof idOrAlbum === 'string' ? idOrAlbum : idOrAlbum.id
+          const albumMeta = typeof idOrAlbum === 'object' ? idOrAlbum : metadata
+          const isLiked = state.likedAlbumIds.includes(id)
+          const updatedIds = isLiked
             ? state.likedAlbumIds.filter((albumId) => albumId !== id)
-            : [id, ...state.likedAlbumIds],
+            : [id, ...state.likedAlbumIds]
+
+          let updatedAlbums = state.likedAlbums || []
+          if (isLiked) {
+            updatedAlbums = updatedAlbums.filter((a) => a.id !== id)
+          } else {
+            const newAlbum: LikedAlbumEntity = {
+              id,
+              title: albumMeta?.title || id,
+              artistName: albumMeta?.artistName || 'Unknown Artist',
+              artistId: albumMeta?.artistId,
+              year: albumMeta?.year,
+              coverUrl: albumMeta?.image || albumMeta?.thumbnailUrl,
+              trackCount: albumMeta?.trackCount,
+              likedAt: Date.now(),
+              source: 'local',
+            }
+            updatedAlbums = [newAlbum, ...updatedAlbums.filter((a) => a.id !== id)]
+          }
+
+          return {
+            likedAlbumIds: updatedIds,
+            likedAlbums: updatedAlbums,
+          }
+        }),
+
+      setLikedAlbums: (albums: LikedAlbumEntity[]) =>
+        set(() => ({
+          likedAlbums: albums,
+          likedAlbumIds: albums.map((a) => a.id),
         })),
 
       toggleArtistFollow: (id) =>
@@ -825,6 +862,7 @@ export const useEchoStore = create<EchoState>()(
           savedPlaylistIds: state.savedPlaylistIds,
           likedTrackIds: state.likedTrackIds,
           likedAlbumIds: state.likedAlbumIds,
+          likedAlbums: state.likedAlbums,
           followedArtistIds: state.followedArtistIds,
           queueIds: state.queueIds,
           currentTrackId: state.currentTrackId,
@@ -856,6 +894,7 @@ export const useEchoStore = create<EchoState>()(
           savedPlaylistIds: saved.savedPlaylistIds ?? [],
           likedTrackIds: saved.likedTrackIds ?? [],
           likedAlbumIds: saved.likedAlbumIds ?? [],
+          likedAlbums: saved.likedAlbums ?? [],
           followedArtistIds: saved.followedArtistIds ?? [],
           queueIds: saved.queueIds ?? [],
           recentlyPlayedIds: saved.recentlyPlayedIds ?? [],

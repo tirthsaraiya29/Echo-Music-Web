@@ -20,7 +20,9 @@ import {
   FolderPlus,
   RefreshCw,
   EyeOff,
+  Disc3,
 } from 'lucide-react'
+import { syncLikedAlbumsWithCloud } from '../services/sync/likedAlbumsSyncService.ts'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
 import type { Track } from '../types/domain.ts'
 import {
@@ -1463,7 +1465,7 @@ export function SearchPage() {
   )
 }
 
-const libraryTabs = ['All', 'Playlists', 'Liked', 'Spotify', 'Local Music', 'Podcasts'] as const
+const libraryTabs = ['All', 'Playlists', 'Albums', 'Liked', 'Spotify', 'Local Music', 'Podcasts'] as const
 type LibraryTab = (typeof libraryTabs)[number]
 
 export function LibraryPage() {
@@ -1481,6 +1483,9 @@ export function LibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const playlists = useEchoStore((state) => state.playlists)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
+  const likedAlbums = useEchoStore((state) => state.likedAlbums || [])
+  const toggleAlbumLike = useEchoStore((state) => state.toggleAlbumLike)
+  const [isSyncingAlbums, setIsSyncingAlbums] = useState(false)
   const trackCache = useEchoStore((state) => state.trackCache)
   const cacheTrack = useEchoStore((state) => state.cacheTrack)
   const createPlaylist = useEchoStore((state) => state.createPlaylist)
@@ -1538,11 +1543,28 @@ export function LibraryPage() {
   const filteredPlaylists = playlists.filter((p) =>
     p.title.toLowerCase().includes(filter.toLowerCase()),
   )
+  const filteredAlbums = likedAlbums.filter(
+    (a) =>
+      a.title.toLowerCase().includes(filter.toLowerCase()) ||
+      a.artistName.toLowerCase().includes(filter.toLowerCase()),
+  )
   const filteredPodcasts = followedPodcasts.filter(
     (p) =>
       p.title.toLowerCase().includes(filter.toLowerCase()) ||
       p.author.toLowerCase().includes(filter.toLowerCase()),
   )
+
+  const handleSyncAlbums = async () => {
+    setIsSyncingAlbums(true)
+    try {
+      const res = await syncLikedAlbumsWithCloud()
+      setToast(res.message)
+    } catch {
+      setToast('Failed to sync liked albums with cloud')
+    } finally {
+      setIsSyncingAlbums(false)
+    }
+  }
 
   const likedTracks: Track[] = likedTrackIds
     .map((id) => trackCache[id] || getCachedTrack(id))
@@ -1718,6 +1740,106 @@ export function LibraryPage() {
               <strong>Create a playlist</strong>
               <small>Put a few favorites together.</small>
             </button>
+          </div>
+        </section>
+      )}
+
+      {/* Tab: Albums */}
+      {tab === 'Albums' && (
+        <section className="page-section">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Liked Albums ({filteredAlbums.length})</h2>
+            <button
+              type="button"
+              onClick={handleSyncAlbums}
+              disabled={isSyncingAlbums}
+              className="button button--secondary flex items-center gap-1.5 text-xs"
+              title="Sync liked albums with YouTube Music"
+            >
+              <RefreshCw size={14} className={isSyncingAlbums ? 'animate-spin' : ''} />
+              {isSyncingAlbums ? 'Syncing...' : 'Sync Cloud'}
+            </button>
+          </div>
+          {filteredAlbums.length > 0 ? (
+            <div
+              className={classNames(
+                'library-collections',
+                layout === 'list' && 'library-collections--list',
+              )}
+            >
+              {filteredAlbums.map((album) => (
+                <div key={album.id} className="media-card group relative">
+                  <Link to={`/albums/${album.id}`} className="block">
+                    <div className="media-card__artwork aspect-square overflow-hidden rounded-md bg-white/5">
+                      <img
+                        src={album.coverUrl || artwork(album.title, 300)}
+                        alt={album.title}
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                        onError={(e) => {
+                          const fallback = artwork(album.title || 'album', 300)
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
+                        }}
+                      />
+                    </div>
+                    <div className="media-card__info mt-2">
+                      <h4 className="truncate text-sm font-medium text-white">{album.title}</h4>
+                      <p className="truncate text-xs text-white/60">
+                        {album.artistName}{album.year ? ` · ${album.year}` : ''}
+                      </p>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleAlbumLike(album.id)
+                      setToast(`Removed "${album.title}" from library`)
+                    }}
+                    className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-red-400 opacity-0 transition-opacity hover:scale-110 group-hover:opacity-100"
+                    title="Remove from library"
+                  >
+                    <Heart size={16} fill="currentColor" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <Disc3 size={27} />
+              <h3>No liked albums yet</h3>
+              <p>Like albums while browsing to keep them saved in your library.</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'All' && likedAlbums.length > 0 && (
+        <section className="page-section">
+          <SectionHeading title="Saved albums" to="/library?tab=albums" />
+          <div
+            className={classNames(
+              'library-collections',
+              layout === 'list' && 'library-collections--list',
+            )}
+          >
+            {likedAlbums.slice(0, 4).map((album) => (
+              <MediaCard
+                key={album.id}
+                kind="album"
+                item={{
+                  id: album.id,
+                  title: album.title,
+                  artistName: album.artistName,
+                  artistId: album.artistId || '',
+                  image: album.coverUrl || '',
+                  year: album.year,
+                  trackCount: album.trackCount || 0,
+                }}
+                subtitle={`${album.artistName}${album.year ? ` · ${album.year}` : ''}`}
+              />
+            ))}
           </div>
         </section>
       )}
