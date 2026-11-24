@@ -30,6 +30,8 @@ import { castService } from '../services/cast/castService.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { ExtensionResolvedStream } from '../types/extension.ts'
 import { radioContinuationService } from '../services/radio/radioContinuationService.ts'
+import { echoBrainService } from '../services/recommendations/echoBrainService.ts'
+import type { EchoBrainTelemetry } from '../services/recommendations/echoBrainTypes.ts'
 import {
   isDataSaverActive,
   isMeteredConnection,
@@ -188,6 +190,7 @@ export class AudioEngine {
       gaplessPlayback: this.deckController.getGaplessPlayback(),
       continuationState: this.queueManager.getContinuationState(),
       radioContinuationState: radioContinuationService.getState(),
+      echoBrainTelemetry: echoBrainService.getTelemetry(),
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
@@ -766,6 +769,32 @@ export class AudioEngine {
     return radioContinuationService.getState()
   }
 
+  public getEchoBrainTelemetry(): EchoBrainTelemetry {
+    return echoBrainService.getTelemetry()
+  }
+
+  public generateMomentumQueue(candidates: Track[] = []): Track[] {
+    const context = {
+      recentSignals: [...echoBrainService.getRecentSignals()],
+      currentTrack: this.queueManager.currentTrack,
+      likedTrackIds: useEchoStore.getState().likedTrackIds,
+      excludedTrackIds: [],
+    }
+    return echoBrainService.generateMomentumQueue(candidates, context)
+  }
+
+  public injectMomentumTracks(candidates: Track[]): void {
+    const prefs = useEchoStore.getState().preferences
+    if (prefs.echoBrainEnabled === false) return
+
+    const momentumTracks = this.generateMomentumQueue(candidates)
+    if (momentumTracks.length > 0) {
+      this.queueManager.addRadioTracks(momentumTracks)
+      this.emit('queueChange')
+      this.emitState()
+    }
+  }
+
   public async retryRadioContinuation(): Promise<void> {
     const current = this.queueManager.currentTrack
     if (!current) return
@@ -1087,6 +1116,22 @@ export class AudioEngine {
       trackDurationMs,
       completed: isCompleted,
       skipped: isSkipped,
+    })
+
+    const likedTrackIds = useEchoStore.getState().likedTrackIds
+    const isLiked = likedTrackIds.includes(current.id)
+
+    echoBrainService.recordSignal({
+      trackId: current.id,
+      trackTitle: current.title,
+      artistName: current.artistName || 'Unknown Artist',
+      artistId: current.artistId,
+      completed: isCompleted,
+      skipped: isSkipped,
+      durationPlayedMs,
+      trackDurationMs,
+      liked: isLiked,
+      timestamp: Date.now(),
     })
 
     if (isCompleted) {

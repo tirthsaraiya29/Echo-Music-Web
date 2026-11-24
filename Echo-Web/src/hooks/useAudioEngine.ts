@@ -87,6 +87,11 @@ export const audioEngineActions = {
   getContinuationState: () => AudioEngine.getInstance().getContinuationState(),
   getRadioContinuationState: () => AudioEngine.getInstance().getRadioContinuationState(),
   retryRadioContinuation: () => AudioEngine.getInstance().retryRadioContinuation(),
+  getEchoBrainTelemetry: () => AudioEngine.getInstance().getEchoBrainTelemetry(),
+  generateMomentumQueue: (candidates?: Track[]) =>
+    AudioEngine.getInstance().generateMomentumQueue(candidates),
+  injectMomentumTracks: (candidates: Track[]) =>
+    AudioEngine.getInstance().injectMomentumTracks(candidates),
 }
 
 export function useAudioEngine() {
@@ -128,6 +133,7 @@ export function useAudioEngine() {
     gaplessPlayback: state.gaplessPlayback ?? true,
     continuationState: state.continuationState,
     radioContinuationState: state.radioContinuationState,
+    echoBrainTelemetry: state.echoBrainTelemetry,
     equalizerGains: state.equalizerGains,
     playbackRate: state.playbackRate ?? 1.0,
     sleepTimerRemaining: state.sleepTimerRemaining,

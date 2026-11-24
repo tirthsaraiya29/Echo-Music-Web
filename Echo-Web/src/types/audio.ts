@@ -134,6 +134,7 @@ export interface AudioEngineState {
   gaplessPlayback?: boolean | undefined
   continuationState?: ContinuationPagingState | undefined
   radioContinuationState?: RadioContinuationState | undefined
+  echoBrainTelemetry?: import('../services/recommendations/echoBrainTypes.ts').EchoBrainTelemetry | undefined
   playbackRate?: number
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean

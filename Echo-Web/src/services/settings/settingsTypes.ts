@@ -34,6 +34,7 @@ export const userPreferencesSchema = z.object({
   contentRegion: z.string().regex(/^[A-Z]{2}$/).optional().default('US'),
   crossfadeDuration: z.number().min(0).max(12).optional().default(3),
   crossfadeProfile: crossfadeProfileSchema.optional().default('equalPower'),
+  echoBrainEnabled: z.boolean().optional().default(true),
   preferredLyricsProvider: lyricsProviderSchema.optional().default('LRCLIB'),
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),

@@ -795,6 +795,14 @@ export function SettingsPage() {
             />
 
             <PreferenceToggle
+              label="Echo Brain momentum queue"
+              description="Dynamically adapts upcoming radio recommendations based on listening momentum, rapid skips, and session likes."
+              preference="echoBrainEnabled"
+              value={preferences.echoBrainEnabled ?? true}
+              onChange={save}
+            />
+
+            <PreferenceToggle
               label="Skip silence"
               description="Automatically detects and skips leading silence at the start of tracks."
               preference="skipSilence"

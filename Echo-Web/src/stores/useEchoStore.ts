@@ -94,6 +94,7 @@ const defaultPreferences: UserPreferences = {
   contentRegion: 'US',
   crossfadeDuration: 3,
   crossfadeProfile: 'equalPower',
+  echoBrainEnabled: true,
   preferredLyricsProvider: 'LRCLIB',
   dataSaver: false,
   discordRpc: false,
