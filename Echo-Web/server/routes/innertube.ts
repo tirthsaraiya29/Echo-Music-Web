@@ -23,8 +23,6 @@ export async function forwardInnerTubeRequest(
   let lastResponse: Response | null = null
 
   for (const currentClient of candidates) {
-    const defaultContext = buildClientContext(currentClient, visitorData)
-
     const incomingContext =
       typeof bodyData['context'] === 'object' && bodyData['context'] !== null
         ? (bodyData['context'] as Record<string, unknown>)
@@ -34,6 +32,11 @@ export async function forwardInnerTubeRequest(
         ? (incomingContext['client'] as Record<string, unknown>)
         : {}
 
+    const gl = typeof incomingClient['gl'] === 'string' ? incomingClient['gl'] : 'US'
+    const hl = typeof incomingClient['hl'] === 'string' ? incomingClient['hl'] : 'en'
+
+    const defaultContext = buildClientContext(currentClient, visitorData, undefined, gl, hl)
+
     const mergedBody: Record<string, unknown> = {
       ...bodyData,
       context: {
@@ -42,6 +45,8 @@ export async function forwardInnerTubeRequest(
         client: {
           ...(defaultContext['client'] as Record<string, unknown>),
           ...incomingClient,
+          gl,
+          hl,
         },
       },
     }
@@ -143,10 +148,18 @@ innertubeRouter.get('/suggestions', async (c) => {
     return c.json([])
   }
 
+  const gl = c.req.query('gl') || 'US'
+  const hl = c.req.query('hl') || 'en'
+
   try {
     const upstreamRes = await forwardInnerTubeRequest(
       'music/get_search_suggestions',
-      { input: query.trim() },
+      {
+        input: query.trim(),
+        context: {
+          client: { gl, hl },
+        },
+      },
       'WEB_REMIX',
     )
 
@@ -197,7 +210,7 @@ innertubeRouter.get('/suggestions', async (c) => {
 
   // Fallback to Google YouTube suggest
   try {
-    const fallbackUrl = `https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&hl=en&gl=US&ds=yt&q=${encodeURIComponent(query.trim())}`
+    const fallbackUrl = `https://suggestqueries-clients6.youtube.com/complete/search?client=youtube&hl=${encodeURIComponent(hl)}&gl=${encodeURIComponent(gl)}&ds=yt&q=${encodeURIComponent(query.trim())}`
     const fallbackRes = await fetch(fallbackUrl)
     if (fallbackRes.ok) {
       const text = await fallbackRes.text()

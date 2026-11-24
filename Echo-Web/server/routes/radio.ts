@@ -7,13 +7,15 @@ export const radioRouter = new Hono()
 radioRouter.get('/continuation', async (c) => {
   const videoId = c.req.query('videoId')
   const continuationToken = c.req.query('continuation')
+  const gl = c.req.query('gl') || 'US'
+  const hl = c.req.query('hl') || 'en'
 
   if (!videoId && !continuationToken) {
     return c.json({ error: 'videoId or continuation parameter is required' }, 400)
   }
 
   try {
-    const radioData = await fetchInnerTubeRadio(videoId, continuationToken)
+    const radioData = await fetchInnerTubeRadio(videoId, continuationToken, gl, hl)
     return c.json(radioData)
   } catch (err: unknown) {
     return c.json(
@@ -53,9 +55,11 @@ interface InnerTubeItem {
 async function fetchInnerTubeRadio(
   videoId?: string,
   continuationToken?: string,
+  gl = 'US',
+  hl = 'en',
 ): Promise<{ tracks: Track[]; continuationToken?: string }> {
   const visitorData = await fetchVisitorData()
-  const context = buildClientContext('WEB_REMIX', visitorData)
+  const context = buildClientContext('WEB_REMIX', visitorData, undefined, gl, hl)
 
   const payload: Record<string, unknown> = {
     context,

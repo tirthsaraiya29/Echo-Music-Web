@@ -210,12 +210,16 @@ export class InnerTubeClient {
     const trimmed = query.trim()
     if (!trimmed) return []
 
-    const key = `suggestions:${trimmed.toLowerCase()}`
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
+    const key = `suggestions:${trimmed.toLowerCase()}:${region}`
     return await fetchWithCache(
       key,
       'suggestions',
       async () => {
-        return await apiFetch<string[]>(`/api/innertube/suggestions?q=${encodeURIComponent(trimmed)}`)
+        return await apiFetch<string[]>(
+          `/api/innertube/suggestions?q=${encodeURIComponent(trimmed)}&gl=${encodeURIComponent(region)}`,
+        )
       },
       10 * 60 * 1000,
     )
@@ -297,9 +301,12 @@ export class InnerTubeClient {
     videoId?: string,
     continuation?: string,
   ): Promise<{ tracks: Track[]; continuationToken?: string }> {
+    const prefs = useEchoStore.getState().preferences
+    const region = prefs.contentRegion || 'US'
     const queryParams = new URLSearchParams()
     if (videoId) queryParams.set('videoId', videoId)
     if (continuation) queryParams.set('continuation', continuation)
+    queryParams.set('gl', region)
 
     return await apiFetch<{ tracks: Track[]; continuationToken?: string }>(
       `/api/radio/continuation?${queryParams.toString()}`,

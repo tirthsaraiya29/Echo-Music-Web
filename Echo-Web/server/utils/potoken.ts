@@ -70,10 +70,12 @@ export function buildClientContext(
   type: ClientContextType,
   visitorData?: string,
   poToken?: string,
+  gl = 'US',
+  hl = 'en',
 ): Record<string, unknown> {
   const baseClient: Record<string, unknown> = {
-    hl: 'en',
-    gl: 'US',
+    hl,
+    gl,
   }
 
   if (visitorData) {
