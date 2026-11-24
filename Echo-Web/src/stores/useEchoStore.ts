@@ -95,6 +95,7 @@ const defaultPreferences: UserPreferences = {
   crossfadeDuration: 3,
   crossfadeProfile: 'equalPower',
   echoBrainEnabled: true,
+  echoBrainAutoInject: true,
   varispeedEnabled: false,
   pauseOnMute: false,
   bluetoothResumeEnabled: false,

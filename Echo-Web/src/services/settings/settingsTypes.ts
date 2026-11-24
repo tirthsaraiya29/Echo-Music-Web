@@ -35,6 +35,7 @@ export const userPreferencesSchema = z.object({
   crossfadeDuration: z.number().min(0).max(12).optional().default(3),
   crossfadeProfile: crossfadeProfileSchema.optional().default('equalPower'),
   echoBrainEnabled: z.boolean().optional().default(true),
+  echoBrainAutoInject: z.boolean().optional().default(true),
   varispeedEnabled: z.boolean().optional().default(false),
   pauseOnMute: z.boolean().optional().default(false),
   bluetoothResumeEnabled: z.boolean().optional().default(false),

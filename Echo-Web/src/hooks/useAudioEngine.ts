@@ -101,6 +101,8 @@ export const audioEngineActions = {
     AudioEngine.getInstance().generateMomentumQueue(candidates),
   injectMomentumTracks: (candidates: Track[]) =>
     AudioEngine.getInstance().injectMomentumTracks(candidates),
+  triggerAutoInjection: (candidates?: Track[]) =>
+    AudioEngine.getInstance().triggerAutoInjectionIfEligible(candidates),
 }
 
 export function useAudioEngine() {

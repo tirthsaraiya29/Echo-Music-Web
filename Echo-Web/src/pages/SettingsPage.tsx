@@ -835,6 +835,14 @@ export function SettingsPage() {
             />
 
             <PreferenceToggle
+              label="Echo Brain auto-injection"
+              description="Automatically injects momentum-aware tracks into upcoming radio without modifying your manually queued songs."
+              preference="echoBrainAutoInject"
+              value={preferences.echoBrainAutoInject ?? true}
+              onChange={save}
+            />
+
+            <PreferenceToggle
               label="Skip silence"
               description="Automatically detects and skips leading silence at the start of tracks."
               preference="skipSilence"

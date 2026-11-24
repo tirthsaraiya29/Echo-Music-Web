@@ -137,6 +137,7 @@ export interface UserPreferences {
   crossfadeDuration?: number | undefined
   crossfadeProfile?: CrossfadeProfile | undefined
   echoBrainEnabled?: boolean | undefined
+  echoBrainAutoInject?: boolean | undefined
   varispeedEnabled?: boolean | undefined
   pauseOnMute?: boolean | undefined
   bluetoothResumeEnabled?: boolean | undefined

@@ -32,6 +32,7 @@ import type { ExtensionResolvedStream } from '../types/extension.ts'
 import { radioContinuationService } from '../services/radio/radioContinuationService.ts'
 import { echoBrainService } from '../services/recommendations/echoBrainService.ts'
 import type { EchoBrainTelemetry } from '../services/recommendations/echoBrainTypes.ts'
+import { InnerTubeClient } from '../services/innertube/client.ts'
 import {
   bluetoothReconnectService,
   type BluetoothReconnectTelemetry,
@@ -90,6 +91,8 @@ export class AudioEngine {
   private radioAbortController: AbortController | null = null
   private inFlightRadioVideoId: string | null = null
   private currentLoadRequestId = 0
+  private lastAutoInjectionMs = 0
+  private isAutoInjecting = false
 
   private userInteractionCleanup: (() => void) | null = null
 
@@ -871,6 +874,73 @@ export class AudioEngine {
     }
   }
 
+  public async triggerAutoInjectionIfEligible(candidates?: Track[]): Promise<boolean> {
+    const prefs = useEchoStore.getState().preferences
+    if (prefs.echoBrainEnabled === false || prefs.echoBrainAutoInject === false) {
+      return false
+    }
+
+    const now = Date.now()
+    if (now - this.lastAutoInjectionMs < 5000 || this.isAutoInjecting) {
+      return false
+    }
+
+    // Auto-inject when radio queue has <= 2 tracks remaining
+    const radioLen = this.queueManager.radioQueue.length
+    if (radioLen > 2) {
+      return false
+    }
+
+    this.isAutoInjecting = true
+    this.lastAutoInjectionMs = now
+
+    try {
+      let candidatePool =
+        candidates && candidates.length > 0
+          ? candidates
+          : Object.values(useEchoStore.getState().trackCache)
+      if (candidatePool.length < 5) {
+        const cur = this.queueManager.currentTrack
+        if (cur?.artistName) {
+          try {
+            const res = await InnerTubeClient.search(`${cur.artistName} songs`, 'songs')
+            if (res.tracks && res.tracks.length > 0) {
+              candidatePool = [...candidatePool, ...res.tracks]
+            }
+          } catch {
+            // Ignore search fallback error
+          }
+        }
+      }
+
+      const momentumTracks = this.generateMomentumQueue(candidatePool)
+      if (momentumTracks.length > 0) {
+        const existingUpNext = this.queueManager.upNext
+        const existingRadio = this.queueManager.radioQueue
+        const merged = echoBrainService.injectMomentumTracks(
+          existingUpNext,
+          existingRadio,
+          momentumTracks,
+          8,
+        )
+
+        const prevIds = new Set(existingRadio.map((t) => t.id))
+        const newCount = merged.filter((t) => !prevIds.has(t.id)).length
+
+        if (newCount > 0) {
+          echoBrainService.recordAutoInjection(newCount)
+          this.queueManager.setRadioQueue(merged)
+          this.emit('queueChange')
+          this.emitState()
+          return true
+        }
+      }
+    } finally {
+      this.isAutoInjecting = false
+    }
+    return false
+  }
+
   public async retryRadioContinuation(): Promise<void> {
     const current = this.queueManager.currentTrack
     if (!current) return
@@ -983,6 +1053,10 @@ export class AudioEngine {
       if (!currentTrack) return
       const prefs = useEchoStore.getState().preferences
 
+      if (duration > 0 && current >= duration - 20 && this.queueManager.radioQueue.length <= 2) {
+        void this.triggerAutoInjectionIfEligible()
+      }
+
       // True Loudness normalization measurement (first 5s)
       if (prefs.volumeNormalization && !this.loudnessMeasured && current > 0.5 && current < 5.0) {
         const rms = this.graph.calculateRMS()
@@ -1071,6 +1145,7 @@ export class AudioEngine {
       }
 
       void this.next()
+      void this.triggerAutoInjectionIfEligible()
     }
 
     this.deckController.onPrebufferNeeded = () => {
@@ -1169,6 +1244,7 @@ export class AudioEngine {
       if (this.consecutiveErrorCount >= 2) {
         this.consecutiveErrorCount = 0
         void this.next()
+      void this.triggerAutoInjectionIfEligible()
       } else if (current) {
         void this.loadAndPlayTrack(current)
       }

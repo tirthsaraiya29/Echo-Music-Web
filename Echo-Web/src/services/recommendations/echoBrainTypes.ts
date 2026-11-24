@@ -36,6 +36,8 @@ export type SessionMomentumContext = {
 export const echoBrainTelemetrySchema = z.object({
   momentumEvaluations: z.number().nonnegative(),
   momentumInjections: z.number().nonnegative(),
+  autoInjectionsCount: z.number().nonnegative().default(0),
+  autoInjectedTracksCount: z.number().nonnegative().default(0),
   skipsDetected: z.number().nonnegative(),
   completionsDetected: z.number().nonnegative(),
   recoveryTriggers: z.number().nonnegative(),

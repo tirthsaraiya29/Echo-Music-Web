@@ -15,6 +15,8 @@ export class EchoBrainService {
   private telemetry: EchoBrainTelemetry = {
     momentumEvaluations: 0,
     momentumInjections: 0,
+    autoInjectionsCount: 0,
+    autoInjectedTracksCount: 0,
     skipsDetected: 0,
     completionsDetected: 0,
     recoveryTriggers: 0,
@@ -53,6 +55,8 @@ export class EchoBrainService {
     this.telemetry = {
       momentumEvaluations: 0,
       momentumInjections: 0,
+      autoInjectionsCount: 0,
+      autoInjectedTracksCount: 0,
       skipsDetected: 0,
       completionsDetected: 0,
       recoveryTriggers: 0,
@@ -60,6 +64,11 @@ export class EchoBrainService {
       lastGeneratedCount: 0,
       lastDurationMs: 0,
     }
+  }
+
+  public recordAutoInjection(count: number): void {
+    this.telemetry.autoInjectionsCount++
+    this.telemetry.autoInjectedTracksCount += Math.max(0, count)
   }
 
   /**

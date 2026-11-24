@@ -502,6 +502,10 @@ export class QueueManager {
     this.resetContinuation()
   }
 
+  public setRadioQueue(tracks: Track[]): void {
+    this.radioQueueList = tracks.map(cloneTrack)
+  }
+
   public setRepeatMode(mode: RepeatMode): void {
     this.repeatModeSetting = mode
   }
