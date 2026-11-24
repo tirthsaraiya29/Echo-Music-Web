@@ -5,13 +5,23 @@ import { getCachedTrack, useEchoStore } from '../stores/useEchoStore.ts'
 
 export const audioEngineActions = {
   play: (track?: Track) => AudioEngine.getInstance().play(track),
-  playQueue: (tracks: Track[], startIndex?: number) => AudioEngine.getInstance().playQueue(tracks, startIndex),
+  playQueue: (tracks: Track[], startIndex = 0) => {
+    if (!Array.isArray(tracks) || tracks.length === 0) return
+    const clampedIndex = Math.max(0, Math.min(startIndex, tracks.length - 1))
+    AudioEngine.getInstance().playQueue(tracks, clampedIndex)
+  },
   pause: () => AudioEngine.getInstance().pause(),
   togglePlayback: () => AudioEngine.getInstance().togglePlayback(),
   next: () => AudioEngine.getInstance().next(),
   previous: () => AudioEngine.getInstance().previous(),
-  seek: (seconds: number) => AudioEngine.getInstance().seek(seconds),
-  seekTo: (seconds: number) => AudioEngine.getInstance().seekTo(seconds),
+  seek: (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return
+    AudioEngine.getInstance().seek(seconds)
+  },
+  seekTo: (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return
+    AudioEngine.getInstance().seekTo(seconds)
+  },
   getCurrentTime: () => AudioEngine.getInstance().getCurrentTime(),
   playNext: (track: Track) => AudioEngine.getInstance().playNext(track),
   addToQueue: (track: Track) => AudioEngine.getInstance().addToQueue(track),
@@ -24,13 +34,22 @@ export const audioEngineActions = {
   clearEntireQueue: () => AudioEngine.getInstance().clearEntireQueue(),
   clearHistory: () => AudioEngine.getInstance().clearHistory(),
   getDetailedQueue: () => AudioEngine.getInstance().getDetailedQueue(),
-  setVolume: (volume: number) => AudioEngine.getInstance().setVolume(volume),
+  setVolume: (volume: number) => {
+    const clamped = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0.5))
+    AudioEngine.getInstance().setVolume(clamped)
+  },
   setMuted: (muted: boolean) => AudioEngine.getInstance().setMuted(muted),
   setShuffle: (shuffle: boolean) => AudioEngine.getInstance().setShuffle(shuffle),
   setRepeatMode: (mode: RepeatMode) => AudioEngine.getInstance().setRepeatMode(mode),
-  setCrossfadeDuration: (seconds: number) => AudioEngine.getInstance().setCrossfadeDuration(seconds),
+  setCrossfadeDuration: (seconds: number) => {
+    const clamped = Math.max(0, Math.min(12, Number.isFinite(seconds) ? seconds : 3))
+    AudioEngine.getInstance().setCrossfadeDuration(clamped)
+  },
   setVolumeNormalization: (enabled: boolean) => AudioEngine.getInstance().setVolumeNormalization(enabled),
-  setStereoWidth: (width: number) => AudioEngine.getInstance().setStereoWidth(width),
+  setStereoWidth: (width: number) => {
+    const clamped = Math.max(0, Math.min(2, Number.isFinite(width) ? width : 1))
+    AudioEngine.getInstance().setStereoWidth(clamped)
+  },
   setEqualizerGain: (band: number, gainDb: number) => AudioEngine.getInstance().setEqualizerGain(band, gainDb),
   setEqualizerBands: (gains: number[]) => AudioEngine.getInstance().setEqualizerBands(gains),
   setEqualizerPreset: (name: string) => AudioEngine.getInstance().setEqualizerPreset(name),
@@ -48,7 +67,10 @@ export const audioEngineActions = {
   startSleepTimer: (minutesOrOption: number | 'end_of_track') =>
     AudioEngine.getInstance().startSleepTimer(minutesOrOption),
   cancelSleepTimer: () => AudioEngine.getInstance().cancelSleepTimer(),
-  setPlaybackRate: (rate: number) => AudioEngine.getInstance().setPlaybackRate(rate),
+  setPlaybackRate: (rate: number) => {
+    const clamped = Math.max(0.5, Math.min(2.0, Number.isFinite(rate) ? rate : 1.0))
+    AudioEngine.getInstance().setPlaybackRate(clamped)
+  },
   setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
@@ -98,9 +120,32 @@ export function useAudioEngine() {
   }
 }
 
+export interface BridgeMetrics {
+  syncCount: number
+  storeToEngineCount: number
+  engineToStoreCount: number
+  suppressedCyclesCount: number
+  lastSyncDurationMs: number
+}
+
+const bridgeMetrics: BridgeMetrics = {
+  syncCount: 0,
+  storeToEngineCount: 0,
+  engineToStoreCount: 0,
+  suppressedCyclesCount: 0,
+  lastSyncDurationMs: 0,
+}
+
+export function getBridgeMetrics(): Readonly<BridgeMetrics> {
+  return { ...bridgeMetrics }
+}
+
 export function bridgeAudioEngineWithStore(): () => void {
   const engine = AudioEngine.getInstance()
   const echoStore = useEchoStore.getState()
+
+  let isUpdatingFromEngine = false
+  let isUpdatingFromStore = false
 
   const initialRepeat =
     echoStore.preferences.repeat === 'all'
@@ -114,6 +159,9 @@ export function bridgeAudioEngineWithStore(): () => void {
   engine.setVolume(echoStore.preferences.volume / 100)
   engine.setMuted(echoStore.preferences.muted)
   engine.setVolumeNormalization(echoStore.preferences.volumeNormalization)
+  if (typeof echoStore.preferences.crossfadeDuration === 'number') {
+    engine.setCrossfadeDuration(echoStore.preferences.crossfadeDuration)
+  }
 
   const startingTrack = echoStore.currentTrack || getCachedTrack(echoStore.currentTrackId)
   if (startingTrack && !engine.getState().currentTrack) {
@@ -123,31 +171,102 @@ export function bridgeAudioEngineWithStore(): () => void {
     engine.setQueue([startingTrack, ...queueTracks], 0)
   }
 
+  // Engine -> Store subscription
   const unsubscribeEngine = engine.subscribe((engineState) => {
-    const currentStore = useEchoStore.getState()
-
-    if (engineState.currentTrack && engineState.currentTrack.id !== currentStore.currentTrackId) {
-      useEchoStore.setState({
-        currentTrack: engineState.currentTrack,
-        currentTrackId: engineState.currentTrack.id,
-      })
+    if (isUpdatingFromStore) {
+      bridgeMetrics.suppressedCyclesCount++
+      return
     }
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    isUpdatingFromEngine = true
+    try {
+      const currentStore = useEchoStore.getState()
 
-    const isPlaying = engineState.playbackState === 'PLAYING'
-    if (isPlaying !== currentStore.isPlaying) {
-      useEchoStore.setState({ isPlaying })
+      if (engineState.currentTrack && engineState.currentTrack.id !== currentStore.currentTrackId) {
+        useEchoStore.setState({
+          currentTrack: engineState.currentTrack,
+          currentTrackId: engineState.currentTrack.id,
+        })
+      }
+
+      const isPlaying = engineState.playbackState === 'PLAYING'
+      if (isPlaying !== currentStore.isPlaying) {
+        useEchoStore.setState({ isPlaying })
+      }
+
+      const upNextIds = engineState.upNext.map((t) => t.id)
+      if (
+        upNextIds.length !== currentStore.queueIds.length ||
+        upNextIds.some((id, idx) => id !== currentStore.queueIds[idx])
+      ) {
+        useEchoStore.setState({ queueIds: upNextIds })
+      }
+
+      bridgeMetrics.engineToStoreCount++
+      bridgeMetrics.syncCount++
+      bridgeMetrics.lastSyncDurationMs =
+        (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start
+    } finally {
+      isUpdatingFromEngine = false
     }
+  })
 
-    const upNextIds = engineState.upNext.map((t) => t.id)
-    if (
-      upNextIds.length !== currentStore.queueIds.length ||
-      upNextIds.some((id, idx) => id !== currentStore.queueIds[idx])
-    ) {
-      useEchoStore.setState({ queueIds: upNextIds })
+  // Store -> Engine subscription for dynamic preferences
+  const unsubscribeStore = useEchoStore.subscribe((state, prevState) => {
+    if (isUpdatingFromEngine) {
+      bridgeMetrics.suppressedCyclesCount++
+      return
+    }
+    const currPrefs = state.preferences
+    const prevPrefs = prevState?.preferences
+    if (!prevPrefs) return
+
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    isUpdatingFromStore = true
+    try {
+      let changed = false
+      if (currPrefs.repeat !== prevPrefs.repeat) {
+        const rep = currPrefs.repeat === 'all' ? 'ALL' : currPrefs.repeat === 'one' ? 'ONE' : 'OFF'
+        engine.setRepeatMode(rep)
+        changed = true
+      }
+      if (currPrefs.shuffle !== prevPrefs.shuffle) {
+        engine.setShuffle(currPrefs.shuffle)
+        changed = true
+      }
+      if (currPrefs.volume !== prevPrefs.volume) {
+        engine.setVolume(currPrefs.volume / 100)
+        changed = true
+      }
+      if (currPrefs.muted !== prevPrefs.muted) {
+        engine.setMuted(currPrefs.muted)
+        changed = true
+      }
+      if (currPrefs.volumeNormalization !== prevPrefs.volumeNormalization) {
+        engine.setVolumeNormalization(currPrefs.volumeNormalization)
+        changed = true
+      }
+      if (
+        currPrefs.crossfadeDuration !== prevPrefs.crossfadeDuration &&
+        typeof currPrefs.crossfadeDuration === 'number'
+      ) {
+        engine.setCrossfadeDuration(currPrefs.crossfadeDuration)
+        changed = true
+      }
+
+      if (changed) {
+        bridgeMetrics.storeToEngineCount++
+        bridgeMetrics.syncCount++
+        bridgeMetrics.lastSyncDurationMs =
+          (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start
+      }
+    } finally {
+      isUpdatingFromStore = false
     }
   })
 
   return () => {
     unsubscribeEngine()
+    unsubscribeStore()
   }
 }
