@@ -16,11 +16,19 @@ interface AudioDeviceItem {
 
 export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
   const [devices, setDevices] = useState<AudioDeviceItem[]>([])
-  const [activeDeviceId, setActiveDeviceId] = useState('default')
+  const { setAudioOutput, getAudioOutput, audioSinkId } = useAudioEngine()
+  const currentEngineSink = getAudioOutput?.() || audioSinkId || 'default'
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
+  const activeDeviceId = selectedDeviceId ?? currentEngineSink
+
   const [hasPermission, setHasPermission] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSwitching, setIsSwitching] = useState(false)
   const [isCastConnected, setIsCastConnected] = useState(() => castService.getIsConnected())
   const isCastEnabled = useEchoStore((state) => state.preferences.googleCast)
-  const { setAudioOutput } = useAudioEngine()
+
+  const isRoutingSupported =
+    typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 
   useEffect(() => {
     return castService.subscribe((connected) => {
@@ -70,10 +78,38 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
 
   if (!isOpen) return null
 
-  const handleSelectDevice = async (deviceId: string) => {
-    setActiveDeviceId(deviceId)
-    await setAudioOutput(deviceId)
+  const handleClose = () => {
+    setErrorMessage(null)
     onClose()
+  }
+
+  const handleSelectDevice = async (deviceId: string) => {
+    if (deviceId === activeDeviceId) {
+      handleClose()
+      return
+    }
+
+    setIsSwitching(true)
+    setErrorMessage(null)
+
+    try {
+      const success = await setAudioOutput(deviceId)
+      if (success) {
+        setSelectedDeviceId(deviceId)
+        handleClose()
+      } else {
+        // Retain the previous device on failure and display the actual state
+        setErrorMessage(
+          'Failed to switch audio output. Device may be unavailable or restricted by browser policies.',
+        )
+      }
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Error changing audio output device',
+      )
+    } finally {
+      setIsSwitching(false)
+    }
   }
 
   return (
@@ -93,17 +129,31 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-lg bg-white/4 p-1.5 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
           >
             <X size={15} />
           </button>
         </div>
 
+        {errorMessage && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-300">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {!isRoutingSupported && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+            <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+            <span>Audio device routing is not supported by this browser. Output will follow system defaults.</span>
+          </div>
+        )}
+
         {!hasPermission ? (
           <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
             <ShieldAlert size={16} className="mt-0.5 shrink-0" />
-            <span>Audio device routing is restricted by browser security policies.</span>
+            <span>Audio device enumeration is restricted by browser security policies.</span>
           </div>
         ) : (
           <div className="custom-scrollbar flex max-h-60 flex-col gap-1.5 overflow-y-auto">
@@ -112,7 +162,7 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
                 type="button"
                 onClick={async () => {
                   await castService.requestSession()
-                  onClose()
+                  handleClose()
                 }}
                 className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
                   isCastConnected
@@ -141,12 +191,13 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
                 <button
                   key={device.deviceId}
                   type="button"
-                  onClick={() => handleSelectDevice(device.deviceId)}
+                  disabled={isSwitching}
+                  onClick={() => void handleSelectDevice(device.deviceId)}
                   className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
                     isSelected
                       ? 'border border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#b09cff]'
                       : 'text-white hover:bg-white/6'
-                  }`}
+                  } ${isSwitching ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className="flex items-center gap-2.5 truncate pr-2">
                     <Icon size={15} className={isSelected ? 'text-[#7c5cff]' : 'text-[#a59fad]'} />

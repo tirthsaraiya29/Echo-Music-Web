@@ -237,10 +237,22 @@ export class DeckController {
     if ('preservesPitch' in b) b.preservesPitch = true
   }
 
+  private currentSinkId = 'default'
+
+  public getAudioSink(): string {
+    const elA = this.deckAElement as unknown as { sinkId?: string }
+    return this.currentSinkId || elA.sinkId || 'default'
+  }
+
   public async setAudioSink(sinkId: string): Promise<boolean> {
-    let success = true
     const elA = this.deckAElement as unknown as { setSinkId?: (id: string) => Promise<void> }
     const elB = this.deckBElement as unknown as { setSinkId?: (id: string) => Promise<void> }
+
+    if (typeof elA.setSinkId !== 'function' && typeof elB.setSinkId !== 'function') {
+      return false
+    }
+
+    let success = true
     if (typeof elA.setSinkId === 'function') {
       try {
         await elA.setSinkId(sinkId)
@@ -254,6 +266,10 @@ export class DeckController {
       } catch {
         success = false
       }
+    }
+
+    if (success) {
+      this.currentSinkId = sinkId
     }
     return success
   }

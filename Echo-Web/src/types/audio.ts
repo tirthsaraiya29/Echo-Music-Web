@@ -89,6 +89,7 @@ export interface AudioEngineState {
   playbackRate?: number
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean
+  audioSinkId?: string | undefined
 }
 
 export type AudioEngineEventMap = {

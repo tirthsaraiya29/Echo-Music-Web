@@ -50,6 +50,7 @@ export const audioEngineActions = {
   cancelSleepTimer: () => AudioEngine.getInstance().cancelSleepTimer(),
   setPlaybackRate: (rate: number) => AudioEngine.getInstance().setPlaybackRate(rate),
   setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
+  getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
 }
 
@@ -92,6 +93,7 @@ export function useAudioEngine() {
     playbackRate: state.playbackRate ?? 1.0,
     sleepTimerRemaining: state.sleepTimerRemaining,
     sleepTimerEndOfTrack: state.sleepTimerEndOfTrack,
+    audioSinkId: state.audioSinkId ?? 'default',
     ...audioEngineActions,
   }
 }

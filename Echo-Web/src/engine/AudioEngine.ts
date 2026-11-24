@@ -99,6 +99,17 @@ export class AudioEngine {
 
     this.wireSubsystems()
     this.setupUserInteractionListener()
+
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const savedSink = localStorage.getItem('echo_audio_output_device_id')
+        if (savedSink && savedSink !== 'default') {
+          void this.deckController.setAudioSink(savedSink)
+        }
+      } catch {
+        // Ignore storage read failures
+      }
+    }
   }
 
   public static getInstance(config?: Partial<AudioEngineConfig>): AudioEngine {
@@ -133,6 +144,7 @@ export class AudioEngine {
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
+      audioSinkId: this.deckController.getAudioSink(),
     }
   }
 
@@ -471,7 +483,22 @@ export class AudioEngine {
   }
 
   public async setAudioOutput(sinkId: string): Promise<boolean> {
-    return await this.deckController.setAudioSink(sinkId)
+    const success = await this.deckController.setAudioSink(sinkId)
+    if (success) {
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem('echo_audio_output_device_id', sinkId)
+        } catch {
+          // Ignore storage write failures
+        }
+      }
+      this.emitState()
+    }
+    return success
+  }
+
+  public getAudioOutput(): string {
+    return this.deckController.getAudioSink()
   }
 
   public getAudioTelemetry(): {
