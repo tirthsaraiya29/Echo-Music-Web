@@ -70,6 +70,7 @@ import {
 import { parseM3UPlaylist, parseCSVPlaylist } from '../services/sharing/playlistPortability.ts'
 import { LocalMusicSection } from '../components/library/LocalMusicSection.tsx'
 import { SpotifyImportModal } from '../components/modals/SpotifyImportModal.tsx'
+import { SpotifyLibraryTab } from '../components/spotify/SpotifyLibraryTab.tsx'
 import { InnerTubeClient } from '../services/innertube/client.ts'
 import { RankedChartList } from '../components/charts/RankedChartList.tsx'
 import {
@@ -1462,7 +1463,7 @@ export function SearchPage() {
   )
 }
 
-const libraryTabs = ['All', 'Playlists', 'Liked', 'Local Music', 'Podcasts'] as const
+const libraryTabs = ['All', 'Playlists', 'Liked', 'Spotify', 'Local Music', 'Podcasts'] as const
 type LibraryTab = (typeof libraryTabs)[number]
 
 export function LibraryPage() {
@@ -1934,6 +1935,12 @@ export function LibraryPage() {
             Discover Podcasts
           </Link>
         </div>
+      )}
+
+      {tab === 'Spotify' && (
+        <section className="page-section">
+          <SpotifyLibraryTab />
+        </section>
       )}
 
       <CreatePlaylistDialog open={createOpen} onClose={() => setCreateOpen(false)} />

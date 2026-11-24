@@ -526,3 +526,31 @@ spotifyRouter.get('/me/tracks', async (c) => {
     return c.json({ error: String(err) }, 500)
   }
 })
+
+// Authenticated live Spotify library: User profile
+spotifyRouter.get('/me', async (c) => {
+  const userToken = extractBearerToken(c)
+  if (!userToken) {
+    return c.json({ error: 'Unauthorized: Spotify user token required for /me' }, 401)
+  }
+
+  try {
+    const res = await fetch('https://api.spotify.com/v1/me', {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
+    if (!res.ok) {
+      return c.json({ error: `Spotify API error: ${res.statusText}` }, res.status as any)
+    }
+    const data = (await res.json()) as any
+    return c.json({
+      id: data.id,
+      displayName: data.display_name || data.id,
+      email: data.email,
+      avatarUrl: data.images?.[0]?.url,
+      product: data.product,
+      followers: data.followers?.total || 0,
+    })
+  } catch (err) {
+    return c.json({ error: String(err) }, 500)
+  }
+})
