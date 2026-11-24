@@ -20,6 +20,11 @@ import { lastfmRouter } from './routes/lastfm.ts'
 import { discordRouter } from './routes/discord.ts'
 import { cloudRouter } from './routes/cloud.ts'
 import { extensionsRouter } from './routes/extensions.ts'
+import {
+  buildHealthPayload,
+  getDeploymentMetrics,
+  recordDeploymentMetric,
+} from './utils/deploymentTypes.ts'
 
 export const app = new Hono()
 
@@ -32,6 +37,11 @@ const allowedOrigins = (process.env['CORS_ORIGINS'] || 'http://localhost:5173')
   .map((origin) => origin.trim())
   .filter(Boolean)
 
+app.use('*', async (_c, next) => {
+  recordDeploymentMetric('requestsHandled')
+  await next()
+})
+
 app.use(
   '*',
   cors({
@@ -43,6 +53,7 @@ app.use(
 )
 
 app.onError((err, c) => {
+  recordDeploymentMetric('serverErrors')
   // Log full details server-side; never surface raw upstream/internal error
   // messages to clients (they can leak proxy targets, tokens or stack info).
   console.error(`[proxy] ${c.req.method} ${c.req.path} failed:`, err)
@@ -50,11 +61,13 @@ app.onError((err, c) => {
 })
 
 app.get('/api/health', (c) => {
-  return c.json({
-    status: 'ok',
-    timestamp: Date.now(),
-    service: 'echo-audio-proxy',
-  })
+  recordDeploymentMetric('healthChecks')
+  return c.json(buildHealthPayload('ok'))
+})
+
+app.get('/api/deployment/telemetry', (c) => {
+  recordDeploymentMetric('telemetryRequests')
+  return c.json(getDeploymentMetrics())
 })
 
 app.route('/api/innertube', innertubeRouter)
