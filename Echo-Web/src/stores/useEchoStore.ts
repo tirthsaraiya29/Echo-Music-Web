@@ -10,6 +10,7 @@ import type {
 } from '../types/domain.ts'
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
+import { db } from '../services/db/echoDatabase.ts'
 
 const playlistSchema = z.object({
   title: z
@@ -204,6 +205,16 @@ export const useEchoStore = create<EchoState>()(
           createdAt: Date.now(),
         }
         set((state) => ({ playlists: [playlist, ...state.playlists] }))
+        db.playlists
+          .put({
+            id,
+            title: playlist.title,
+            description: playlist.description,
+            trackIds: [],
+            createdAt: playlist.createdAt,
+            updatedAt: playlist.createdAt,
+          })
+          .catch(() => {})
         return id
       },
 
@@ -216,13 +227,22 @@ export const useEchoStore = create<EchoState>()(
               : playlist,
           ),
         }))
+        db.playlists
+          .update(id, {
+            title: valid.title,
+            description: valid.description,
+            updatedAt: Date.now(),
+          })
+          .catch(() => {})
       },
 
-      deletePlaylist: (id) =>
+      deletePlaylist: (id) => {
         set((state) => ({
           playlists: state.playlists.filter((playlist) => playlist.id !== id),
           savedPlaylistIds: state.savedPlaylistIds.filter((savedId) => savedId !== id),
-        })),
+        }))
+        db.playlists.delete(id).catch(() => {})
+      },
 
       togglePlaylistLike: (id) =>
         set((state) => ({
@@ -241,8 +261,8 @@ export const useEchoStore = create<EchoState>()(
         if (track) {
           get().cacheTrack(track)
         }
-        set((state) => ({
-          playlists: state.playlists.map((playlist) =>
+        set((state) => {
+          const updatedPlaylists = state.playlists.map((playlist) =>
             playlist.id === playlistId && !playlist.trackIds.includes(trackId)
               ? {
                   ...playlist,
@@ -252,22 +272,43 @@ export const useEchoStore = create<EchoState>()(
                     (track?.artwork ?? getCachedTrack(trackId)?.artwork ?? playlist.image),
                 }
               : playlist,
-          ),
-        }))
+          )
+          const target = updatedPlaylists.find((p) => p.id === playlistId)
+          if (target) {
+            db.playlists
+              .update(playlistId, {
+                trackIds: target.trackIds,
+                coverUrl: target.image || undefined,
+                updatedAt: Date.now(),
+              })
+              .catch(() => {})
+          }
+          return { playlists: updatedPlaylists }
+        })
       },
 
       removeTrackFromPlaylist: (playlistId, trackId) =>
-        set((state) => ({
-          playlists: state.playlists.map((playlist) =>
+        set((state) => {
+          const updatedPlaylists = state.playlists.map((playlist) =>
             playlist.id === playlistId
               ? { ...playlist, trackIds: playlist.trackIds.filter((id) => id !== trackId) }
               : playlist,
-          ),
-        })),
+          )
+          const target = updatedPlaylists.find((p) => p.id === playlistId)
+          if (target) {
+            db.playlists
+              .update(playlistId, {
+                trackIds: target.trackIds,
+                updatedAt: Date.now(),
+              })
+              .catch(() => {})
+          }
+          return { playlists: updatedPlaylists }
+        }),
 
       reorderPlaylistTrack: (playlistId, from, to) =>
-        set((state) => ({
-          playlists: state.playlists.map((playlist) => {
+        set((state) => {
+          const updatedPlaylists = state.playlists.map((playlist) => {
             if (playlist.id !== playlistId) return playlist
             const trackIds = [...playlist.trackIds]
             if (from < 0 || to < 0 || from >= trackIds.length || to >= trackIds.length)
@@ -276,15 +317,32 @@ export const useEchoStore = create<EchoState>()(
             if (!moved) return playlist
             trackIds.splice(to, 0, moved)
             return { ...playlist, trackIds }
-          }),
-        })),
+          })
+          const target = updatedPlaylists.find((p) => p.id === playlistId)
+          if (target) {
+            db.playlists
+              .update(playlistId, {
+                trackIds: target.trackIds,
+                updatedAt: Date.now(),
+              })
+              .catch(() => {})
+          }
+          return { playlists: updatedPlaylists }
+        }),
 
       setPlaylistCover: (playlistId, coverUrl) =>
-        set((state) => ({
-          playlists: state.playlists.map((playlist) =>
+        set((state) => {
+          const updatedPlaylists = state.playlists.map((playlist) =>
             playlist.id === playlistId ? { ...playlist, image: coverUrl ?? '' } : playlist,
-          ),
-        })),
+          )
+          db.playlists
+            .update(playlistId, {
+              coverUrl: coverUrl ?? undefined,
+              updatedAt: Date.now(),
+            })
+            .catch(() => {})
+          return { playlists: updatedPlaylists }
+        }),
 
       playTrack: (trackOrId) => {
         let track: Track | undefined

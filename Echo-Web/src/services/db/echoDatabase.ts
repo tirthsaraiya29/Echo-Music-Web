@@ -170,10 +170,66 @@ export interface FullEchoBackup {
 export async function exportFullBackup(
   preferences: Record<string, unknown>,
   likedTrackIds: string[],
+  activePlaylists?: Array<{
+    id: string
+    title: string
+    description?: string
+    image?: string
+    coverUrl?: string
+    trackIds: string[]
+    createdAt?: number
+  }>,
 ): Promise<string> {
-  const playlists = await db.playlists.toArray()
-  const history = await db.history.limit(500).toArray()
-  const exclusions = await db.recommendationExclusions.toArray()
+  let playlists: StoredPlaylistRecord[] = []
+  let history: ListeningHistoryRecord[] = []
+  let exclusions: RecommendationExclusionRecord[] = []
+
+  const isIndexedDbAvailable = typeof indexedDB !== 'undefined'
+
+  // Sync activePlaylists into Dexie table before exporting if DB is available
+  if (isIndexedDbAvailable && activePlaylists && activePlaylists.length > 0) {
+    for (const p of activePlaylists) {
+      await db.playlists
+        .put({
+          id: p.id,
+          title: p.title,
+          description: p.description || '',
+          coverUrl: p.coverUrl || p.image || undefined,
+          trackIds: p.trackIds || [],
+          createdAt: p.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        })
+        .catch(() => {})
+    }
+  }
+
+  if (isIndexedDbAvailable) {
+    try {
+      playlists = await db.playlists.toArray()
+      history = await db.history.limit(500).toArray()
+      exclusions = await db.recommendationExclusions.toArray()
+    } catch {
+      // Ignore if DB closed
+    }
+  }
+
+  // Ensure activePlaylists are represented in exported backup even if not yet flushed to DB
+  if (activePlaylists && activePlaylists.length > 0) {
+    const existingIds = new Set(playlists.map((p) => p.id))
+    for (const p of activePlaylists) {
+      if (!existingIds.has(p.id)) {
+        playlists.push({
+          id: p.id,
+          title: p.title,
+          description: p.description || '',
+          coverUrl: p.coverUrl || p.image || undefined,
+          trackIds: p.trackIds || [],
+          createdAt: p.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        })
+      }
+    }
+  }
 
   const backup: FullEchoBackup = {
     version: 1,
@@ -193,6 +249,7 @@ export async function importFullBackup(
   mode: 'merge' | 'replace' = 'merge',
 ): Promise<{
   playlistsRestored: number
+  restoredPlaylists: StoredPlaylistRecord[]
   historyRestored: number
   exclusionsRestored: number
   likedTrackIds: string[]
@@ -203,16 +260,26 @@ export async function importFullBackup(
     throw new Error('Invalid Echo backup format')
   }
 
-  if (mode === 'replace') {
-    await db.playlists.clear()
-    await db.history.clear()
-    await db.recommendationExclusions.clear()
+  const isIndexedDbAvailable = typeof indexedDB !== 'undefined'
+
+  if (isIndexedDbAvailable && mode === 'replace') {
+    try {
+      await db.playlists.clear()
+      await db.history.clear()
+      await db.recommendationExclusions.clear()
+    } catch {
+      // Ignore
+    }
   }
 
+  const restoredPlaylists: StoredPlaylistRecord[] = []
   let playlistsRestored = 0
   if (Array.isArray(data.playlists)) {
     for (const p of data.playlists) {
-      await db.playlists.put(p)
+      if (isIndexedDbAvailable) {
+        await db.playlists.put(p).catch(() => {})
+      }
+      restoredPlaylists.push(p)
       playlistsRestored++
     }
   }
@@ -221,7 +288,9 @@ export async function importFullBackup(
   if (Array.isArray(data.history)) {
     for (const h of data.history) {
       delete h.id
-      await db.history.add(h)
+      if (isIndexedDbAvailable) {
+        await db.history.add(h).catch(() => {})
+      }
       historyRestored++
     }
   }
@@ -229,13 +298,16 @@ export async function importFullBackup(
   let exclusionsRestored = 0
   if (Array.isArray(data.exclusions)) {
     for (const e of data.exclusions) {
-      await db.recommendationExclusions.put(e)
+      if (isIndexedDbAvailable) {
+        await db.recommendationExclusions.put(e).catch(() => {})
+      }
       exclusionsRestored++
     }
   }
 
   return {
     playlistsRestored,
+    restoredPlaylists,
     historyRestored,
     exclusionsRestored,
     likedTrackIds: Array.isArray(data.likedTrackIds) ? data.likedTrackIds : [],

@@ -238,9 +238,11 @@ export function SettingsPage() {
 
   const handleExportBackup = async () => {
     try {
+      const playlists = useEchoStore.getState().playlists
       const json = await exportFullBackup(
         preferences as unknown as Record<string, unknown>,
         likedTrackIds,
+        playlists,
       )
       triggerFileDownload(
         json,
@@ -270,6 +272,35 @@ export function SettingsPage() {
     try {
       const content = await file.text()
       const res = await importFullBackup(content, 'merge')
+
+      // Hydrate Zustand store with restored playlists
+      if (res.restoredPlaylists && res.restoredPlaylists.length > 0) {
+        const store = useEchoStore.getState()
+        const existingMap = new Map(store.playlists.map((p) => [p.id, p]))
+        for (const p of res.restoredPlaylists) {
+          existingMap.set(p.id, {
+            id: p.id,
+            title: p.title,
+            description: p.description || '',
+            owner: 'You',
+            image: p.coverUrl || '',
+            trackIds: p.trackIds || [],
+            curated: false,
+            createdAt: p.createdAt || Date.now(),
+          })
+        }
+        useEchoStore.setState({ playlists: Array.from(existingMap.values()) })
+      }
+
+      // Hydrate liked tracks if present in backup
+      if (res.likedTrackIds && res.likedTrackIds.length > 0) {
+        const currentLikes = new Set(useEchoStore.getState().likedTrackIds)
+        for (const id of res.likedTrackIds) {
+          currentLikes.add(id)
+        }
+        useEchoStore.setState({ likedTrackIds: Array.from(currentLikes) })
+      }
+
       notify(`Restored ${res.playlistsRestored} playlists and ${res.historyRestored} history items`)
       await refreshStorageData()
     } catch (err) {
