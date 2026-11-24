@@ -93,3 +93,72 @@ test('Data Saver: audio quality and preloading suspension [BUG-17]', () => {
     },
   })
 })
+
+test('Data Saver: respects browser network policy and gates preloading [BUG-37]', async () => {
+  const { isDataSaverActive } = await import('../src/engine/AudioEngine.ts')
+
+  // 1. With preferences.dataSaver = true, active regardless of connection
+  useEchoStore.setState({
+    preferences: {
+      ...useEchoStore.getState().preferences,
+      dataSaver: true,
+    },
+  })
+  assert.strictEqual(isDataSaverActive(), true)
+
+  // 2. With preferences.dataSaver = false, but navigator.connection.saveData = true
+  useEchoStore.setState({
+    preferences: {
+      ...useEchoStore.getState().preferences,
+      dataSaver: false,
+    },
+  })
+
+  const originalNavigator = globalThis.navigator
+  try {
+    // Mock navigator.connection with saveData = true
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        ...originalNavigator,
+        connection: { saveData: true, effectiveType: '4g' },
+      },
+      configurable: true,
+      writable: true,
+    })
+    assert.strictEqual(isDataSaverActive(), true, 'Network saveData=true should activate Data Saver')
+
+    // Mock navigator.connection with slow-2g
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        ...originalNavigator,
+        connection: { saveData: false, effectiveType: 'slow-2g' },
+      },
+      configurable: true,
+      writable: true,
+    })
+    assert.strictEqual(isDataSaverActive(), true, 'effectiveType slow-2g should activate Data Saver')
+
+    // Normal fast unmetered connection
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        ...originalNavigator,
+        connection: { saveData: false, effectiveType: '4g' },
+      },
+      configurable: true,
+      writable: true,
+    })
+    assert.strictEqual(isDataSaverActive(), false, 'Normal 4g with saveData=false should NOT activate Data Saver')
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: originalNavigator,
+      configurable: true,
+      writable: true,
+    })
+    useEchoStore.setState({
+      preferences: {
+        ...useEchoStore.getState().preferences,
+        dataSaver: false,
+      },
+    })
+  }
+})

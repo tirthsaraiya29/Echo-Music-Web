@@ -479,7 +479,7 @@ export function SettingsPage() {
 
             <PreferenceToggle
               label="Data saver"
-              description="Prefers lower stream bitrates and suspends background track preloading."
+              description="Prefers lower stream bitrates, suspends background track preloading, and respects browser Data Saver network policies."
               preference="dataSaver"
               value={preferences.dataSaver}
               onChange={save}

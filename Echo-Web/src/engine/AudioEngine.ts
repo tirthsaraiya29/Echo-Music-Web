@@ -23,6 +23,22 @@ import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/
 import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService.ts'
 import { castService } from '../services/cast/castService.ts'
 
+/**
+ * Evaluates whether Data Saver is active from user preference or browser network policy.
+ */
+export function isDataSaverActive(): boolean {
+  const prefs = useEchoStore.getState().preferences
+  if (prefs?.dataSaver) return true
+
+  if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+    const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+    if (conn?.saveData === true) return true
+    if (conn?.effectiveType === 'slow-2g' || conn?.effectiveType === '2g') return true
+  }
+
+  return false
+}
+
 export class AudioEngine {
   private static instance: AudioEngine | null = null
 
@@ -903,9 +919,15 @@ export class AudioEngine {
     this.emitState()
   }
 
+  /**
+   * Evaluates whether Data Saver is active from user preference or browser network policy.
+   */
+  public isDataSaverActive(): boolean {
+    return isDataSaverActive()
+  }
+
   private async handlePrebuffer(): Promise<void> {
-    const prefs = useEchoStore.getState().preferences
-    if (prefs.dataSaver) {
+    if (this.isDataSaverActive()) {
       // Data Saver suspends background track preloading to minimize network/bandwidth usage
       return
     }
@@ -989,8 +1011,9 @@ export class AudioEngine {
     if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
       try {
         const prefs = useEchoStore.getState().preferences
-        // Data saver forces the smallest stream regardless of the chosen quality tier.
-        const quality = prefs.dataSaver ? 'low' : prefs.audioQuality
+        // Data saver forces the smallest stream regardless of the chosen quality tier,
+        // respecting both user preference and browser network policies.
+        const quality = this.isDataSaverActive() ? 'low' : prefs.audioQuality
         const res = await fetch(
           `/api/stream/resolve?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(quality)}`,
         )
@@ -1032,6 +1055,8 @@ export class AudioEngine {
 
   private checkAutoRadio(): void {
     if (!this.autoRadioEnabled || this.isFetchingRadioContinuation) return
+    // Under Data Saver / constrained network policy, suspend speculative background queue prefetching
+    if (this.isDataSaverActive()) return
 
     const current = this.queueManager.currentTrack
     if (!current) return
