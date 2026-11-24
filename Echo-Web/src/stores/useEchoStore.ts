@@ -11,6 +11,11 @@ import type {
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
 import { db } from '../services/db/echoDatabase.ts'
+import {
+  validatePreferenceUpdate,
+  sanitizeUserPreferences,
+  recordSettingsMetric,
+} from '../services/settings/settingsTypes.ts'
 
 export const playlistTitleSchema = z
   .string()
@@ -155,6 +160,7 @@ type EchoState = {
   clearRecentHistory: () => void
   recordMedia: (item: Omit<RecentlyPlayedItem, 'at'>) => void
   setPreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void
+  resetPreferences: () => void
   setToast: (message: string) => void
   clearToast: () => void
 }
@@ -582,21 +588,33 @@ export const useEchoStore = create<EchoState>()(
         })),
 
       setPreference: (key, value) => {
-        const engine = AudioEngine.getInstance()
-        if (key === 'volume' && typeof value === 'number') {
-          engine.setVolume(value / 100)
-        } else if (key === 'muted' && typeof value === 'boolean') {
-          engine.setMuted(value)
-        } else if (key === 'shuffle' && typeof value === 'boolean') {
-          engine.setShuffle(value)
-        } else if (key === 'repeat' && typeof value === 'string') {
-          engine.setRepeatMode(value === 'all' ? 'ALL' : value === 'one' ? 'ONE' : 'OFF')
-        } else if (key === 'volumeNormalization' && typeof value === 'boolean') {
-          engine.setVolumeNormalization(value)
+        if (!validatePreferenceUpdate(key, value)) {
+          recordSettingsMetric('preferenceValidationFailures')
+          return
+        }
+        recordSettingsMetric('preferenceUpdates')
+        if (typeof window !== 'undefined') {
+          const engine = AudioEngine.getInstance()
+          if (key === 'volume' && typeof value === 'number') {
+            engine.setVolume(value / 100)
+          } else if (key === 'muted' && typeof value === 'boolean') {
+            engine.setMuted(value)
+          } else if (key === 'shuffle' && typeof value === 'boolean') {
+            engine.setShuffle(value)
+          } else if (key === 'repeat' && typeof value === 'string') {
+            engine.setRepeatMode(value === 'all' ? 'ALL' : value === 'one' ? 'ONE' : 'OFF')
+          } else if (key === 'volumeNormalization' && typeof value === 'boolean') {
+            engine.setVolumeNormalization(value)
+          }
         }
         set((state) => ({
           preferences: { ...state.preferences, [key]: value },
         }))
+      },
+
+      resetPreferences: () => {
+        recordSettingsMetric('preferencesResetToDefault')
+        set({ preferences: { ...defaultPreferences } })
       },
 
       setToast: (message) => set({ toast: message }),
@@ -697,13 +715,13 @@ export const useEchoStore = create<EchoState>()(
           isPlaying: false,
           progressMs: 0,
           toast: '',
-          preferences: {
+          preferences: sanitizeUserPreferences({
             ...defaultPreferences,
             ...savedPreferences,
             accentColor: validAccent.includes(savedPreferences?.accentColor ?? 'violet')
               ? (savedPreferences?.accentColor ?? 'violet')
               : 'violet',
-          },
+          }),
         }
       },
     },

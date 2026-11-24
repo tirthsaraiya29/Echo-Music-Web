@@ -121,6 +121,7 @@ export function SettingsPage() {
   const release = useLatestRelease()
   const preferences = useEchoStore((state) => state.preferences)
   const setPreference = useEchoStore((state) => state.setPreference)
+  const resetPreferences = useEchoStore((state) => state.resetPreferences)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const notify = useEchoStore((state) => state.setToast)
   const { setCrossfadeDuration, setVolumeNormalization, getAudioTelemetry, clearHistory } = useAudioEngine()
@@ -1453,26 +1454,9 @@ export function SettingsPage() {
 
             <button
               type="button"
-              className="reset-preferences"
+              className="reset-preferences min-h-[44px]"
               onClick={() => {
-                setPreference('accentColor', 'violet')
-                setPreference('themeMode', 'dark')
-                setPreference('volume', 68)
-                setPreference('muted', false)
-                setPreference('shuffle', false)
-                setPreference('repeat', 'off')
-                setPreference('showExplicit', true)
-                setPreference('volumeNormalization', false)
-                setPreference('audioQuality', 'high')
-                setPreference('smoothScrolling', true)
-                setPreference('compactLists', false)
-                setPreference('lastPlayedLayout', 'grid')
-                setPreference('contentRegion', 'US')
-                setPreference('crossfadeDuration', 3)
-                setPreference('preferredLyricsProvider', 'LRCLIB')
-                setPreference('defaultTab', 'home')
-                setPreference('dataSaver', false)
-                setPreference('romanizeLyrics', false)
+                resetPreferences()
                 notify('Preferences reset to default values')
               }}
             >
