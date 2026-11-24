@@ -20,6 +20,8 @@ import {
   DownloadCloud,
   FileUp,
   X,
+  Cloud,
+  Server,
 } from 'lucide-react'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
@@ -40,6 +42,8 @@ import {
   restoreExcludedTrack,
 } from '../services/recommendations/localTasteEngine.ts'
 import { triggerFileDownload } from '../services/sharing/playlistPortability.ts'
+import { cloudMediaManager } from '../services/cloud/cloudMediaManager.ts'
+import type { CloudServerConfig, CloudProviderType } from '../services/cloud/cloudMediaTypes.ts'
 
 const accents: { value: AccentColor; label: string; color: string }[] = [
   { value: 'violet', label: 'Violet', color: '#8b79e8' },
@@ -124,6 +128,15 @@ export function SettingsPage() {
   const [excludedTracks, setExcludedTracks] = useState<
     Array<{ trackId: string; trackTitle: string; artistName: string }>
   >([])
+  const [cloudServers, setCloudServers] = useState<CloudServerConfig[]>(() =>
+    cloudMediaManager.getServers(),
+  )
+  const [cloudType, setCloudType] = useState<CloudProviderType>('jellyfin')
+  const [cloudUrl, setCloudUrl] = useState('')
+  const [cloudUser, setCloudUser] = useState('')
+  const [cloudPassword, setCloudPassword] = useState('')
+  const [cloudConnecting, setCloudConnecting] = useState(false)
+  const [cloudError, setCloudError] = useState<string | null>(null)
 
   const restoreInputRef = useRef<HTMLInputElement>(null)
   const telemetry = getAudioTelemetry()
@@ -158,6 +171,12 @@ export function SettingsPage() {
       label: 'Connected Services',
       icon: Radio,
       keywords: 'lastfm scrobble discord presence cast streaming chromecast',
+    },
+    {
+      id: 'cloud',
+      label: 'Cloud Media',
+      icon: Cloud,
+      keywords: 'cloud jellyfin navidrome subsonic server self-hosted streaming library',
     },
     {
       id: 'taste',
@@ -212,6 +231,56 @@ export function SettingsPage() {
       active = false
     }
   }, [setPreference, notify])
+
+  useEffect(() => {
+    return cloudMediaManager.subscribe((servers) => {
+      setCloudServers(servers)
+    })
+  }, [])
+
+  const handleConnectCloud = async () => {
+    if (!cloudUrl.trim()) {
+      setCloudError('Server URL is required')
+      return
+    }
+    setCloudConnecting(true)
+    setCloudError(null)
+    try {
+      const res = await cloudMediaManager.testConnection({
+        type: cloudType,
+        serverUrl: cloudUrl.trim(),
+        username: cloudUser.trim() || undefined,
+        password: cloudPassword || undefined,
+      })
+      if (!res.success) {
+        setCloudError(res.error || 'Connection failed')
+      } else {
+        cloudMediaManager.addServer({
+          name:
+            res.serverName || (cloudType === 'jellyfin' ? 'Jellyfin Server' : 'Navidrome Server'),
+          type: cloudType,
+          serverUrl: cloudUrl.trim(),
+          username: cloudUser.trim(),
+          token: res.token,
+          userId: res.userId,
+          salt: res.salt,
+        })
+        setCloudUrl('')
+        setCloudUser('')
+        setCloudPassword('')
+        notify(`Connected to ${res.serverName || cloudType}`)
+      }
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : 'Connection failed')
+    } finally {
+      setCloudConnecting(false)
+    }
+  }
+
+  const handleRemoveCloud = (id: string, name: string) => {
+    cloudMediaManager.removeServer(id)
+    notify(`Removed ${name}`)
+  }
 
   const save = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
     setPreference(key, value)
@@ -778,6 +847,128 @@ export function SettingsPage() {
                 if (val) castService.init()
               }}
             />
+          </section>
+        )}
+
+        {/* Section: Cloud Media Providers */}
+        {matchesFilter(
+          'cloud',
+          'Cloud Media Providers',
+          'cloud jellyfin navidrome subsonic server self-hosted streaming library',
+        ) && (
+          <section id="settings-cloud" className="settings-section">
+            <div className="settings-section__heading">
+              <span className="settings-section__icon">
+                <Cloud size={18} />
+              </span>
+              <div>
+                <h2>Cloud Media Providers</h2>
+                <p>Connect your self-hosted Jellyfin or Navidrome / Subsonic music servers.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-white/6 bg-white/2 p-4">
+              <h3 className="text-sm font-semibold text-white">Add Cloud Server</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">Server Type</label>
+                  <select
+                    className="settings-select w-full"
+                    value={cloudType}
+                    onChange={(e) => setCloudType(e.target.value as CloudProviderType)}
+                  >
+                    <option value="jellyfin">Jellyfin</option>
+                    <option value="navidrome">Navidrome (Subsonic API)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">Server URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://jellyfin.example.com"
+                    value={cloudUrl}
+                    onChange={(e) => setCloudUrl(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">Username</label>
+                  <input
+                    type="text"
+                    placeholder="Username"
+                    value={cloudUser}
+                    onChange={(e) => setCloudUser(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">Password / API Key</label>
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={cloudPassword}
+                    onChange={(e) => setCloudPassword(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {cloudError && (
+                <div className="rounded-lg bg-red-500/10 p-2 text-xs text-red-400">
+                  {cloudError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                disabled={cloudConnecting || !cloudUrl.trim()}
+                onClick={handleConnectCloud}
+                className="button button--primary disabled:opacity-50"
+              >
+                {cloudConnecting ? 'Connecting...' : 'Connect Server'}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a59fad]">
+                Connected Servers ({cloudServers.length})
+              </h3>
+              {cloudServers.length === 0 ? (
+                <p className="rounded-xl border border-white/5 bg-white/2 p-4 text-xs text-[#a59fad]">
+                  No cloud media servers connected. Add a Jellyfin or Navidrome server above.
+                </p>
+              ) : (
+                cloudServers.map((server) => (
+                  <div
+                    key={server.id}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-white/3 p-3.5 text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-[#b09cff]">
+                        <Server size={16} />
+                      </div>
+                      <div>
+                        <strong className="block text-white">{server.name}</strong>
+                        <span className="text-[#a59fad]">
+                          {server.serverUrl} &bull; <span className="capitalize">{server.type}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCloud(server.id, server.name)}
+                      className="rounded-lg p-2 text-[#a59fad] transition-colors hover:bg-white/5 hover:text-red-400"
+                      title="Remove server"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
         )}
 

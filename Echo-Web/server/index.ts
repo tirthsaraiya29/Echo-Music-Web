@@ -18,6 +18,7 @@ import { recognitionRouter } from './routes/recognition.ts'
 import { musicDnaRouter } from './routes/musicDna.ts'
 import { lastfmRouter } from './routes/lastfm.ts'
 import { discordRouter } from './routes/discord.ts'
+import { cloudRouter } from './routes/cloud.ts'
 
 export const app = new Hono()
 
@@ -67,6 +68,7 @@ app.route('/api/recognition', recognitionRouter)
 app.route('/api/music-dna', musicDnaRouter)
 app.route('/api/lastfm', lastfmRouter)
 app.route('/api/discord', discordRouter)
+app.route('/api/cloud', cloudRouter)
 
 // Production static asset serving & SPA client-side routing fallback
 const staticDir = process.env['STATIC_DIR'] || './dist'
