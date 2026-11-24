@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
-import type { AccentColor, AudioQuality, UserPreferences } from '../types/domain.ts'
+import type { AccentColor, AudioQuality, CrossfadeProfile, UserPreferences } from '../types/domain.ts'
 import { useEchoStore } from '../stores/useEchoStore.ts'
 import { classNames } from '../utils/classNames.ts'
 import { useAudioEngine } from '../hooks/useAudioEngine.ts'
@@ -131,7 +131,14 @@ export function SettingsPage() {
   const resetPreferences = useEchoStore((state) => state.resetPreferences)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const notify = useEchoStore((state) => state.setToast)
-  const { setCrossfadeDuration, setVolumeNormalization, setGaplessPlayback, getAudioTelemetry, clearHistory } = useAudioEngine()
+  const {
+    setCrossfadeDuration,
+    setCrossfadeProfile,
+    setVolumeNormalization,
+    setGaplessPlayback,
+    getAudioTelemetry,
+    clearHistory,
+  } = useAudioEngine()
 
   const [activeSection, setActiveSection] = useState('all')
   const [settingsFilter, setSettingsFilter] = useState('')
@@ -436,6 +443,9 @@ export function SettingsPage() {
     setPreference(key, value)
     if (key === 'crossfadeDuration' && typeof value === 'number') {
       setCrossfadeDuration(value)
+    }
+    if (key === 'crossfadeProfile' && typeof value === 'string') {
+      setCrossfadeProfile(value as CrossfadeProfile)
     }
     if (key === 'volumeNormalization' && typeof value === 'boolean') {
       setVolumeNormalization(value)
@@ -748,6 +758,24 @@ export function SettingsPage() {
                   {preferences.crossfadeDuration ?? 3}s
                 </span>
               </div>
+            </div>
+
+            <div className="setting-row">
+              <span>
+                <strong>Crossfade profile</strong>
+                <small>Acoustic curve shaping volume transition between consecutive tracks.</small>
+              </span>
+              <select
+                className="select"
+                value={preferences.crossfadeProfile ?? 'equalPower'}
+                onChange={(e) => save('crossfadeProfile', e.target.value as CrossfadeProfile)}
+                aria-label="Crossfade curve profile"
+              >
+                <option value="equalPower">Equal Power (Constant loudness)</option>
+                <option value="linear">Linear (Constant gain sum)</option>
+                <option value="logarithmic">Logarithmic (Smooth exponential decay)</option>
+                <option value="scurve">S-Curve (Gentle start & finish)</option>
+              </select>
             </div>
 
             <PreferenceToggle

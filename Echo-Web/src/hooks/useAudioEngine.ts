@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AudioEngine } from '../engine/AudioEngine.ts'
-import type { AudioEngineState, RepeatMode, Track } from '../types/audio.ts'
+import type { AudioEngineState, CrossfadeProfile, RepeatMode, Track } from '../types/audio.ts'
 import { getCachedTrack, useEchoStore } from '../stores/useEchoStore.ts'
 
 export const audioEngineActions = {
@@ -75,6 +75,8 @@ export const audioEngineActions = {
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
   setGaplessPlayback: (enabled: boolean) => AudioEngine.getInstance().setGaplessPlayback(enabled),
+  setCrossfadeProfile: (profile: CrossfadeProfile) =>
+    AudioEngine.getInstance().setCrossfadeProfile(profile),
 }
 
 export function useAudioEngine() {
@@ -112,6 +114,7 @@ export function useAudioEngine() {
     stereoWidth: state.stereoWidth,
     volumeNormalization: state.volumeNormalization,
     crossfadeDuration: state.crossfadeDuration,
+    crossfadeProfile: state.crossfadeProfile ?? 'equalPower',
     gaplessPlayback: state.gaplessPlayback ?? true,
     equalizerGains: state.equalizerGains,
     playbackRate: state.playbackRate ?? 1.0,
@@ -263,6 +266,13 @@ export function bridgeAudioEngineWithStore(): () => void {
         typeof currPrefs.gaplessPlayback === 'boolean'
       ) {
         engine.setGaplessPlayback(currPrefs.gaplessPlayback)
+        changed = true
+      }
+      if (
+        currPrefs.crossfadeProfile !== prevPrefs.crossfadeProfile &&
+        currPrefs.crossfadeProfile
+      ) {
+        engine.setCrossfadeProfile(currPrefs.crossfadeProfile)
         changed = true
       }
 

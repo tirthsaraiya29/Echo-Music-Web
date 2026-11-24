@@ -13,6 +13,7 @@ export const lastPlayedLayoutSchema = z.enum(['grid', 'list'])
 export const lyricsProviderSchema = z.enum(['LRCLIB', 'BETTER_LYRICS', 'KUGOU'])
 export const defaultTabSchema = z.enum(['home', 'search', 'library', 'discover', 'settings'])
 export const discordModeSchema = z.enum(['auto', 'companion', 'backend'])
+export const crossfadeProfileSchema = z.enum(['equalPower', 'linear', 'logarithmic', 'scurve'])
 
 export const userPreferencesSchema = z.object({
   themeMode: themeModeSchema.default('dark'),
@@ -32,6 +33,7 @@ export const userPreferencesSchema = z.object({
   lastPlayedLayout: lastPlayedLayoutSchema.default('grid'),
   contentRegion: z.string().regex(/^[A-Z]{2}$/).optional().default('US'),
   crossfadeDuration: z.number().min(0).max(12).optional().default(3),
+  crossfadeProfile: crossfadeProfileSchema.optional().default('equalPower'),
   preferredLyricsProvider: lyricsProviderSchema.optional().default('LRCLIB'),
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),

@@ -22,6 +22,7 @@ export type PlaybackState =
 export type RepeatMode = 'OFF' | 'ALL' | 'ONE'
 
 export type DeckId = 'A' | 'B'
+export type CrossfadeProfile = 'equalPower' | 'linear' | 'logarithmic' | 'scurve'
 
 export interface SponsorSegment {
   category: 'music_offtopic' | 'intro' | 'outro' | 'preview' | string
@@ -94,6 +95,7 @@ export interface AudioEngineState {
   stereoWidth: number
   volumeNormalization: boolean
   crossfadeDuration: number
+  crossfadeProfile?: CrossfadeProfile | undefined
   gaplessPlayback?: boolean | undefined
   playbackRate?: number
   sleepTimerRemaining?: number | null

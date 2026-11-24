@@ -1,10 +1,58 @@
-import type { DeckId, PlaybackState, Track } from '../types/audio.ts'
+import type { CrossfadeProfile, DeckId, PlaybackState, Track } from '../types/audio.ts'
 import type { WebAudioGraph } from './WebAudioGraph.ts'
 import { isValidTrack } from './QueueManager.ts'
 
 export interface DeckControllerOptions {
   crossfadeDuration?: number
+  crossfadeProfile?: CrossfadeProfile
   prebufferWindowMs?: number
+}
+
+export function generateCrossfadeCurves(
+  profile: CrossfadeProfile = 'equalPower',
+  steps = 32,
+): { fadeOutCurve: Float32Array; fadeInCurve: Float32Array } {
+  const clampedSteps = Math.max(2, Math.min(256, steps))
+  const fadeOutCurve = new Float32Array(clampedSteps)
+  const fadeInCurve = new Float32Array(clampedSteps)
+
+  for (let i = 0; i < clampedSteps; i++) {
+    const t = i / (clampedSteps - 1)
+    switch (profile) {
+      case 'linear': {
+        fadeOutCurve[i] = 1 - t
+        fadeInCurve[i] = t
+        break
+      }
+      case 'logarithmic': {
+        const factor = Math.E * Math.E - 1
+        fadeOutCurve[i] = Math.max(0, Math.min(1, (Math.exp(2 * (1 - t)) - 1) / factor))
+        fadeInCurve[i] = Math.max(0, Math.min(1, (Math.exp(2 * t) - 1) / factor))
+        break
+      }
+      case 'scurve': {
+        const s = t * t * (3 - 2 * t)
+        fadeOutCurve[i] = 1 - s
+        fadeInCurve[i] = s
+        break
+      }
+      case 'equalPower':
+      default: {
+        const theta = t * (Math.PI / 2)
+        fadeOutCurve[i] = Math.cos(theta)
+        fadeInCurve[i] = Math.sin(theta)
+        break
+      }
+    }
+  }
+
+  // Ensure strict boundary guarantees
+  fadeOutCurve[0] = 1.0
+  fadeOutCurve[clampedSteps - 1] = 0.0
+  fadeInCurve[0] = 0.0
+  fadeInCurve[clampedSteps - 1] = 1.0
+
+  return { fadeOutCurve, fadeInCurve }
 }
 
 export interface CrossfadeMetrics {
@@ -19,6 +67,7 @@ export interface CrossfadeMetrics {
 export interface CrossfadeStatus {
   isCrossfading: boolean
   crossfadeDurationSeconds: number
+  crossfadeProfile: CrossfadeProfile
   activeDeck: DeckId
   standbyDeck: DeckId
   hasStandbyTrack: boolean
@@ -37,6 +86,7 @@ export class DeckController {
 
   private activeDeckId: DeckId = 'A'
   private crossfadeDurationSeconds = 3.0
+  private crossfadeProfileSetting: CrossfadeProfile = 'equalPower'
   private prebufferWindowMs = 15000
 
   private activeTrackDeckA: Track | null = null
@@ -75,6 +125,7 @@ export class DeckController {
   constructor(graph: WebAudioGraph, options: DeckControllerOptions = {}) {
     this.graph = graph
     this.crossfadeDurationSeconds = options.crossfadeDuration ?? 3.0
+    this.crossfadeProfileSetting = options.crossfadeProfile ?? 'equalPower'
     this.prebufferWindowMs = options.prebufferWindowMs ?? 15000
 
     this.deckAElement = new Audio()
@@ -106,6 +157,18 @@ export class DeckController {
     this.crossfadeDurationSeconds = Math.max(0, Math.min(12, Number.isFinite(seconds) ? seconds : 3))
   }
 
+  public get crossfadeProfile(): CrossfadeProfile {
+    return this.crossfadeProfileSetting
+  }
+
+  public setCrossfadeProfile(profile: CrossfadeProfile): void {
+    this.crossfadeProfileSetting = profile
+  }
+
+  public getCrossfadeProfile(): CrossfadeProfile {
+    return this.crossfadeProfileSetting
+  }
+
   public setGaplessPlayback(enabled: boolean): void {
     this.gaplessPlaybackEnabled = Boolean(enabled)
   }
@@ -127,6 +190,7 @@ export class DeckController {
     return {
       isCrossfading: this.isCrossfading,
       crossfadeDurationSeconds: this.crossfadeDurationSeconds,
+      crossfadeProfile: this.crossfadeProfileSetting,
       activeDeck: this.activeDeckId,
       standbyDeck: this.standbyDeck,
       hasStandbyTrack: Boolean(this.getStandbyTrack()),
@@ -414,15 +478,7 @@ export class DeckController {
     const toGain = toDeck === 'A' ? this.graph.deckAGain : this.graph.deckBGain
 
     if (duration > 0) {
-      const steps = 32
-      const fadeOutCurve = new Float32Array(steps)
-      const fadeInCurve = new Float32Array(steps)
-
-      for (let i = 0; i < steps; i++) {
-        const theta = (i / (steps - 1)) * (Math.PI / 2)
-        fadeOutCurve[i] = Math.cos(theta)
-        fadeInCurve[i] = Math.sin(theta)
-      }
+      const { fadeOutCurve, fadeInCurve } = generateCrossfadeCurves(this.crossfadeProfileSetting, 32)
 
       fromGain.gain.cancelScheduledValues(now)
       toGain.gain.cancelScheduledValues(now)

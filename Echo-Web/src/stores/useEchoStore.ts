@@ -93,6 +93,7 @@ const defaultPreferences: UserPreferences = {
   lastPlayedLayout: 'grid',
   contentRegion: 'US',
   crossfadeDuration: 3,
+  crossfadeProfile: 'equalPower',
   preferredLyricsProvider: 'LRCLIB',
   dataSaver: false,
   discordRpc: false,

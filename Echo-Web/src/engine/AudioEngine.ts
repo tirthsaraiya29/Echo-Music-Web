@@ -3,6 +3,7 @@ import type {
   AudioEngineEvent,
   AudioEngineEventMap,
   AudioEngineState,
+  CrossfadeProfile,
   DeckId,
   PlaybackState,
   QueueSnapshot,
@@ -101,9 +102,11 @@ export class AudioEngine {
 
     this.deckController = new DeckController(this.graph, {
       crossfadeDuration: config.crossfadeDuration ?? 3.0,
+      crossfadeProfile: useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower',
       prebufferWindowMs: config.prebufferWindowMs ?? 15000,
     })
     this.deckController.setGaplessPlayback(useEchoStore.getState().preferences.gaplessPlayback ?? true)
+    this.deckController.setCrossfadeProfile(useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower')
 
     this.queueManager = new QueueManager()
 
@@ -177,6 +180,7 @@ export class AudioEngine {
       stereoWidth: this.graph.stereoWidener.getWidth(),
       volumeNormalization: this.graph.getVolumeNormalization(),
       crossfadeDuration: this.deckController.crossfadeDuration,
+      crossfadeProfile: this.deckController.getCrossfadeProfile(),
       gaplessPlayback: this.deckController.getGaplessPlayback(),
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
@@ -439,6 +443,11 @@ export class AudioEngine {
 
   public setCrossfadeDuration(seconds: number): void {
     this.deckController.setCrossfadeDuration(seconds)
+    this.emitState()
+  }
+
+  public setCrossfadeProfile(profile: CrossfadeProfile): void {
+    this.deckController.setCrossfadeProfile(profile)
     this.emitState()
   }
 

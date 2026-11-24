@@ -115,6 +115,7 @@ export interface RecentlyPlayedItem {
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type AccentColor = 'violet' | 'emerald' | 'amber' | 'rose' | 'sky'
 export type AudioQuality = 'low' | 'medium' | 'high' | 'lossless'
+export type CrossfadeProfile = 'equalPower' | 'linear' | 'logarithmic' | 'scurve'
 
 export interface UserPreferences {
   themeMode: ThemeMode
@@ -134,6 +135,7 @@ export interface UserPreferences {
   lastPlayedLayout: 'grid' | 'list'
   contentRegion?: string | undefined
   crossfadeDuration?: number | undefined
+  crossfadeProfile?: CrossfadeProfile | undefined
   preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | undefined
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined
