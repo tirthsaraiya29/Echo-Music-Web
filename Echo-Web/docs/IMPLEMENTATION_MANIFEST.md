@@ -31,7 +31,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-17 | P1 | Several settings are inert or only partially implemented | `src/types/domain.ts, src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts, src/services/innertube/client.ts, src/stores/useEchoStore.ts` | Completed | 93e595d6 | Yes (verified on origin/main) |
 | BUG-18 | P1 | Negative cache entries never expire | `src/services/lyrics/LyricsOrchestrator.ts, src/services/canvas/CanvasManager.ts` | Completed | ae98e84d | Yes (verified on origin/main) |
 | BUG-19 | P1 | Stale metadata cache revalidation is not deduplicated | `src/services/cache/metadataCache.ts` | Completed | bf35917c | Yes (verified on origin/main) |
-| BUG-20 | P1 | Metadata cache cap is not a hard cap | `src/services/cache/metadataCache.ts` | Pending | - | - |
+| BUG-20 | P1 | Metadata cache cap is not a hard cap | `src/services/cache/metadataCache.ts` | Completed | 94940f68 | Yes (verified on origin/main) |
 | BUG-21 | P1 | Security tests do not exercise production allowlist code | `test/security.test.ts, server/routes/stream.ts, server/routes/canvas.ts` | Pending | - | - |
 | BUG-22 | P1 | CI does not run tests | `.github/workflows/ci.yml, package.json` | Pending | - | - |
 | BUG-23 | P2 | Spotify matching accepts the first search result | `src/services/spotify/spotifyImporter.ts` | Pending | - | - |
