@@ -73,7 +73,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-08 | Stream resolver | 10 tasks in backlog | Completed | 78a360cd | Yes (verified on origin/main) |
 | SMALL-09 | HTTP Range streaming | 10 tasks in backlog | Completed | f5596cda | Yes (verified on origin/main) |
 | SMALL-10 | Streaming proxy security | 10 tasks in backlog | Completed | a6a0674c | Yes (verified on origin/main) |
-| SMALL-11 | InnerTube client | 10 tasks in backlog | Pending | - | - |
+| SMALL-11 | InnerTube client | 10 tasks in backlog | Completed | 7fbcb420 | Yes (verified on origin/main) |
 | SMALL-12 | InnerTube parser | 10 tasks in backlog | Pending | - | - |
 | SMALL-13 | Radio continuation | 10 tasks in backlog | Pending | - | - |
 | SMALL-14 | Metadata cache | 10 tasks in backlog | Pending | - | - |
