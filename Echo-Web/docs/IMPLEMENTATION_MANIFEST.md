@@ -139,7 +139,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-017 | Echo Brain momentum queue | Completed | 6fb4e976 | Yes (verified on origin/main) |
 | FEATURE-018 | Varispeed mode | Completed | ab81cc61 | Yes (verified on origin/main) |
 | FEATURE-019 | Pause on mute | Completed | 0b0eb7c3 | Yes (verified on origin/main) |
-| FEATURE-020 | Bluetooth reconnect resume | Pending | - | - |
+| FEATURE-020 | Bluetooth reconnect resume | Completed | 761d3bd0 | Yes (verified on origin/main) |
 | FEATURE-021 | Music Flow vertical reel | Pending | - | - |
 | FEATURE-022 | Music Flow queue handoff | Pending | - | - |
 | FEATURE-023 | Echo Brain auto-injection | Pending | - | - |
