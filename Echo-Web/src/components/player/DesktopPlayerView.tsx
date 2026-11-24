@@ -250,11 +250,15 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
               <span className="rounded border border-[#7c5cff]/20 bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#b09cff]">
                 {telemetry.codec} · {telemetry.bitrate} · {telemetry.sampleRate}
               </span>
-              {telemetry.isHighBitrate && (
+              {telemetry.isLossless ? (
+                <span className="rounded border border-amber-400/20 bg-amber-400/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
+                  {parseFloat(telemetry.sampleRate) > 48 ? 'HI-RES LOSSLESS' : 'LOSSLESS'}
+                </span>
+              ) : telemetry.isHighBitrate ? (
                 <span className="rounded border border-emerald-500/20 bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400">
                   HIGH BITRATE
                 </span>
-              )}
+              ) : null}
             </div>
             <span className="mt-0.5 max-w-xs truncate text-xs font-medium text-[#f4f1f7]">
               {currentTrack.albumTitle || currentTrack.album?.title || 'Echo Music Catalog'}

@@ -572,6 +572,7 @@ export class AudioEngine {
     bitDepth: string
     source: string
     isHighBitrate: boolean
+    isLossless: boolean
   } {
     const current = this.queueManager.currentTrack
     const ctx = this.graph.context
@@ -580,14 +581,35 @@ export class AudioEngine {
 
     if (this.activeExtensionStream) {
       const ext = this.activeExtensionStream
-      const isLossless =
-        (ext.quality?.toLowerCase().includes('lossless') ?? false) ||
+      const isFlac =
         (ext.codec?.toLowerCase().includes('flac') ?? false) ||
         (ext.mimeType?.toLowerCase().includes('flac') ?? false)
+      const isAlac =
+        (ext.codec?.toLowerCase().includes('alac') ?? false) ||
+        (ext.mimeType?.toLowerCase().includes('alac') ?? false)
+      const isWav =
+        (ext.codec?.toLowerCase().includes('wav') ?? false) ||
+        (ext.mimeType?.toLowerCase().includes('wav') ?? false)
+      const isLossless =
+        isFlac ||
+        isAlac ||
+        isWav ||
+        (ext.quality?.toLowerCase().includes('lossless') ?? false)
       const is320 =
         (ext.quality?.includes('320') ?? false) || Boolean(ext.bitrate && ext.bitrate >= 320000)
-      const codec =
-        ext.codec || (isLossless ? 'FLAC (Lossless)' : is320 ? 'MP3 (320 kbps)' : 'Extension Stream')
+
+      const codec = isFlac
+        ? 'FLAC (Lossless)'
+        : isAlac
+          ? 'ALAC (Lossless)'
+          : isWav
+            ? 'WAV (PCM)'
+            : isLossless
+              ? 'Lossless Audio'
+              : is320
+                ? 'MP3 (320 kbps)'
+                : ext.codec || 'Extension Stream'
+
       const bitrate = isLossless
         ? 'Lossless'
         : is320
@@ -603,16 +625,36 @@ export class AudioEngine {
         bitDepth: '32-bit Float DSP',
         source: ext.source,
         isHighBitrate: Boolean(is320 || isLossless),
+        isLossless,
       }
     }
 
+    // Local files
+    const isLocalLossless =
+      Boolean(isLocal) &&
+      (current?.title.toLowerCase().endsWith('.flac') ||
+        current?.title.toLowerCase().endsWith('.wav') ||
+        current?.title.toLowerCase().endsWith('.alac'))
+
     // Streamed tracks report what the server actually resolved; nothing is overstated.
     const isOpus = (this.lastStreamFormat?.mimeType ?? '').toLowerCase().includes('opus')
-    const codec = isLocal ? 'Local Audio' : isOpus ? 'Opus (WebM)' : 'AAC (MP4)'
+    const codec = isLocal
+      ? isLocalLossless
+        ? 'Local Lossless'
+        : 'Local Audio'
+      : isOpus
+        ? 'Opus (WebM)'
+        : 'AAC (MP4)'
     const bitrateKbps = this.lastStreamFormat
       ? Math.round(this.lastStreamFormat.bitrate / 1000)
       : null
-    const bitrate = isLocal ? 'Source bitrate' : bitrateKbps ? `~${bitrateKbps} kbps` : 'Unresolved'
+    const bitrate = isLocal
+      ? isLocalLossless
+        ? 'Lossless'
+        : 'Source bitrate'
+      : bitrateKbps
+        ? `~${bitrateKbps} kbps`
+        : 'Unresolved'
     const isHighBitrate = Boolean(bitrateKbps && bitrateKbps >= 320)
 
     return {
@@ -622,6 +664,7 @@ export class AudioEngine {
       bitDepth: '32-bit Float DSP',
       source: isLocal ? 'Local Audio' : 'YouTube Proxy',
       isHighBitrate,
+      isLossless: Boolean(isLocalLossless),
     }
   }
 
