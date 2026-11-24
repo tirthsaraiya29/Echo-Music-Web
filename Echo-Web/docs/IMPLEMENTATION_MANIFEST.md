@@ -147,7 +147,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-025 | Spotify recommendation bridge | Completed | 9dbeb56e | Yes (verified on origin/main) |
 | FEATURE-026 | Charts and regional charts | Completed | af7badc0 | Yes (verified on origin/main) |
 | FEATURE-027 | Mood and genre browsing | Completed | edd28ed2 | Yes (verified on origin/main) |
-| FEATURE-028 | Shorts filtering | Pending | - | - |
+| FEATURE-028 | Shorts filtering | Completed | e4ff222e | Yes (verified on origin/main) |
 | FEATURE-029 | Video-song filtering | Pending | - | - |
 | FEATURE-030 | Blocked artists | Pending | - | - |
 | FEATURE-031 | Podcast discovery | Pending | - | - |
