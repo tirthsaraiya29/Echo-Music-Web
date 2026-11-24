@@ -31,11 +31,19 @@ export interface SponsorSegment {
   uuid?: string | undefined
 }
 
+export interface ContinuationPagingState {
+  continuationToken: string | null
+  pageIndex: number
+  hasMore: boolean
+  lastFetchedAt: number | null
+}
+
 export interface QueueSnapshot {
   id: string
   timestamp: number
   owner?: string | undefined
   ownerToken?: string | undefined
+  continuationState?: ContinuationPagingState | undefined
   history: Track[]
   currentTrack: Track | null
   upNext: Track[]
@@ -104,6 +112,7 @@ export interface AudioEngineState {
   crossfadeDuration: number
   crossfadeProfile?: CrossfadeProfile | undefined
   gaplessPlayback?: boolean | undefined
+  continuationState?: ContinuationPagingState | undefined
   playbackRate?: number
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean

@@ -3,6 +3,7 @@ import type {
   AudioEngineEvent,
   AudioEngineEventMap,
   AudioEngineState,
+  ContinuationPagingState,
   CrossfadeProfile,
   DeckId,
   PlaybackState,
@@ -183,6 +184,7 @@ export class AudioEngine {
       crossfadeDuration: this.deckController.crossfadeDuration,
       crossfadeProfile: this.deckController.getCrossfadeProfile(),
       gaplessPlayback: this.deckController.getGaplessPlayback(),
+      continuationState: this.queueManager.getContinuationState(),
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
@@ -751,6 +753,10 @@ export class AudioEngine {
 
   public setPauseAtEndOfItems(enable: boolean): void {
     this.queueManager.setPauseAtEndOfItems(enable)
+  }
+
+  public getContinuationState(): Readonly<ContinuationPagingState> {
+    return this.queueManager.getContinuationState()
   }
 
   public getVisualizerData(): Uint8Array<ArrayBuffer> {
@@ -1379,8 +1385,9 @@ export class AudioEngine {
 
     const upNext = this.queueManager.upNext
     const radioQueue = this.queueManager.radioQueue
+    const continuationState = this.queueManager.getContinuationState()
 
-    if (upNext.length === 0 && radioQueue.length < 3) {
+    if (upNext.length === 0 && radioQueue.length < 3 && continuationState.hasMore) {
       void this.fetchRadioContinuation(current.videoId || current.id)
     }
   }
@@ -1404,19 +1411,37 @@ export class AudioEngine {
       const prefs = useEchoStore.getState().preferences
       const region = prefs.contentRegion || 'US'
       const showExplicit = prefs.showExplicit ?? true
+      const continuationState = this.queueManager.getContinuationState()
+      const token = continuationState.continuationToken
+
+      const queryParams = new URLSearchParams()
+      if (token) {
+        queryParams.set('continuation', token)
+      } else {
+        queryParams.set('videoId', videoId)
+      }
+      queryParams.set('gl', region)
+      queryParams.set('explicit', String(showExplicit))
+
       const res = await fetch(
-        `/api/radio/continuation?videoId=${encodeURIComponent(videoId)}&gl=${encodeURIComponent(region)}&explicit=${showExplicit}`,
+        `/api/radio/continuation?${queryParams.toString()}`,
         { signal: abortController.signal },
       )
       if (res.ok) {
-        const data = (await res.json()) as { tracks: Track[] }
+        const data = (await res.json()) as { tracks: Track[]; continuationToken?: string }
         if (Array.isArray(data.tracks) && data.tracks.length > 0) {
           const filtered = showExplicit ? data.tracks : data.tracks.filter((t) => !t.explicit)
           if (filtered.length > 0) {
-            this.queueManager.addRadioTracks(filtered)
+            this.queueManager.addRadioTracks(filtered, data.continuationToken ?? null)
             this.emit('queueChange')
             this.emitState()
+          } else if (data.continuationToken) {
+            this.queueManager.setContinuationToken(data.continuationToken, true)
           }
+        } else if (data.continuationToken) {
+          this.queueManager.setContinuationToken(data.continuationToken, true)
+        } else {
+          this.queueManager.setContinuationToken(null, false)
         }
       }
     } catch {

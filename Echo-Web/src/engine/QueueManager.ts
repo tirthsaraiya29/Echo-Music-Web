@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import type { DeckId, QueueSnapshot, RepeatMode, RestoreQueueOptions, Track } from '../types/audio.ts'
+import type {
+  ContinuationPagingState,
+  DeckId,
+  QueueSnapshot,
+  RepeatMode,
+  RestoreQueueOptions,
+  Track,
+} from '../types/audio.ts'
 
 export const TrackSchema = z
   .object({
@@ -17,11 +24,19 @@ export const TrackSchema = z
   })
   .passthrough()
 
+export const continuationPagingStateSchema = z.object({
+  continuationToken: z.string().nullable(),
+  pageIndex: z.number(),
+  hasMore: z.boolean(),
+  lastFetchedAt: z.number().nullable(),
+})
+
 export const QueueSnapshotSchema = z.object({
   id: z.string().min(1),
   timestamp: z.number(),
   owner: z.string().optional(),
   ownerToken: z.string().optional(),
+  continuationState: continuationPagingStateSchema.optional(),
   history: z.array(z.record(z.string(), z.unknown())),
   currentTrack: z.record(z.string(), z.unknown()).nullable(),
   upNext: z.array(z.record(z.string(), z.unknown())),
@@ -81,6 +96,7 @@ export interface DetailedQueueState {
   sourceUpcoming: Track[]
   history: Track[]
   radioQueue: Track[]
+  continuationState?: ContinuationPagingState | undefined
   totalUpcomingCount: number
   isEmpty: boolean
   hasUpcoming: boolean
@@ -94,6 +110,12 @@ export class QueueManager {
   private sourceQueueList: Track[] = []
   private shuffledList: Track[] = []
   private radioQueueList: Track[] = []
+  private continuationState: ContinuationPagingState = {
+    continuationToken: null,
+    pageIndex: 0,
+    hasMore: true,
+    lastFetchedAt: null,
+  }
 
   private currentSourceIndex = -1
   private repeatModeSetting: RepeatMode = 'OFF'
@@ -248,6 +270,28 @@ export class QueueManager {
     return this.currentOwnerToken === token
   }
 
+  public getContinuationState(): Readonly<ContinuationPagingState> {
+    return { ...this.continuationState }
+  }
+
+  public setContinuationToken(token: string | null, incrementPage = false): void {
+    this.continuationState.continuationToken = token
+    this.continuationState.hasMore = Boolean(token)
+    this.continuationState.lastFetchedAt = Date.now()
+    if (incrementPage) {
+      this.continuationState.pageIndex++
+    }
+  }
+
+  public resetContinuation(): void {
+    this.continuationState = {
+      continuationToken: null,
+      pageIndex: 0,
+      hasMore: true,
+      lastFetchedAt: null,
+    }
+  }
+
   public setActiveDeck(deck: DeckId): void {
     this.currentActiveDeck = deck
   }
@@ -266,6 +310,7 @@ export class QueueManager {
       sourceUpcoming,
       history: this.history,
       radioQueue: this.radioQueue,
+      continuationState: this.getContinuationState(),
       totalUpcomingCount: totalUpcoming,
       isEmpty: !this.activeTrack && totalUpcoming === 0 && this.radioQueueList.length === 0,
       hasUpcoming: totalUpcoming > 0 || this.radioQueueList.length > 0,
@@ -274,6 +319,7 @@ export class QueueManager {
 
   public setSourceQueue(tracks: Track[], startIndex = 0): Track | null {
     this.revokeOwnership('SET_SOURCE_QUEUE')
+    this.resetContinuation()
     const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const validTracks = tracks.filter((t) => {
       const ok = isValidTrack(t)
@@ -425,7 +471,7 @@ export class QueueManager {
     this.historyList = []
   }
 
-  public addRadioTracks(tracks: Track[]): void {
+  public addRadioTracks(tracks: Track[], nextContinuationToken?: string | null): void {
     const existingIds = new Set<string>()
     if (this.activeTrack) existingIds.add(this.activeTrack.id)
     for (const t of this.upNextList) existingIds.add(t.id)
@@ -445,11 +491,15 @@ export class QueueManager {
       return true
     })
     this.radioQueueList.push(...valid.map(cloneTrack))
+    if (nextContinuationToken !== undefined) {
+      this.setContinuationToken(nextContinuationToken, true)
+    }
     this.metrics.mutationsCount++
   }
 
   public clearRadioQueue(): void {
     this.radioQueueList = []
+    this.resetContinuation()
   }
 
   public setRepeatMode(mode: RepeatMode): void {
@@ -685,6 +735,7 @@ export class QueueManager {
       pauseAtEndOfItems: this.pauseAtEndOfItemsSetting,
       currentSourceIndex: this.currentSourceIndex,
       activeTrackSource: this.activeTrackSource,
+      continuationState: this.getContinuationState(),
     }
   }
 
@@ -716,6 +767,17 @@ export class QueueManager {
     this.repeatModeSetting = snapshot.repeatMode
     this.shuffleEnabled = snapshot.isShuffle
     this.pauseAtEndOfItemsSetting = snapshot.pauseAtEndOfItems
+
+    if (snapshot.continuationState) {
+      this.continuationState = {
+        continuationToken: snapshot.continuationState.continuationToken ?? null,
+        pageIndex: snapshot.continuationState.pageIndex ?? 0,
+        hasMore: snapshot.continuationState.hasMore ?? false,
+        lastFetchedAt: snapshot.continuationState.lastFetchedAt ?? null,
+      }
+    } else {
+      this.resetContinuation()
+    }
 
     if (typeof snapshot.currentSourceIndex === 'number') {
       this.currentSourceIndex = snapshot.currentSourceIndex
