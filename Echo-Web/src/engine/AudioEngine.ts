@@ -1080,8 +1080,12 @@ export class AudioEngine {
       return cached
     }
 
-    // Attempt custom extension audio provider resolution when configured
-    if (!this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
+    const prefs = useEchoStore.getState().preferences
+    const isExtensionFirst =
+      prefs.extensionSourcePriority !== 'youtube-first' && prefs.preferExtensionAudio !== false
+
+    // Attempt custom extension audio provider resolution when extension-first is enabled
+    if (isExtensionFirst && !this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
       try {
         const extStream = await extensionManager.resolveTrackExtension(track)
         if (extStream?.streamUrl) {
@@ -1098,7 +1102,6 @@ export class AudioEngine {
     const videoId = track.videoId || track.id
     if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
       try {
-        const prefs = useEchoStore.getState().preferences
         // Data saver forces the smallest stream regardless of the chosen quality tier,
         // respecting both user preference and browser network policies.
         const quality = this.isDataSaverActive() ? 'low' : prefs.audioQuality
@@ -1125,10 +1128,33 @@ export class AudioEngine {
           }
         }
       } catch (err) {
+        if (!isExtensionFirst && !this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
+          try {
+            const extStream = await extensionManager.resolveTrackExtension(track)
+            if (extStream?.streamUrl) {
+              const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
+              this.streamCache.set(track.id, streamInfo)
+              track.streamUrl = extStream.streamUrl
+              return streamInfo
+            }
+          } catch {}
+        }
         throw new Error(
           `Failed to resolve live audio stream for "${track.title}": ${err instanceof Error ? err.message : String(err)}`,
         )
       }
+    }
+
+    if (!isExtensionFirst && !this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
+      try {
+        const extStream = await extensionManager.resolveTrackExtension(track)
+        if (extStream?.streamUrl) {
+          const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
+          this.streamCache.set(track.id, streamInfo)
+          track.streamUrl = extStream.streamUrl
+          return streamInfo
+        }
+      } catch {}
     }
 
     throw new Error(

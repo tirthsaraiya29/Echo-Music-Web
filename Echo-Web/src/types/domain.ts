@@ -142,4 +142,6 @@ export interface UserPreferences {
   discordMode?: 'auto' | 'companion' | 'backend' | undefined
   skipSilence?: boolean | undefined
   googleCast?: boolean | undefined
+  preferExtensionAudio?: boolean | undefined
+  extensionSourcePriority?: 'extension-first' | 'youtube-first' | undefined
 }

@@ -45,6 +45,11 @@ export const userPreferencesSchema = z.object({
   discordMode: discordModeSchema.optional().default('auto'),
   skipSilence: z.boolean().optional().default(false),
   googleCast: z.boolean().optional().default(false),
+  preferExtensionAudio: z.boolean().optional().default(true),
+  extensionSourcePriority: z
+    .enum(['extension-first', 'youtube-first'])
+    .optional()
+    .default('extension-first'),
 })
 
 export type ValidatedUserPreferences = z.infer<typeof userPreferencesSchema>

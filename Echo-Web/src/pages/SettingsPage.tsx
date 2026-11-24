@@ -1199,6 +1199,41 @@ export function SettingsPage() {
               </div>
             </div>
 
+            <div className="mb-4 flex items-center justify-between rounded-xl border border-white/6 bg-white/2 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Extension-First Resolution</h3>
+                <p className="text-xs text-[#a59fad]">
+                  Resolve high-quality audio from extensions before falling back to YouTube
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={preferences.extensionSourcePriority !== 'youtube-first'}
+                onClick={() =>
+                  save(
+                    'extensionSourcePriority',
+                    preferences.extensionSourcePriority === 'youtube-first'
+                      ? 'extension-first'
+                      : 'youtube-first',
+                  )
+                }
+                className={`relative inline-flex h-6 w-11 min-h-[44px] min-w-[44px] items-center rounded-full transition-colors ${
+                  preferences.extensionSourcePriority !== 'youtube-first'
+                    ? 'bg-[#7c5cff]'
+                    : 'bg-white/20'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    preferences.extensionSourcePriority !== 'youtube-first'
+                      ? 'translate-x-6'
+                      : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
             <div className="space-y-4 rounded-xl border border-white/6 bg-white/2 p-4">
               <h3 className="text-sm font-semibold text-white">Add Extension Endpoint</h3>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

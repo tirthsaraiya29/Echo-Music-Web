@@ -95,6 +95,8 @@ const defaultPreferences: UserPreferences = {
   discordRpc: false,
   discordBridgeUrl: 'http://127.0.0.1:6463',
   discordMode: 'auto',
+  preferExtensionAudio: true,
+  extensionSourcePriority: 'extension-first',
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID
