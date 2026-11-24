@@ -1,13 +1,102 @@
+/**
+ * Lyrics provider orchestration service.
+ *
+ * Responsibilities:
+ * - Coordinates cascading retrieval of synchronized and unsynchronized lyrics across
+ *   multiple providers (LRCLIB, BetterLyrics, KuGou, and YouTube Captions fallback).
+ * - Multi-tiered caching: in-memory LRU cache (200 entries) with positive (24h) and negative (2m) TTLs,
+ *   and persistent IndexedDB cache (300 entries) for offline resilience.
+ * - Runtime schema validation via Zod for incoming track queries, provider lyric payloads, and metrics.
+ * - In-flight deduplication / coalescing: prevents concurrent duplicate fetches for the same query.
+ * - Bounded timeouts (6000ms per provider) and graceful cascade progression on network failure.
+ * - Cooperative lifecycle cancellation via internal AbortControllers and external AbortSignals.
+ * - Instrumentation of latency, cache hit ratios, provider hit distributions, and failure reasons.
+ */
+
+import { z } from 'zod'
 import type { Track } from '../../types/domain.ts'
-import type { SynchronizedLyrics } from '../../types/lyrics.ts'
+import type { SynchronizedLyrics, LyricsProviderType } from '../../types/lyrics.ts'
 import { db } from '../db/echoDatabase.ts'
 import { useEchoStore } from '../../stores/useEchoStore.ts'
 import { BetterLyricsProvider } from './BetterLyricsProvider.ts'
 import { LRCLIBProvider } from './LRCLIBProvider.ts'
 import { KuGouProvider } from './KuGouProvider.ts'
 
-// Prune target for the persistent cache; in-memory cache stays LRU-bounded separately.
-const PERSISTENT_CACHE_MAX = 300
+// --- Runtime Schemas ---
+
+export const lyricsQuerySchema = z
+  .object({
+    id: z.string().optional(),
+    videoId: z.string().optional(),
+    title: z.string().trim().min(1, 'Track title must not be empty'),
+    cleanTitle: z.string().optional(),
+    artistName: z.string().optional().default(''),
+    albumTitle: z.string().optional(),
+    durationSeconds: z.number().nonnegative().optional(),
+    durationMs: z.number().nonnegative().optional(),
+  })
+  .passthrough()
+
+export type LyricsQueryInput = z.infer<typeof lyricsQuerySchema>
+
+export const lyricWordSchema = z.object({
+  text: z.string(),
+  startTimeMs: z.number().nonnegative(),
+  endTimeMs: z.number().nonnegative(),
+})
+
+export const lyricLineSchema = z.object({
+  startTimeMs: z.number().nonnegative(),
+  endTimeMs: z.number().nonnegative().optional(),
+  text: z.string(),
+  translatedText: z.string().optional(),
+  words: z.array(lyricWordSchema).optional(),
+  agent: z.string().optional(),
+  isBackground: z.boolean().optional(),
+})
+
+export const synchronizedLyricsSchema = z.object({
+  provider: z.enum(['BETTER_LYRICS', 'LRCLIB', 'KUGOU', 'YOUTUBE']),
+  isSynced: z.boolean(),
+  isWordSynced: z.boolean(),
+  lines: z.array(lyricLineSchema),
+})
+
+export const cachedLyricsPayloadSchema = z.object({
+  trackId: z.string().min(1),
+  query: z.string().min(1),
+  lyrics: synchronizedLyricsSchema,
+  provider: z.string(),
+  fetchedAt: z.number().nonnegative(),
+})
+
+export const lyricsOrchestratorMetricsSchema = z.object({
+  totalRequests: z.number().int().nonnegative(),
+  memoryCacheHits: z.number().int().nonnegative(),
+  persistentCacheHits: z.number().int().nonnegative(),
+  networkRequests: z.number().int().nonnegative(),
+  providerHits: z.object({
+    BETTER_LYRICS: z.number().int().nonnegative(),
+    LRCLIB: z.number().int().nonnegative(),
+    KUGOU: z.number().int().nonnegative(),
+    YOUTUBE: z.number().int().nonnegative(),
+  }),
+  coalescedRequests: z.number().int().nonnegative(),
+  failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
+  avgLatencyMs: z.number().nonnegative(),
+  lastLatencyMs: z.number().nonnegative(),
+})
+
+export type LyricsOrchestratorMetrics = z.infer<typeof lyricsOrchestratorMetricsSchema>
+
+export type LyricsStatus =
+  | 'idle'
+  | 'loading'
+  | 'resolved'
+  | 'empty'
+  | 'stale'
+  | 'offline'
+  | 'error'
 
 export type LyricsProviderKey = 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU'
 
@@ -23,15 +112,62 @@ export interface LyricsCacheEntry {
   expiresAt: number
 }
 
+// Module-level metrics singleton
+let orchestratorMetrics: LyricsOrchestratorMetrics = {
+  totalRequests: 0,
+  memoryCacheHits: 0,
+  persistentCacheHits: 0,
+  networkRequests: 0,
+  providerHits: {
+    BETTER_LYRICS: 0,
+    LRCLIB: 0,
+    KUGOU: 0,
+    YOUTUBE: 0,
+  },
+  coalescedRequests: 0,
+  failuresByReason: {},
+  avgLatencyMs: 0,
+  lastLatencyMs: 0,
+}
+
+export function getLyricsOrchestratorMetrics(): LyricsOrchestratorMetrics {
+  return {
+    ...orchestratorMetrics,
+    providerHits: { ...orchestratorMetrics.providerHits },
+    failuresByReason: { ...orchestratorMetrics.failuresByReason },
+  }
+}
+
+export function resetLyricsOrchestratorMetrics(): void {
+  orchestratorMetrics = {
+    totalRequests: 0,
+    memoryCacheHits: 0,
+    persistentCacheHits: 0,
+    networkRequests: 0,
+    providerHits: {
+      BETTER_LYRICS: 0,
+      LRCLIB: 0,
+      KUGOU: 0,
+      YOUTUBE: 0,
+    },
+    coalescedRequests: 0,
+    failuresByReason: {},
+    avgLatencyMs: 0,
+    lastLatencyMs: 0,
+  }
+}
+
 export class LyricsOrchestrator {
   public static readonly POSITIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
   public static readonly NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+  public static readonly CACHE_MAX = 200
+  public static readonly PERSISTENT_CACHE_MAX = 300
+  public static readonly PROVIDER_TIMEOUT_MS = 6000 // 6 seconds bounded timeout per provider
 
   private static instance: LyricsOrchestrator | null = null
   private currentAbortController: AbortController | null = null
-  // LRU-bounded (Map keeps insertion order)
-  private static readonly CACHE_MAX = 200
   private cache = new Map<string, LyricsCacheEntry>()
+  private inFlightRequests = new Map<string, Promise<SynchronizedLyrics | null>>()
 
   public static getInstance(): LyricsOrchestrator {
     if (!LyricsOrchestrator.instance) {
@@ -63,7 +199,14 @@ export class LyricsOrchestrator {
     return `${trackKey}:${track.title}:${track.artistName}:${preferred}:${romanize ? 'rom' : 'orig'}`
   }
 
-  private cleanTitle(title: string): string {
+  public cancelOngoingFetch(): void {
+    if (this.currentAbortController) {
+      this.currentAbortController.abort()
+      this.currentAbortController = null
+    }
+  }
+
+  public cleanTitle(title: string): string {
     return title
       .replace(/\(feat\..*?\)/gi, '')
       .replace(/\[feat\..*?\]/gi, '')
@@ -82,43 +225,78 @@ export class LyricsOrchestrator {
       .trim()
   }
 
-  private cleanArtist(artist: string): string {
+  public cleanArtist(artist: string): string {
     return artist.split(/,|&|feat\.|ft\./i)[0]!.trim()
   }
 
+  /**
+   * Retrieves lyrics for the specified track with cascade resolution, multi-tier caching,
+   * schema validation, in-flight coalescing, and cancellation support.
+   */
   public async getLyrics(
     track: Track,
     externalSignal?: AbortSignal,
   ): Promise<SynchronizedLyrics | null> {
+    const startTime = performance.now()
+
+    // 1. Runtime schema validation for input query
+    const parsed = lyricsQuerySchema.safeParse(track)
+    if (!parsed.success) {
+      this.recordFailure('malformed_input')
+      return null
+    }
+
+    orchestratorMetrics.totalRequests++
+
     const prefs = useEchoStore.getState().preferences
     const preferred = prefs.preferredLyricsProvider || 'LRCLIB'
     const preferRomanized = Boolean(prefs.romanizeLyrics)
 
     const cacheKey = this.buildCacheKey(track, preferred, preferRomanized)
+
+    // 2. Memory cache inspection
     const cached = this.cache.get(cacheKey)
     if (cached) {
       if (Date.now() < cached.expiresAt) {
+        orchestratorMetrics.memoryCacheHits++
+        this.recordLatency(performance.now() - startTime)
         return cached.lyrics
       }
       this.cache.delete(cacheKey)
     }
 
-    // Persistent cache first, so a reload or offline session still gets lyrics.
+    // 3. Persistent cache inspection
     const trackId = track.videoId || track.id
     if (trackId && typeof indexedDB !== 'undefined') {
-      const stored = await db.cachedLyrics.get(trackId)
-      if (stored && stored.query === cacheKey) {
-        this.cache.set(cacheKey, {
-          lyrics: stored.lyrics,
-          cachedAt: stored.fetchedAt || Date.now(),
-          expiresAt: Date.now() + LyricsOrchestrator.POSITIVE_CACHE_TTL_MS,
-        })
-        this.pruneMemoryCache()
-        return stored.lyrics
+      try {
+        const stored = await db.cachedLyrics.get(trackId)
+        if (stored && stored.query === cacheKey) {
+          const validStored = synchronizedLyricsSchema.safeParse(stored.lyrics)
+          if (validStored.success) {
+            this.cache.set(cacheKey, {
+              lyrics: validStored.data,
+              cachedAt: stored.fetchedAt || Date.now(),
+              expiresAt: Date.now() + LyricsOrchestrator.POSITIVE_CACHE_TTL_MS,
+            })
+            this.pruneMemoryCache()
+            orchestratorMetrics.persistentCacheHits++
+            this.recordLatency(performance.now() - startTime)
+            return validStored.data
+          }
+        }
+      } catch {
+        // Non-fatal IndexedDB read error
       }
     }
 
-    // Cancel any ongoing fetch to avoid race conditions and memory leaks on rapid skips
+    // 4. In-flight request deduplication / coalescing
+    const inFlight = this.inFlightRequests.get(cacheKey)
+    if (inFlight) {
+      orchestratorMetrics.coalescedRequests++
+      return inFlight
+    }
+
+    // 5. Cancel any prior ongoing request to prevent stale racing on rapid track skips
     if (this.currentAbortController) {
       this.currentAbortController.abort()
       this.currentAbortController = null
@@ -129,65 +307,126 @@ export class LyricsOrchestrator {
 
     const onExternalAbort = () => abortController.abort()
     if (externalSignal) {
-      externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+      if (externalSignal.aborted) {
+        abortController.abort()
+      } else {
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true })
+      }
     }
 
-    const signal = abortController.signal
-    const rawTitle = track.cleanTitle || track.title || ''
-    const cleanTitle = this.cleanTitle(rawTitle)
-    const rawArtist = track.artistName || ''
-    const cleanArtist = this.cleanArtist(rawArtist)
-    const album = track.albumTitle || track.album?.title || undefined
-    const durationSeconds =
-      track.durationSeconds ||
-      (track.durationMs && track.durationMs > 0 ? track.durationMs / 1000 : undefined)
+    orchestratorMetrics.networkRequests++
 
-    let lyrics: SynchronizedLyrics | null = null
+    const fetchPromise = (async (): Promise<SynchronizedLyrics | null> => {
+      const signal = abortController.signal
+      const rawTitle = track.cleanTitle || track.title || ''
+      const cleanTitle = this.cleanTitle(rawTitle)
+      const rawArtist = track.artistName || ''
+      const cleanArtist = this.cleanArtist(rawArtist)
+      const album = track.albumTitle || track.album?.title || undefined
+      const durationSeconds =
+        track.durationSeconds ||
+        (track.durationMs && track.durationMs > 0 ? track.durationMs / 1000 : undefined)
 
-    try {
-      const cascade = this.getProviderCascade(preferred)
+      let lyrics: SynchronizedLyrics | null = null
 
-      for (const provider of cascade) {
-        if (lyrics || signal.aborted) break
+      try {
+        const cascade = this.getProviderCascade(preferred)
 
-        switch (provider) {
-          case 'BETTER_LYRICS':
-            lyrics = await BetterLyricsProvider.fetchLyrics(
-              cleanTitle,
-              cleanArtist,
-              album,
-              durationSeconds,
-              signal,
-            )
-            break
-          case 'LRCLIB':
-            lyrics = await LRCLIBProvider.fetchLyrics(
-              cleanTitle,
-              cleanArtist,
-              album,
-              durationSeconds,
-              signal,
-              preferRomanized,
-            )
-            break
-          case 'KUGOU':
-            lyrics = await KuGouProvider.fetchLyrics(
-              cleanTitle,
-              cleanArtist,
-              album,
-              durationSeconds,
-              signal,
-            )
-            break
+        for (const provider of cascade) {
+          if (lyrics || signal.aborted) break
+
+          try {
+            let candidate: SynchronizedLyrics | null = null
+            switch (provider) {
+              case 'BETTER_LYRICS':
+                candidate = await this.fetchWithTimeout(
+                  (sig) =>
+                    BetterLyricsProvider.fetchLyrics(
+                      cleanTitle,
+                      cleanArtist,
+                      album,
+                      durationSeconds,
+                      sig,
+                    ),
+                  signal,
+                  LyricsOrchestrator.PROVIDER_TIMEOUT_MS,
+                )
+                break
+              case 'LRCLIB':
+                candidate = await this.fetchWithTimeout(
+                  (sig) =>
+                    LRCLIBProvider.fetchLyrics(
+                      cleanTitle,
+                      cleanArtist,
+                      album,
+                      durationSeconds,
+                      sig,
+                      preferRomanized,
+                    ),
+                  signal,
+                  LyricsOrchestrator.PROVIDER_TIMEOUT_MS,
+                )
+                break
+              case 'KUGOU':
+                candidate = await this.fetchWithTimeout(
+                  (sig) =>
+                    KuGouProvider.fetchLyrics(
+                      cleanTitle,
+                      cleanArtist,
+                      album,
+                      durationSeconds,
+                      sig,
+                    ),
+                  signal,
+                  LyricsOrchestrator.PROVIDER_TIMEOUT_MS,
+                )
+                break
+            }
+
+            if (candidate) {
+              const validation = synchronizedLyricsSchema.safeParse(candidate)
+              if (validation.success) {
+                lyrics = validation.data
+                orchestratorMetrics.providerHits[provider] =
+                  (orchestratorMetrics.providerHits[provider] || 0) + 1
+              }
+            }
+          } catch {
+            // Provider failed or timed out; continue cascade
+          }
         }
-      }
 
-      // Fallback to YouTube Captions
-      if (!lyrics && !signal.aborted && (track.videoId || track.id)) {
-        lyrics = await this.fetchYouTubeCaptions(track.videoId || track.id, signal)
-      }
+        // Fallback to YouTube Captions
+        if (!lyrics && !signal.aborted && (track.videoId || track.id)) {
+          try {
+            const ytCandidate = await this.fetchWithTimeout(
+              (sig) => this.fetchYouTubeCaptions(track.videoId || track.id!, sig),
+              signal,
+              LyricsOrchestrator.PROVIDER_TIMEOUT_MS,
+            )
+            if (ytCandidate) {
+              const validation = synchronizedLyricsSchema.safeParse(ytCandidate)
+              if (validation.success) {
+                lyrics = validation.data
+                orchestratorMetrics.providerHits.YOUTUBE =
+                  (orchestratorMetrics.providerHits.YOUTUBE || 0) + 1
+              }
+            }
+          } catch {
+            // YouTube caption fallback failed
+          }
+        }
 
-      if (!signal.aborted) {
+        if (signal.aborted) {
+          this.recordFailure('aborted')
+          return null
+        }
+
+        if (!lyrics) {
+          this.recordFailure('not_found')
+        }
+
+        // Cache resolution in memory
         this.cache.set(cacheKey, {
           lyrics,
           cachedAt: Date.now(),
@@ -198,21 +437,65 @@ export class LyricsOrchestrator {
               : LyricsOrchestrator.NEGATIVE_CACHE_TTL_MS),
         })
         this.pruneMemoryCache()
+
+        // Persist positive results in IndexedDB
         if (trackId && lyrics) {
           void this.persistLyrics(trackId, cacheKey, lyrics)
         }
-      }
 
-      return lyrics
+        return lyrics
+      } catch {
+        if (signal.aborted) {
+          this.recordFailure('aborted')
+        } else {
+          this.recordFailure('network_error')
+        }
+        return null
+      } finally {
+        this.recordLatency(performance.now() - startTime)
+        if (externalSignal) {
+          externalSignal.removeEventListener('abort', onExternalAbort)
+        }
+        if (this.currentAbortController === abortController) {
+          this.currentAbortController = null
+        }
+      }
+    })().finally(() => {
+      this.inFlightRequests.delete(cacheKey)
+    })
+
+    this.inFlightRequests.set(cacheKey, fetchPromise)
+    return fetchPromise
+  }
+
+  /**
+   * Executes a provider fetch operation bounded by a specified timeout.
+   */
+  private async fetchWithTimeout<T>(
+    fetcher: (signal: AbortSignal) => Promise<T>,
+    parentSignal: AbortSignal,
+    timeoutMs: number,
+  ): Promise<T | null> {
+    const timeoutController = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      timeoutController.abort(new Error('TIMEOUT'))
+    }, timeoutMs)
+
+    const onParentAbort = () => {
+      timeoutController.abort(parentSignal.reason)
+    }
+    parentSignal.addEventListener('abort', onParentAbort, { once: true })
+
+    try {
+      return await fetcher(timeoutController.signal)
     } catch {
+      if (timeoutController.signal.aborted && !parentSignal.aborted) {
+        this.recordFailure('timeout')
+      }
       return null
     } finally {
-      if (externalSignal) {
-        externalSignal.removeEventListener('abort', onExternalAbort)
-      }
-      if (this.currentAbortController === abortController) {
-        this.currentAbortController = null
-      }
+      if (timer) clearTimeout(timer)
+      parentSignal.removeEventListener('abort', onParentAbort)
     }
   }
 
@@ -243,6 +526,7 @@ export class LyricsOrchestrator {
 
   public clearCache(): void {
     this.cache.clear()
+    this.inFlightRequests.clear()
   }
 
   private async persistLyrics(
@@ -252,18 +536,22 @@ export class LyricsOrchestrator {
   ): Promise<void> {
     if (typeof indexedDB === 'undefined') return
     try {
-      await db.cachedLyrics.put({
+      const payload = {
         trackId,
         query,
         lyrics,
-        provider: lyrics.provider,
+        provider: lyrics.provider as LyricsProviderType,
         fetchedAt: Date.now(),
-      })
+      }
+      const parsed = cachedLyricsPayloadSchema.safeParse(payload)
+      if (!parsed.success) return
+
+      await db.cachedLyrics.put(payload)
       const count = await db.cachedLyrics.count()
-      if (count > PERSISTENT_CACHE_MAX) {
+      if (count > LyricsOrchestrator.PERSISTENT_CACHE_MAX) {
         const stale = await db.cachedLyrics
           .orderBy('fetchedAt')
-          .limit(count - PERSISTENT_CACHE_MAX)
+          .limit(count - LyricsOrchestrator.PERSISTENT_CACHE_MAX)
           .toArray()
         await db.cachedLyrics.bulkDelete(stale.map((s) => s.trackId))
       }
@@ -277,5 +565,19 @@ export class LyricsOrchestrator {
       const oldest = this.cache.keys().next().value
       if (oldest !== undefined) this.cache.delete(oldest)
     }
+  }
+
+  private recordFailure(reason: string): void {
+    orchestratorMetrics.failuresByReason[reason] =
+      (orchestratorMetrics.failuresByReason[reason] || 0) + 1
+  }
+
+  private recordLatency(latencyMs: number): void {
+    orchestratorMetrics.lastLatencyMs = latencyMs
+    const n = orchestratorMetrics.totalRequests
+    orchestratorMetrics.avgLatencyMs =
+      n <= 1
+        ? latencyMs
+        : (orchestratorMetrics.avgLatencyMs * (n - 1) + latencyMs) / n
   }
 }

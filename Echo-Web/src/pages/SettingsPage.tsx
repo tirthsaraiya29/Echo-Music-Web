@@ -793,13 +793,15 @@ export function SettingsPage() {
             </div>
 
             <div className="setting-row">
-              <span>
+              <label htmlFor="preferred-lyrics-provider">
                 <strong>Preferred synchronized provider</strong>
                 <small>
                   Primary database queried for word-by-word and line-by-line lyric tracks.
                 </small>
-              </span>
+              </label>
               <select
+                id="preferred-lyrics-provider"
+                aria-label="Preferred synchronized lyrics provider"
                 className="settings-select"
                 value={preferences.preferredLyricsProvider || 'LRCLIB'}
                 onChange={(e) =>

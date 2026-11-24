@@ -9,7 +9,11 @@ export class KuGouProvider {
     signal?: AbortSignal,
   ): Promise<SynchronizedLyrics | null> {
     try {
-      const url = new URL('/api/lyrics/kugou', window.location.origin)
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : 'http://localhost'
+      const url = new URL('/api/lyrics/kugou', origin)
       url.searchParams.set('title', title)
       url.searchParams.set('artist', artist)
       if (album) {

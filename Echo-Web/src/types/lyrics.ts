@@ -6,12 +6,12 @@ export interface LyricWord {
 
 export interface LyricLine {
   startTimeMs: number
-  endTimeMs?: number
+  endTimeMs?: number | undefined
   text: string
-  translatedText?: string
-  words?: LyricWord[]
-  agent?: string
-  isBackground?: boolean
+  translatedText?: string | undefined
+  words?: LyricWord[] | undefined
+  agent?: string | undefined
+  isBackground?: boolean | undefined
 }
 
 export type LyricsProviderType = 'BETTER_LYRICS' | 'LRCLIB' | 'KUGOU' | 'YOUTUBE'
