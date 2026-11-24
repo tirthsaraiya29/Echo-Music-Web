@@ -8,6 +8,8 @@ import {
   validateDestinationUrl,
   safeProxyFetch,
 } from '../server/utils/ssrf.ts'
+import { streamRouter } from '../server/routes/stream.ts'
+import { canvasRouter } from '../server/routes/canvas.ts'
 
 test('Security: isAllowedStreamingDomain strictly validates YouTube & GoogleVideo domains and blocks SSRF targets', () => {
   // Allowed
@@ -102,3 +104,113 @@ test('Security: safeProxyFetch validates initial and redirect destinations [BUG-
     /SSRF blocked/,
   )
 })
+
+test('Security: production streamRouter strictly enforces SSRF allowlist and blocks internal/malicious destinations [BUG-21]', async () => {
+  // 1. Missing url parameter -> 403
+  const resEmpty = await streamRouter.request('http://localhost/proxy')
+  assert.strictEqual(resEmpty.status, 403)
+
+  // 2. Private IP literal -> 403
+  const resPrivate = await streamRouter.request(
+    'http://localhost/proxy?url=' + encodeURIComponent('http://127.0.0.1:8080/admin'),
+  )
+  assert.strictEqual(resPrivate.status, 403)
+
+  // 3. AWS metadata endpoint -> 403
+  const resMeta = await streamRouter.request(
+    'http://localhost/proxy?url=' + encodeURIComponent('http://169.254.169.254/latest/meta-data'),
+  )
+  assert.strictEqual(resMeta.status, 403)
+
+  // 4. Evil spoofed domain -> 403
+  const resSpoofed = await streamRouter.request(
+    'http://localhost/proxy?url=' + encodeURIComponent('https://evil-googlevideo.com/payload'),
+  )
+  assert.strictEqual(resSpoofed.status, 403)
+
+  // 5. Attacker subdomain -> 403
+  const resAttacker = await streamRouter.request(
+    'http://localhost/proxy?url=' + encodeURIComponent('https://googlevideo.com.attacker.com/payload'),
+  )
+  assert.strictEqual(resAttacker.status, 403)
+})
+
+test('Security: production canvasRouter strictly enforces Apple and Tidal allowlists and blocks SSRF targets [BUG-21]', async () => {
+  // Apple route: missing url -> 400
+  const resAppleEmpty = await canvasRouter.request('http://localhost/apple')
+  assert.strictEqual(resAppleEmpty.status, 400)
+
+  // Apple route: internal IP -> 403
+  const resAppleInternal = await canvasRouter.request(
+    'http://localhost/apple?url=' + encodeURIComponent('http://127.0.0.1:3000/internal'),
+  )
+  assert.strictEqual(resAppleInternal.status, 403)
+
+  // Apple route: evil domain -> 403
+  const resAppleEvil = await canvasRouter.request(
+    'http://localhost/apple?url=' + encodeURIComponent('https://evil-apple.com/song.m3u8'),
+  )
+  assert.strictEqual(resAppleEvil.status, 403)
+
+  // Apple route: spoofed mzstatic -> 403
+  const resAppleSpoofed = await canvasRouter.request(
+    'http://localhost/apple?url=' + encodeURIComponent('https://mzstatic.com.attacker.com/song.m3u8'),
+  )
+  assert.strictEqual(resAppleSpoofed.status, 403)
+
+  // Tidal route: missing params -> 400
+  const resTidalEmpty = await canvasRouter.request('http://localhost/tidal')
+  assert.strictEqual(resTidalEmpty.status, 400)
+
+  // Tidal route: internal IP -> 403
+  const resTidalInternal = await canvasRouter.request(
+    'http://localhost/tidal?url=' + encodeURIComponent('http://localhost:8080/secret'),
+  )
+  assert.strictEqual(resTidalInternal.status, 403)
+
+  // Tidal route: evil domain -> 403
+  const resTidalEvil = await canvasRouter.request(
+    'http://localhost/tidal?url=' + encodeURIComponent('https://evil-tidal.com/canvas.mp4'),
+  )
+  assert.strictEqual(resTidalEvil.status, 403)
+})
+
+test('Security: safeProxyFetch blocks open redirect to internal IP addresses and unapproved domains [BUG-21]', async () => {
+  const originalFetch = globalThis.fetch
+  const validInitialUrl = 'https://music.youtube.com/watch?v=valid123'
+
+  try {
+    // 1. Redirect to private/link-local address
+    globalThis.fetch = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'http://169.254.169.254/latest/meta-data' },
+      })) as any
+
+    await assert.rejects(
+      () =>
+        safeProxyFetch(validInitialUrl, {
+          domainValidator: isAllowedStreamingDomain,
+        }),
+      /SSRF blocked: Destination or redirect URL is forbidden \(http:\/\/169\.254\.169\.254\/latest\/meta-data\)/,
+    )
+
+    // 2. Redirect to unauthorized external domain
+    globalThis.fetch = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://malicious-site.attacker.com/payload' },
+      })) as any
+
+    await assert.rejects(
+      () =>
+        safeProxyFetch(validInitialUrl, {
+          domainValidator: isAllowedStreamingDomain,
+        }),
+      /SSRF blocked: Destination or redirect URL is forbidden \(https:\/\/malicious-site\.attacker\.com\/payload\)/,
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+

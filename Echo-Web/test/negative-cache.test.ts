@@ -40,16 +40,23 @@ test('Negative cache: LyricsOrchestrator expires negative cache entries after TT
   // Verify it exists before getLyrics
   assert.ok(orchestrator.getCacheEntry(cacheKey))
 
-  // In Node test environment, providers fail or return null without throwing
-  const result = await orchestrator.getLyrics(track)
-  assert.strictEqual(result, null)
+  // Mock fetch to simulate immediate 404/not-found without waiting for external network timeouts
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response('{"error":"not found"}', { status: 404 })
 
-  // Verify that the entry was refreshed with new timestamps and NEGATIVE_CACHE_TTL_MS
-  const refreshed = orchestrator.getCacheEntry(cacheKey)
-  assert.ok(refreshed)
-  assert.strictEqual(refreshed.lyrics, null)
-  assert.ok(refreshed.expiresAt > Date.now())
-  assert.ok(refreshed.expiresAt <= Date.now() + LyricsOrchestrator.NEGATIVE_CACHE_TTL_MS)
+  try {
+    const result = await orchestrator.getLyrics(track)
+    assert.strictEqual(result, null)
+
+    // Verify that the entry was refreshed with new timestamps and NEGATIVE_CACHE_TTL_MS
+    const refreshed = orchestrator.getCacheEntry(cacheKey)
+    assert.ok(refreshed)
+    assert.strictEqual(refreshed.lyrics, null)
+    assert.ok(refreshed.expiresAt > Date.now())
+    assert.ok(refreshed.expiresAt <= Date.now() + LyricsOrchestrator.NEGATIVE_CACHE_TTL_MS)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('Negative cache: CanvasManager expires negative cache entries after TTL [BUG-18]', async () => {
@@ -73,14 +80,20 @@ test('Negative cache: CanvasManager expires negative cache entries after TTL [BU
 
   assert.ok(canvasManager.getCacheEntry(cacheKey))
 
-  // In Node test environment, resolveCanvasVideo will attempt resolution and return null
-  const result = await canvasManager.resolveCanvasVideo(track)
-  assert.strictEqual(result, null)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response('{"error":"not found"}', { status: 404 })
 
-  // Verify refreshed entry has new negative TTL
-  const refreshed = canvasManager.getCacheEntry(cacheKey)
-  assert.ok(refreshed)
-  assert.strictEqual(refreshed.result, null)
-  assert.ok(refreshed.expiresAt > Date.now())
-  assert.ok(refreshed.expiresAt <= Date.now() + CanvasManager.NEGATIVE_CACHE_TTL_MS)
+  try {
+    const result = await canvasManager.resolveCanvasVideo(track)
+    assert.strictEqual(result, null)
+
+    // Verify refreshed entry has new negative TTL
+    const refreshed = canvasManager.getCacheEntry(cacheKey)
+    assert.ok(refreshed)
+    assert.strictEqual(refreshed.result, null)
+    assert.ok(refreshed.expiresAt > Date.now())
+    assert.ok(refreshed.expiresAt <= Date.now() + CanvasManager.NEGATIVE_CACHE_TTL_MS)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
