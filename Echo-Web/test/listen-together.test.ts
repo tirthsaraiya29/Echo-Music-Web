@@ -13,6 +13,7 @@ describe('Listen Together Room Storage & Endpoints', () => {
       isPlaying: false,
       playbackPositionSeconds: 0,
       lastUpdatedServerTime: Date.now() - 40 * 60 * 1000, // 40m ago
+      lastActiveServerTime: Date.now() - 40 * 60 * 1000,
       members: new Map(),
       logs: [],
     }
@@ -25,6 +26,37 @@ describe('Listen Together Room Storage & Endpoints', () => {
     const pruned = await store.cleanup(30 * 60 * 1000)
     assert.strictEqual(pruned, 1)
     assert.strictEqual(await store.has('TESTROOM'), false)
+  })
+
+  it('preserves paused room with active host heartbeats during cleanup [BUG-07]', async () => {
+    const store = new MemoryRoomStore()
+    const hostMember = {
+      id: 'host_active',
+      name: 'Host Alice',
+      isHost: true,
+      lastSeen: Date.now() - 5000, // heartbeating 5s ago
+      isBuffering: false,
+      token: 'token_123',
+    }
+    const pausedRoom = {
+      code: 'PAUSED1',
+      hostId: 'host_active',
+      createdAt: Date.now() - 60 * 60 * 1000, // created 1h ago
+      track: null,
+      isPlaying: false,
+      playbackPositionSeconds: 0,
+      lastUpdatedServerTime: Date.now() - 45 * 60 * 1000, // last state update 45m ago
+      lastActiveServerTime: Date.now() - 5000, // active 5s ago
+      members: new Map([['host_active', hostMember]]),
+      logs: [],
+    }
+
+    store.set('PAUSED1', pausedRoom)
+
+    // Run cleanup with 30m threshold
+    const pruned = await store.cleanup(30 * 60 * 1000)
+    assert.strictEqual(pruned, 0, 'Should not prune room with active host heartbeats')
+    assert.strictEqual(await store.has('PAUSED1'), true)
   })
 
   it('allows plugging custom RoomStore implementation', async () => {

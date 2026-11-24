@@ -20,7 +20,8 @@ export interface RoomState {
   track: unknown | null
   isPlaying: boolean
   playbackPositionSeconds: number
-  lastUpdatedServerTime: number
+  lastUpdatedServerTime: number // playback anchor timestamp
+  lastActiveServerTime: number // room heartbeat/activity timestamp
   members: Map<string, RoomMember>
   logs: Array<{ id: string; time: number; message: string }>
 }
@@ -56,7 +57,11 @@ export class MemoryRoomStore implements RoomStore {
     const now = Date.now()
     let pruned = 0
     for (const [code, room] of this.rooms.entries()) {
-      if (now - room.lastUpdatedServerTime > staleThresholdMs) {
+      const host = room.members.get(room.hostId)
+      const hasActiveHost = Boolean(host && now - host.lastSeen < 60000)
+      const isRecentlyActive = now - room.lastActiveServerTime <= staleThresholdMs
+      // Room is preserved if recently active or host is currently connected/heartbeating
+      if (!hasActiveHost && !isRecentlyActive) {
         this.rooms.delete(code)
         pruned++
       }
@@ -160,6 +165,7 @@ listenTogetherRouter.post('/create', async (c) => {
     isPlaying: false,
     playbackPositionSeconds: 0,
     lastUpdatedServerTime: Date.now(),
+    lastActiveServerTime: Date.now(),
     members: new Map([
       [
         hostId,
@@ -224,6 +230,7 @@ listenTogetherRouter.post('/join', async (c) => {
   }
 
   room.members.set(userId, member)
+  room.lastActiveServerTime = Date.now()
   room.logs.push({
     id: `log_${Date.now()}`,
     time: Date.now(),
@@ -274,6 +281,7 @@ listenTogetherRouter.post('/sync', async (c) => {
   }
 
   member.lastSeen = Date.now()
+  room.lastActiveServerTime = Date.now()
   if (typeof body.isBuffering === 'boolean') {
     member.isBuffering = body.isBuffering
   }
