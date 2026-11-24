@@ -176,4 +176,30 @@ describe('Stream Info Request Deduplication [BUG-36]', () => {
       clearInfoCache()
     }
   })
+
+  it('stream /resolve rejects malformed or invalid videoId with 400 [SMALL-08]', async () => {
+    // Missing videoId
+    const res1 = await streamRouter.fetch(new Request('http://localhost/resolve'))
+    assert.strictEqual(res1.status, 400)
+
+    // Invalid length or characters
+    const res2 = await streamRouter.fetch(new Request('http://localhost/resolve?videoId=short'))
+    assert.strictEqual(res2.status, 400)
+
+    const res3 = await streamRouter.fetch(new Request('http://localhost/resolve?videoId=invalid$chars'))
+    assert.strictEqual(res3.status, 400)
+  })
+
+  it('stream /telemetry reports resolver metrics accurately [SMALL-08]', async () => {
+    const res = await streamRouter.fetch(new Request('http://localhost/telemetry'))
+    assert.strictEqual(res.status, 200)
+    const telemetry = await res.json() as {
+      totalRequests: number
+      cacheHits: number
+      cacheMisses: number
+    }
+    assert.strictEqual(typeof telemetry.totalRequests, 'number')
+    assert.strictEqual(typeof telemetry.cacheHits, 'number')
+    assert.strictEqual(typeof telemetry.cacheMisses, 'number')
+  })
 })

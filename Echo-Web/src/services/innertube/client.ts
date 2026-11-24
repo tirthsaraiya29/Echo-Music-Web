@@ -287,9 +287,21 @@ export class InnerTubeClient {
     )
   }
 
-  public static async resolveStream(videoId: string): Promise<StreamResolutionResult> {
+  public static async resolveStream(
+    videoId: string,
+    quality: 'low' | 'medium' | 'high' | 'lossless' = 'high',
+    signal?: AbortSignal,
+  ): Promise<StreamResolutionResult> {
+    const cleanId = videoId?.trim() || ''
+    if (!cleanId || !/^[a-zA-Z0-9_-]{11}$/.test(cleanId)) {
+      throw new Error(`Invalid videoId: '${videoId}'. Must be an 11-character YouTube video ID.`)
+    }
+    const validQuality = ['low', 'medium', 'high', 'lossless'].includes(quality) ? quality : 'high'
+    const options: RequestInit = {}
+    if (signal) options.signal = signal
     return await apiFetch<StreamResolutionResult>(
-      `/api/stream/resolve?videoId=${encodeURIComponent(videoId)}`,
+      `/api/stream/resolve?videoId=${encodeURIComponent(cleanId)}&quality=${encodeURIComponent(validQuality)}`,
+      options,
     )
   }
 

@@ -1,11 +1,70 @@
 import { Hono } from 'hono'
 import { Ytdl, chooseFormat } from '@distube/ytdl-core'
 import { Readable } from 'node:stream'
+import { z } from 'zod'
 import type { StreamFormat, StreamResolutionResult } from '../../src/types/innertube.ts'
 import { isAllowedStreamingDomain, safeProxyFetch } from '../utils/ssrf.ts'
 
 export const streamRouter = new Hono()
 const ytdl = new Ytdl()
+
+export const streamResolveQuerySchema = z.object({
+  videoId: z.string().regex(/^[a-zA-Z0-9_-]{11}$/, 'Valid 11-character videoId is required'),
+  quality: z.enum(['low', 'medium', 'high', 'lossless']).default('high'),
+})
+
+export const streamFormatSchema = z.object({
+  itag: z.number(),
+  mimeType: z.string(),
+  bitrate: z.number(),
+  contentLength: z.string().optional(),
+  audioQuality: z.enum(['AUDIO_QUALITY_LOW', 'AUDIO_QUALITY_MEDIUM', 'AUDIO_QUALITY_HIGH']),
+  quality: z.string(),
+  approxDurationMs: z.string().optional(),
+})
+
+export const streamResolutionResultSchema = z.object({
+  videoId: z.string(),
+  title: z.string(),
+  artist: z.string(),
+  durationMs: z.number(),
+  streamUrl: z.string(),
+  format: streamFormatSchema,
+  allAudioFormats: z.array(streamFormatSchema),
+  expiresInSeconds: z.number(),
+  source: z.enum(['opus', 'aac']),
+})
+
+export interface StreamResolverMetrics {
+  totalRequests: number
+  cacheHits: number
+  cacheMisses: number
+  inFlightJoins: number
+  resolutionFailures: number
+  lastFailureReason: string | null
+}
+
+const resolverMetrics: StreamResolverMetrics = {
+  totalRequests: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  inFlightJoins: 0,
+  resolutionFailures: 0,
+  lastFailureReason: null,
+}
+
+export function getStreamResolverMetrics(): StreamResolverMetrics {
+  return { ...resolverMetrics }
+}
+
+export function resetStreamResolverMetrics(): void {
+  resolverMetrics.totalRequests = 0
+  resolverMetrics.cacheHits = 0
+  resolverMetrics.cacheMisses = 0
+  resolverMetrics.inFlightJoins = 0
+  resolverMetrics.resolutionFailures = 0
+  resolverMetrics.lastFailureReason = null
+}
 
 type VideoFormat = ReturnType<typeof chooseFormat>
 
@@ -196,18 +255,23 @@ export async function getOrFetchVideoInfo(
   videoId: string,
   quality: StreamQuality = 'high',
 ): Promise<CachedVideoInfo> {
+  resolverMetrics.totalRequests++
   // Cache per videoId+quality: one video's formats resolve to different ITAGs per quality tier.
   const cacheKey = `${videoId}:${quality}`
   const cached = getCachedInfo(cacheKey)
   if (cached && Date.now() - cached.cachedAt < 30 * 60 * 1000) {
+    resolverMetrics.cacheHits++
     return cached
   }
 
   // Deduplicate in-flight requests for the exact same cacheKey
   const existingInFlight = inFlightInfo.get(cacheKey)
   if (existingInFlight) {
+    resolverMetrics.inFlightJoins++
     return existingInFlight
   }
+
+  resolverMetrics.cacheMisses++
 
   const fetchPromise = (async () => {
     try {
@@ -244,6 +308,10 @@ export async function getOrFetchVideoInfo(
 
       cacheInfo(cacheKey, cachedInfo)
       return cachedInfo
+    } catch (err) {
+      resolverMetrics.resolutionFailures++
+      resolverMetrics.lastFailureReason = err instanceof Error ? err.message : String(err)
+      throw err
     } finally {
       inFlightInfo.delete(cacheKey)
     }
@@ -253,12 +321,25 @@ export async function getOrFetchVideoInfo(
   return fetchPromise
 }
 
+streamRouter.get('/telemetry', (c) => {
+  return c.json(getStreamResolverMetrics())
+})
+
 streamRouter.get('/resolve', async (c) => {
-  const videoId = c.req.query('videoId')
-  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-    return c.json({ error: 'Valid 11-character videoId is required' }, 400)
+  const query = {
+    videoId: c.req.query('videoId'),
+    quality: c.req.query('quality') || 'high',
   }
-  const quality = (c.req.query('quality') as StreamQuality | undefined) ?? 'high'
+
+  const parsedQuery = streamResolveQuerySchema.safeParse(query)
+  if (!parsedQuery.success) {
+    return c.json(
+      { error: parsedQuery.error.issues[0]?.message || 'Valid 11-character videoId is required' },
+      400,
+    )
+  }
+
+  const { videoId, quality } = parsedQuery.data
 
   try {
     const cachedInfo = await getOrFetchVideoInfo(videoId, quality)
@@ -292,6 +373,11 @@ streamRouter.get('/resolve', async (c) => {
       allAudioFormats: [formatInfo],
       expiresInSeconds: 21600,
       source: cachedInfo.format.mimeType?.includes('opus') ? 'opus' : 'aac',
+    }
+
+    const validatedResult = streamResolutionResultSchema.safeParse(result)
+    if (!validatedResult.success) {
+      return c.json({ error: 'Stream resolution result validation failed' }, 502)
     }
 
     return c.json(result)
