@@ -65,7 +65,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 |---|---|---|---|---|---|
 | SMALL-01 | QueueManager invariants | 10 tasks in backlog | Completed | d3151875 | Yes (verified on origin/main) |
 | SMALL-02 | Zustand/audio-engine bridge | 10 tasks in backlog | Completed | a30ef8c4 | Yes (verified on origin/main) |
-| SMALL-03 | Dual-deck crossfade | 10 tasks in backlog | Pending | - | - |
+| SMALL-03 | Dual-deck crossfade | 10 tasks in backlog | Completed | 08675e3a | Yes (verified on origin/main) |
 | SMALL-04 | AudioEngine state/events | 10 tasks in backlog | Pending | - | - |
 | SMALL-05 | Playback controls | 10 tasks in backlog | Pending | - | - |
 | SMALL-06 | Audio output picker | 10 tasks in backlog | Pending | - | - |
