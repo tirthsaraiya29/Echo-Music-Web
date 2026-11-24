@@ -63,6 +63,7 @@ export const userPreferencesSchema = z.object({
   spotifyRecommendationBridge: z.boolean().optional().default(true),
   hideYoutubeShorts: z.boolean().optional().default(true),
   filterShorts: z.boolean().optional().default(true),
+  hideVideoSongs: z.boolean().optional().default(false),
 })
 
 export type ValidatedUserPreferences = z.infer<typeof userPreferencesSchema>
@@ -131,6 +132,7 @@ const keyValidators: Partial<Record<keyof UserPreferences, z.ZodTypeAny>> = {
   spotifyRecommendationBridge: z.boolean(),
   hideYoutubeShorts: z.boolean(),
   filterShorts: z.boolean(),
+  hideVideoSongs: z.boolean(),
 }
 
 export function validatePreferenceUpdate<K extends keyof UserPreferences>(

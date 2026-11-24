@@ -14,6 +14,11 @@ import {
   filterShortsFromSearchResults,
   isShortsFilterEnabled,
 } from './shortsFilterService.ts'
+import {
+  filterVideoSongsFromShelves,
+  filterVideoSongsFromSearchResults,
+  isVideoSongFilterEnabled,
+} from './videoSongFilterService.ts'
 import { fetchWithCache } from '../cache/metadataCache.ts'
 import { useEchoStore, cacheTracks } from '../../stores/useEchoStore.ts'
 
@@ -88,7 +93,8 @@ export class InnerTubeClient {
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
     const filterShorts = isShortsFilterEnabled(prefs)
-    const cacheKey = `shelf:home:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}`
+    const filterVideos = isVideoSongFilterEnabled(prefs)
+    const cacheKey = `shelf:home:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}:${filterVideos ? 'noVideos' : 'withVideos'}`
 
     return await fetchWithCache(
       cacheKey,
@@ -110,6 +116,7 @@ export class InnerTubeClient {
             }
           }
           shelves = filterShortsFromShelves(shelves, filterShorts)
+          shelves = filterVideoSongsFromShelves(shelves, filterVideos)
           for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
@@ -135,7 +142,8 @@ export class InnerTubeClient {
     const region = countryCode || prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
     const filterShorts = isShortsFilterEnabled(prefs)
-    const key = `shelf:charts:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}`
+    const filterVideos = isVideoSongFilterEnabled(prefs)
+    const key = `shelf:charts:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}:${filterVideos ? 'noVideos' : 'withVideos'}`
 
     return await fetchWithCache(
       key,
@@ -161,6 +169,7 @@ export class InnerTubeClient {
             }
           }
           shelves = filterShortsFromShelves(shelves, filterShorts)
+          shelves = filterVideoSongsFromShelves(shelves, filterVideos)
           for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
@@ -265,9 +274,11 @@ export class InnerTubeClient {
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
     const filterShorts = isShortsFilterEnabled(prefs)
+    const filterVideos = isVideoSongFilterEnabled(prefs)
     const explicitFlag = showExplicit ? 'exp' : 'clean'
     const shortsFlag = filterShorts ? 'noShorts' : 'withShorts'
-    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}:${region}:${explicitFlag}:${shortsFlag}`
+    const videosFlag = filterVideos ? 'noVideos' : 'withVideos'
+    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}:${region}:${explicitFlag}:${shortsFlag}:${videosFlag}`
 
     return await fetchWithCache(
       key,
@@ -299,6 +310,7 @@ export class InnerTubeClient {
             catalog.tracks = catalog.tracks.filter((t) => !t.explicit)
           }
           catalog = filterShortsFromSearchResults(catalog, filterShorts)
+          catalog = filterVideoSongsFromSearchResults(catalog, filterVideos)
           if (catalog.tracks.length > 0) {
             cacheTracks(catalog.tracks)
           }

@@ -264,7 +264,7 @@ export function SettingsPage() {
       id: 'content',
       label: 'Content & Region',
       icon: Globe,
-      keywords: 'region explicit start tab catalog language shorts reel',
+      keywords: 'region explicit start tab catalog language shorts reel video',
     },
     {
       id: 'lyrics',
@@ -1037,6 +1037,14 @@ export function SettingsPage() {
               description="Exclude YouTube Shorts and short video reels from search results, discovery shelves, and feeds."
               preference="hideYoutubeShorts"
               value={preferences.hideYoutubeShorts ?? true}
+              onChange={save}
+            />
+
+            <PreferenceToggle
+              label="Hide video songs"
+              description="Exclude music videos and user video uploads from search and discovery, preferring official audio tracks."
+              preference="hideVideoSongs"
+              value={preferences.hideVideoSongs ?? false}
               onChange={save}
             />
           </section>

@@ -69,6 +69,8 @@ export interface Track {
   publishedAt?: string | undefined
   isShort?: boolean | undefined
   isVideo?: boolean | undefined
+  isVideoSong?: boolean | undefined
+  musicVideoType?: string | undefined
 }
 
 export interface PodcastEpisode extends Track {
@@ -160,4 +162,5 @@ export interface UserPreferences {
   spotifyRecommendationBridge?: boolean | undefined
   hideYoutubeShorts?: boolean | undefined
   filterShorts?: boolean | undefined
+  hideVideoSongs?: boolean | undefined
 }

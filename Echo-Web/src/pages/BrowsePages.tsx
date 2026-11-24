@@ -935,6 +935,7 @@ export function SearchPage() {
   const setToast = useEchoStore((state) => state.setToast)
   const preferences = useEchoStore((state) => state.preferences)
   const isShortsFiltered = preferences.hideYoutubeShorts ?? preferences.filterShorts ?? true
+  const isVideoFiltered = preferences.hideVideoSongs === true || preferences.dataSaver === true
 
   const handleSelectSearch = (term: string) => {
     setQuery(term)
@@ -1243,6 +1244,18 @@ export function SearchPage() {
             >
               <EyeOff size={12} />
               <span>Shorts hidden</span>
+            </span>
+          )}
+          {isVideoFiltered && (
+            <span
+              className={classNames(
+                'inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-[#a59fad]',
+                !isShortsFiltered && 'ml-auto',
+              )}
+              title="Video songs are excluded per Content settings"
+            >
+              <EyeOff size={12} />
+              <span>Videos hidden</span>
             </span>
           )}
         </div>

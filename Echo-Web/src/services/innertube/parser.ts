@@ -317,6 +317,19 @@ function parseResponsiveListItemRenderer(
     col0Runs[0]?.navigationEndpoint?.browseEndpoint?.browseEndpointContextSupportedConfigs
       ?.browseEndpointContextMusicConfig?.pageType
 
+  const watchEndpoint =
+    col0Runs[0]?.navigationEndpoint?.watchEndpoint ||
+    row.navigationEndpoint?.watchEndpoint ||
+    row.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer
+      ?.playNavigationEndpoint?.watchEndpoint
+
+  const musicVideoSupportedConfigs = (
+    watchEndpoint as Record<string, unknown> | undefined
+  )?.['watchEndpointMusicSupportedConfigs'] as
+    | { watchEndpointMusicConfig?: { musicVideoType?: string } }
+    | undefined
+  const musicVideoType = musicVideoSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType
+
   const thumbnails = row.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails
   const rawArtwork =
     extractThumbnailUrl(thumbnails) ||
@@ -486,6 +499,13 @@ function parseResponsiveListItemRenderer(
   }
 
   const isShort = Boolean(isShortItem || (durationSeconds <= 60 && title.includes('#')))
+  const isVideo = Boolean(
+    (musicVideoType &&
+      musicVideoType !== 'MUSIC_VIDEO_TYPE_ATV' &&
+      musicVideoType !== 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE') ||
+      col1Runs.some((r) => r.text?.trim().toLowerCase() === 'video') ||
+      (/\b(official video|music video|lyric video)\b/i.test(title) && !albumId.startsWith('MPREb_')),
+  )
 
   const track: Track = {
     id: trackId,
@@ -496,6 +516,9 @@ function parseResponsiveListItemRenderer(
     thumbnailUrl: rawArtwork,
     isExplicit,
     isShort,
+    isVideo,
+    isVideoSong: isVideo,
+    musicVideoType,
 
     // Phase 1 AudioEngine & UI contracts compatibility
     artistId,
@@ -636,6 +659,21 @@ function parseTwoRowItemRenderer(
         browseId?.startsWith('SS'),
     )
 
+    const endpointRec = endpoint as Record<string, unknown> | undefined
+    const watchEp = endpointRec?.['watchEndpoint'] as Record<string, unknown> | undefined
+    const supportedConfigs = watchEp?.['watchEndpointMusicSupportedConfigs'] as
+      | { watchEndpointMusicConfig?: { musicVideoType?: string } }
+      | undefined
+    const musicVideoType = supportedConfigs?.watchEndpointMusicConfig?.musicVideoType
+
+    const isVideo = Boolean(
+      (musicVideoType &&
+        musicVideoType !== 'MUSIC_VIDEO_TYPE_ATV' &&
+        musicVideoType !== 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE') ||
+        subtitleRuns.some((r) => r.text?.trim().toLowerCase() === 'video') ||
+        (/\b(official video|music video|lyric video)\b/i.test(title) && !albumId.startsWith('MPREb_')),
+    )
+
     const track: Track = {
       id: videoId,
       title,
@@ -645,6 +683,9 @@ function parseTwoRowItemRenderer(
       thumbnailUrl: rawArtwork,
       isExplicit,
       isShort,
+      isVideo,
+      isVideoSong: isVideo,
+      musicVideoType,
 
       artistId,
       artistName,

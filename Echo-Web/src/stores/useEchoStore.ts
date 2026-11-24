@@ -109,6 +109,7 @@ const defaultPreferences: UserPreferences = {
   spotifyRecommendationBridge: true,
   hideYoutubeShorts: true,
   filterShorts: true,
+  hideVideoSongs: false,
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID
