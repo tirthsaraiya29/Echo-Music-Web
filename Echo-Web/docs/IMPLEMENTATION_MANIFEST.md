@@ -170,7 +170,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-048 | Library conflict resolution | Completed | 1297ecca | Yes |
 | FEATURE-049 | Listening history controls | Completed | b19c1d54 | Yes |
 | FEATURE-050 | Vibe Summary | Completed | 356147bf | Yes |
-| FEATURE-051 | Lyrics+ provider integration | Pending | - | - |
+| FEATURE-051 | Lyrics+ provider integration | Completed | 0c31b639 | Yes |
 | FEATURE-052 | Provider priority settings | Pending | - | - |
 | FEATURE-053 | Word-by-word timing | Pending | - | - |
 | FEATURE-054 | Multiple lyric animations | Pending | - | - |
