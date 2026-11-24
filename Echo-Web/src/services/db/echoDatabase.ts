@@ -91,6 +91,20 @@ export interface LyricsSyncProfileRecord {
   updatedAt: number
 }
 
+export interface RecognitionHistoryRecord {
+  id: string
+  trackId: string
+  title: string
+  artist: string
+  album?: string | undefined
+  artwork?: string | undefined
+  durationSeconds?: number | undefined
+  confidence: number
+  recognizedAt: number
+  provider: string
+  played: boolean
+}
+
 export interface CachedLyricsRecord {
   trackId: string
   query: string
@@ -116,6 +130,7 @@ export class EchoDatabase extends Dexie {
   cachedLyrics!: EntityTable<CachedLyricsRecord, 'trackId'>
   syncOffsets!: EntityTable<SyncOffsetRecord, 'trackId'>
   syncProfiles!: EntityTable<LyricsSyncProfileRecord, 'id'>
+  recognitionHistory!: EntityTable<RecognitionHistoryRecord, 'id'>
   metadataCache!: EntityTable<MetadataCacheRecord, 'key'>
 
   constructor() {
@@ -134,6 +149,7 @@ export class EchoDatabase extends Dexie {
     this.version(3).stores({ syncOffsets: 'trackId, updatedAt' })
     this.version(4).stores({ metadataCache: 'key, kind, updatedAt, expiresAt' })
     this.version(5).stores({ syncProfiles: 'id, name, isDefault, updatedAt' })
+    this.version(6).stores({ recognitionHistory: 'id, trackId, recognizedAt, title, artist' })
   }
 }
 
