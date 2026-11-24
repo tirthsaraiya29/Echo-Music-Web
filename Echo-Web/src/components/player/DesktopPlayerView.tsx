@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   ChevronDown,
   Heart,
+  Loader2,
   Maximize2,
   Minimize2,
   Pause,
@@ -44,6 +45,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
   const {
     currentTrack: engineTrack,
     isPlaying,
+    isBuffering,
     currentTime,
     duration,
     togglePlayback,
@@ -371,11 +373,20 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                 <input
                   type="range"
                   aria-label="Track playback position"
+                  aria-valuemin={0}
+                  aria-valuemax={duration > 0 ? duration : 100}
+                  aria-valuenow={currentTime}
+                  aria-valuetext={formatDuration(currentTime * 1000)}
                   min={0}
                   max={duration > 0 ? duration : 100}
                   step={0.5}
                   value={currentTime}
-                  onChange={(e) => seekTo(parseFloat(e.target.value))}
+                  onChange={(e) => {
+                    const parsed = parseFloat(e.target.value)
+                    const maxBound = duration > 0 ? duration : 100
+                    const clamped = Math.max(0, Math.min(maxBound, Number.isFinite(parsed) ? parsed : 0))
+                    seekTo(clamped)
+                  }}
                   style={{ '--range-progress': `${progressPercent}%` } as React.CSSProperties}
                   className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-[#7c5cff]"
                 />
@@ -419,9 +430,13 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                   type="button"
                   onClick={togglePlayback}
                   className="flex h-14 w-14 items-center justify-center rounded-full bg-[#7c5cff] text-[#0b0a0f] shadow-lg transition-transform hover:scale-105 hover:bg-[#6c48ff] active:scale-95"
-                  title={isPlaying ? 'Pause' : 'Play'}
+                  aria-label={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+                  aria-busy={isBuffering}
+                  title={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
                 >
-                  {isPlaying ? (
+                  {isBuffering ? (
+                    <Loader2 size={24} className="animate-spin" />
+                  ) : isPlaying ? (
                     <Pause size={24} fill="currentColor" />
                   ) : (
                     <Play size={24} fill="currentColor" className="ml-1" />
@@ -475,11 +490,16 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                 <input
                   type="range"
                   aria-label="Volume"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={volumeVal}
+                  aria-valuetext={`${volumeVal}%`}
                   min={0}
                   max={100}
                   value={volumeVal}
                   onChange={(e) => {
-                    const val = Number(e.target.value)
+                    const raw = Number(e.target.value)
+                    const val = Math.max(0, Math.min(100, Number.isFinite(raw) ? raw : 0))
                     setPreference('volume', val)
                     setPreference('muted', false)
                     setVolume(val / 100)

@@ -10,6 +10,7 @@ import {
   Home,
   Library,
   ListMusic,
+  Loader2,
   Maximize2,
   Pause,
   Play,
@@ -264,6 +265,7 @@ function PlayerBar() {
     currentTime,
     duration: engineDuration,
     isPlaying,
+    isBuffering,
     togglePlayback,
     next: playNext,
     previous: playPrevious,
@@ -291,7 +293,8 @@ function PlayerBar() {
     Boolean(sleepTimerRemaining && sleepTimerRemaining > 0) || Boolean(sleepTimerEndOfTrack)
 
   const handleSeek = (ms: number) => {
-    engineSeek(ms / 1000)
+    const clampedMs = Math.max(0, Math.min(totalDurationMs, Number.isFinite(ms) ? ms : 0))
+    engineSeek(clampedMs / 1000)
   }
 
   return (
@@ -361,11 +364,14 @@ function PlayerBar() {
             <button
               className="play-button"
               type="button"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-              title="Play or Pause"
+              aria-label={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+              aria-busy={isBuffering}
+              title={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
               onClick={togglePlayback}
             >
-              {isPlaying ? (
+              {isBuffering ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : isPlaying ? (
                 <Pause size={16} fill="currentColor" />
               ) : (
                 <Play size={16} fill="currentColor" />
@@ -405,6 +411,10 @@ function PlayerBar() {
             <span>{formatDuration(progressMs)}</span>
             <input
               aria-label="Track position"
+              aria-valuemin={0}
+              aria-valuemax={totalDurationMs}
+              aria-valuenow={progressMs}
+              aria-valuetext={formatDuration(progressMs)}
               type="range"
               min={0}
               max={totalDurationMs}
@@ -456,6 +466,10 @@ function PlayerBar() {
             className="volume-slider"
             type="range"
             aria-label="Volume"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={volume}
+            aria-valuetext={`${volume}%`}
             min={0}
             max={100}
             value={volume}
