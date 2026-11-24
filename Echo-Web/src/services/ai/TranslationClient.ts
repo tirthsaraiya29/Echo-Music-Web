@@ -43,6 +43,8 @@ export const aiKeysConfigSchema = z.object({
   geminiKey: z.string().optional(),
   geminiModel: z.string().optional(),
   targetLanguage: z.string().min(1).default('English'),
+  translationChunkSize: z.number().int().min(5).max(100).optional().default(30),
+  maxChunkRetries: z.number().int().min(0).max(5).optional().default(2),
 })
 
 export type AIKeysConfig = z.infer<typeof aiKeysConfigSchema>
@@ -52,6 +54,10 @@ export const translationMetricsSchema = z.object({
   cacheHits: z.number().int().nonnegative(),
   networkTranslations: z.number().int().nonnegative(),
   coalescedRequests: z.number().int().nonnegative(),
+  chunksProcessed: z.number().int().nonnegative().optional(),
+  chunkRetries: z.number().int().nonnegative().optional(),
+  chunkFailures: z.number().int().nonnegative().optional(),
+  partialTranslationsDelivered: z.number().int().nonnegative().optional(),
   providerCounts: z.record(z.string(), z.number().int().nonnegative()),
   failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
   avgLatencyMs: z.number().nonnegative(),
@@ -62,12 +68,37 @@ export type TranslationMetrics = z.infer<typeof translationMetricsSchema>
 
 export type TranslationStatus = 'idle' | 'translating' | 'translated' | 'cached' | 'error'
 
+export interface LyricChunk {
+  chunkIndex: number
+  startIndex: number
+  endIndex: number
+  texts: string[]
+}
+
+export function chunkTexts(texts: string[], chunkSize: number = 30): LyricChunk[] {
+  if (texts.length === 0) return []
+  const validChunkSize = Math.max(1, chunkSize)
+  const chunks: LyricChunk[] = []
+  for (let i = 0; i < texts.length; i += validChunkSize) {
+    const slice = texts.slice(i, i + validChunkSize)
+    chunks.push({
+      chunkIndex: chunks.length,
+      startIndex: i,
+      endIndex: i + slice.length,
+      texts: slice,
+    })
+  }
+  return chunks
+}
+
 const STORAGE_KEY = 'echo_ai_keys'
 
 const DEFAULT_CONFIG: AIKeysConfig = {
   provider: 'openrouter',
   openRouterModel: 'google/gemini-2.0-flash-001',
   targetLanguage: 'English',
+  translationChunkSize: 30,
+  maxChunkRetries: 2,
 }
 
 // Module-level metrics singleton
@@ -76,6 +107,10 @@ let translationMetrics: TranslationMetrics = {
   cacheHits: 0,
   networkTranslations: 0,
   coalescedRequests: 0,
+  chunksProcessed: 0,
+  chunkRetries: 0,
+  chunkFailures: 0,
+  partialTranslationsDelivered: 0,
   providerCounts: {
     openrouter: 0,
     deepl: 0,
@@ -103,6 +138,10 @@ export function resetTranslationMetrics(): void {
     cacheHits: 0,
     networkTranslations: 0,
     coalescedRequests: 0,
+    chunksProcessed: 0,
+    chunkRetries: 0,
+    chunkFailures: 0,
+    partialTranslationsDelivered: 0,
     providerCounts: {
       openrouter: 0,
       deepl: 0,
@@ -265,27 +304,43 @@ export class TranslationClient {
       const signal = abortController.signal
 
       try {
-        let translatedStrings: string[] = []
+        const chunkSize = config.translationChunkSize || 30
+        const chunks = chunkTexts(textsToTranslate, chunkSize)
+        translationMetrics.chunksProcessed =
+          (translationMetrics.chunksProcessed || 0) + chunks.length
 
-        if (config.provider === 'deepl') {
-          translatedStrings = await this.translateWithDeepL(textsToTranslate, config, signal)
-        } else if (config.provider === 'mistral') {
-          translatedStrings = await this.translateWithMistral(textsToTranslate, config, signal)
-        } else if (config.provider === 'openai-compatible') {
-          translatedStrings = await this.translateWithOpenAICompatible(
-            textsToTranslate,
-            config,
-            signal,
-          )
-        } else if (config.provider === 'anthropic') {
-          translatedStrings = await this.translateWithAnthropic(textsToTranslate, config, signal)
-        } else if (config.provider === 'gemini') {
-          translatedStrings = await this.translateWithGemini(textsToTranslate, config, signal)
-        } else {
-          translatedStrings = await this.translateWithOpenRouter(textsToTranslate, config, signal)
+        const translatedStrings: string[] = new Array(textsToTranslate.length).fill('')
+        let successfulChunks = 0
+        let failedChunks = 0
+        let firstError: unknown = null
+
+        for (const chunk of chunks) {
+          try {
+            const chunkResult = await this.executeChunkWithRetry(chunk, config, signal)
+            for (let i = 0; i < chunk.texts.length; i++) {
+              translatedStrings[chunk.startIndex + i] = chunkResult[i] || ''
+            }
+            successfulChunks++
+          } catch (err) {
+            failedChunks++
+            if (!firstError) firstError = err
+            if (chunks.length === 1) {
+              throw err
+            }
+          }
         }
 
-        if (translatedStrings.length > 0) {
+        if (successfulChunks === 0 && failedChunks > 0) {
+          throw firstError || new Error('All lyric translation chunks failed')
+        }
+
+        if (failedChunks > 0 && successfulChunks > 0) {
+          translationMetrics.partialTranslationsDelivered =
+            (translationMetrics.partialTranslationsDelivered || 0) + 1
+        }
+
+        const hasAnyTranslation = translatedStrings.some((s) => s.trim().length > 0)
+        if (hasAnyTranslation) {
           this.translationCache.set(cacheKey, translatedStrings)
           translationMetrics.providerCounts[config.provider] =
             (translationMetrics.providerCounts[config.provider] || 0) + 1
@@ -325,9 +380,94 @@ export class TranslationClient {
     return translationPromise
   }
 
+  private async executeChunkWithRetry(
+    chunk: LyricChunk,
+    config: AIKeysConfig,
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    const maxRetries = config.maxChunkRetries ?? 2
+    let attempt = 0
+    let lastError: unknown = null
+
+    while (attempt <= maxRetries) {
+      if (signal?.aborted) {
+        throw new Error('Translation aborted')
+      }
+
+      try {
+        let chunkTranslations: string[] = []
+        if (config.provider === 'deepl') {
+          chunkTranslations = await this.translateWithDeepL(chunk.texts, config, signal)
+        } else if (config.provider === 'mistral') {
+          chunkTranslations = await this.translateWithMistral(
+            chunk.texts,
+            config,
+            chunk.startIndex,
+            signal,
+          )
+        } else if (config.provider === 'openai-compatible') {
+          chunkTranslations = await this.translateWithOpenAICompatible(
+            chunk.texts,
+            config,
+            chunk.startIndex,
+            signal,
+          )
+        } else if (config.provider === 'anthropic') {
+          chunkTranslations = await this.translateWithAnthropic(
+            chunk.texts,
+            config,
+            chunk.startIndex,
+            signal,
+          )
+        } else if (config.provider === 'gemini') {
+          chunkTranslations = await this.translateWithGemini(
+            chunk.texts,
+            config,
+            chunk.startIndex,
+            signal,
+          )
+        } else {
+          chunkTranslations = await this.translateWithOpenRouter(
+            chunk.texts,
+            config,
+            chunk.startIndex,
+            signal,
+          )
+        }
+
+        if (chunkTranslations && chunkTranslations.length > 0) {
+          return chunkTranslations
+        }
+        throw new Error(`Chunk ${chunk.chunkIndex} returned empty translation`)
+      } catch (err: unknown) {
+        lastError = err
+        attempt++
+        if (attempt <= maxRetries && !signal?.aborted) {
+          translationMetrics.chunkRetries = (translationMetrics.chunkRetries || 0) + 1
+          const backoffMs = Math.min(300 * Math.pow(2, attempt - 1), 2000)
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, backoffMs)
+            signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer)
+                reject(new Error('Translation aborted'))
+              },
+              { once: true },
+            )
+          })
+        }
+      }
+    }
+
+    translationMetrics.chunkFailures = (translationMetrics.chunkFailures || 0) + 1
+    throw lastError || new Error(`Chunk ${chunk.chunkIndex} failed after ${maxRetries} retries`)
+  }
+
   private async translateWithOpenRouter(
     texts: string[],
     config: AIKeysConfig,
+    startIndex: number = 0,
     signal?: AbortSignal,
   ): Promise<string[]> {
     const key = config.openRouterKey?.trim()
@@ -335,7 +475,7 @@ export class TranslationClient {
 
     const indexedLines: Record<string, string> = {}
     texts.forEach((text, i) => {
-      indexedLines[String(i)] = text
+      indexedLines[String(startIndex + i)] = text
     })
 
     const model = config.openRouterModel || 'google/gemini-2.0-flash-001'
@@ -344,8 +484,8 @@ Maintain the poetic sentiment and rhythmic feel.
 You MUST reply with a single valid JSON object mapping each line index to its translated string.
 Format:
 {
-  "0": "Translated line 0",
-  "1": "Translated line 1"
+  "${startIndex}": "Translated line ${startIndex}",
+  "${startIndex + 1}": "Translated line ${startIndex + 1}"
 }
 Do NOT wrap in markdown codeblocks if possible, or return raw JSON.
 
@@ -396,12 +536,13 @@ ${JSON.stringify(indexedLines, null, 2)}`
       choices?: Array<{ message?: { content?: string } }>
     }
     const content = data.choices?.[0]?.message?.content || '{}'
-    return this.parseIndexedJson(content, texts.length)
+    return this.parseIndexedJson(content, texts.length, startIndex)
   }
 
   private async translateWithMistral(
     texts: string[],
     config: AIKeysConfig,
+    startIndex: number = 0,
     signal?: AbortSignal,
   ): Promise<string[]> {
     const key = config.mistralKey?.trim()
@@ -409,14 +550,14 @@ ${JSON.stringify(indexedLines, null, 2)}`
 
     const indexedLines: Record<string, string> = {}
     texts.forEach((text, i) => {
-      indexedLines[String(i)] = text
+      indexedLines[String(startIndex + i)] = text
     })
 
     const model = config.mistralModel || 'mistral-small-latest'
     const prompt = `Translate the following song lyric lines into ${config.targetLanguage}.
 Respond ONLY with a JSON object mapping string index to translation:
 {
-  "0": "Translated line 0"
+  "${startIndex}": "Translated line ${startIndex}"
 }
 
 Input:
@@ -449,12 +590,13 @@ ${JSON.stringify(indexedLines, null, 2)}`
       choices?: Array<{ message?: { content?: string } }>
     }
     const content = data.choices?.[0]?.message?.content || '{}'
-    return this.parseIndexedJson(content, texts.length)
+    return this.parseIndexedJson(content, texts.length, startIndex)
   }
 
   private async translateWithOpenAICompatible(
     texts: string[],
     config: AIKeysConfig,
+    startIndex: number = 0,
     signal?: AbortSignal,
   ): Promise<string[]> {
     const key = config.openAiKey?.trim()
@@ -467,13 +609,13 @@ ${JSON.stringify(indexedLines, null, 2)}`
 
     const indexedLines: Record<string, string> = {}
     texts.forEach((text, i) => {
-      indexedLines[String(i)] = text
+      indexedLines[String(startIndex + i)] = text
     })
 
     const prompt = `Translate the following song lyric lines into ${config.targetLanguage}.
 Respond ONLY with a JSON object mapping string index to translation:
 {
-  "0": "Translated line 0"
+  "${startIndex}": "Translated line ${startIndex}"
 }
 
 Input:
@@ -505,12 +647,13 @@ ${JSON.stringify(indexedLines, null, 2)}`
       choices?: Array<{ message?: { content?: string } }>
     }
     const content = data.choices?.[0]?.message?.content || '{}'
-    return this.parseIndexedJson(content, texts.length)
+    return this.parseIndexedJson(content, texts.length, startIndex)
   }
 
   private async translateWithAnthropic(
     texts: string[],
     config: AIKeysConfig,
+    startIndex: number = 0,
     signal?: AbortSignal,
   ): Promise<string[]> {
     const key = config.anthropicKey?.trim()
@@ -518,14 +661,14 @@ ${JSON.stringify(indexedLines, null, 2)}`
 
     const indexedLines: Record<string, string> = {}
     texts.forEach((text, i) => {
-      indexedLines[String(i)] = text
+      indexedLines[String(startIndex + i)] = text
     })
 
     const model = config.anthropicModel || 'claude-haiku-4-5'
     const prompt = `Translate the following song lyric lines into ${config.targetLanguage}.
 Respond ONLY with a JSON object mapping string index to translation:
 {
-  "0": "Translated line 0"
+  "${startIndex}": "Translated line ${startIndex}"
 }
 
 Input:
@@ -564,12 +707,13 @@ ${JSON.stringify(indexedLines, null, 2)}`
         ?.filter((b) => b.type === 'text')
         .map((b) => b.text || '')
         .join('') || '{}'
-    return this.parseIndexedJson(content, texts.length)
+    return this.parseIndexedJson(content, texts.length, startIndex)
   }
 
   private async translateWithGemini(
     texts: string[],
     config: AIKeysConfig,
+    startIndex: number = 0,
     signal?: AbortSignal,
   ): Promise<string[]> {
     const key = config.geminiKey?.trim()
@@ -577,14 +721,14 @@ ${JSON.stringify(indexedLines, null, 2)}`
 
     const indexedLines: Record<string, string> = {}
     texts.forEach((text, i) => {
-      indexedLines[String(i)] = text
+      indexedLines[String(startIndex + i)] = text
     })
 
     const model = config.geminiModel || 'gemini-2.0-flash'
     const prompt = `Translate the following song lyric lines into ${config.targetLanguage}.
 Respond ONLY with a JSON object mapping string index to translation:
 {
-  "0": "Translated line 0"
+  "${startIndex}": "Translated line ${startIndex}"
 }
 
 Input:
@@ -615,7 +759,7 @@ ${JSON.stringify(indexedLines, null, 2)}`
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
     }
     const content = data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '{}'
-    return this.parseIndexedJson(content, texts.length)
+    return this.parseIndexedJson(content, texts.length, startIndex)
   }
 
   private async translateWithDeepL(
@@ -692,7 +836,7 @@ ${JSON.stringify(indexedLines, null, 2)}`
     }
   }
 
-  private parseIndexedJson(content: string, count: number): string[] {
+  public parseIndexedJson(content: string, count: number, startIndex: number = 0): string[] {
     try {
       const cleanJson = content
         .replace(/```json/gi, '')
@@ -706,7 +850,10 @@ ${JSON.stringify(indexedLines, null, 2)}`
 
       const result: string[] = []
       for (let i = 0; i < count; i++) {
-        result.push(parsed[String(i)] || '')
+        const absKey = String(startIndex + i)
+        const relKey = String(i)
+        const val = parsed[absKey] !== undefined ? parsed[absKey] : parsed[relKey]
+        result.push(val ? String(val) : '')
       }
       return result
     } catch {

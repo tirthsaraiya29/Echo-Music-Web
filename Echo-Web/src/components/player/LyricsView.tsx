@@ -813,6 +813,9 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   const [geminiKey, setGeminiKey] = useState(initial.geminiKey || '')
   const [geminiModel, setGeminiModel] = useState(initial.geminiModel || 'gemini-2.0-flash')
   const [targetLanguage, setTargetLanguage] = useState(initial.targetLanguage || 'English')
+  const [translationChunkSize, setTranslationChunkSize] = useState(
+    initial.translationChunkSize || 30,
+  )
 
   const handleSave = () => {
     client.saveConfig({
@@ -829,6 +832,7 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
       geminiKey,
       geminiModel,
       targetLanguage,
+      translationChunkSize,
     })
     onSaved()
   }
@@ -1029,6 +1033,22 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             onChange={(e) => setTargetLanguage(e.target.value)}
             className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs focus:border-[#7c5cff] focus:outline-none"
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-[#a59fad]">Batch Chunk Size (Lines)</label>
+          <input
+            type="number"
+            min={5}
+            max={100}
+            placeholder="30"
+            value={translationChunkSize}
+            onChange={(e) => setTranslationChunkSize(Math.max(5, Math.min(100, Number(e.target.value) || 30)))}
+            className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs focus:border-[#7c5cff] focus:outline-none"
+          />
+          <p className="text-[10px] text-[#a59fad]">
+            Maximum lyric lines dispatched per API batch. Prevents LLM context exhaustion on long songs.
+          </p>
         </div>
 
         <div className="flex justify-end gap-2 border-t border-white/8 pt-2">
