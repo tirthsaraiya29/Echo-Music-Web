@@ -1,6 +1,7 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Keyboard, X } from 'lucide-react'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
+import { recordAccessibilityMetric } from '../../services/accessibility/accessibilityTypes.ts'
 
 interface KeyboardShortcutsModalProps {
   isOpen: boolean
@@ -30,6 +31,12 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(dialogRef, onClose, isOpen)
 
+  useEffect(() => {
+    if (isOpen) {
+      recordAccessibilityMetric('focusTrapsActivated')
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   return (
@@ -46,8 +53,9 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
+          className="absolute top-4 right-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
           title="Close (Esc)"
+          aria-label="Close keyboard shortcuts dialog"
         >
           <X size={18} />
         </button>
