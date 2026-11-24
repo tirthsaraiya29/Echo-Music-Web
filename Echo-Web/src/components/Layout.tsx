@@ -28,6 +28,7 @@ import {
   Speaker,
   Keyboard,
   Music2,
+  Sparkles,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { getCachedTrack, useEchoStore } from '../stores/useEchoStore.ts'
@@ -51,6 +52,7 @@ import { MobileApkLanding } from './MobileApkLanding.tsx'
 const primaryLinks = [
   { to: '/', label: 'Home', icon: Home, end: true },
   { to: '/discover', label: 'Discover', icon: Compass },
+  { to: '/flow', label: 'Music Flow', icon: Sparkles },
   { to: '/podcasts', label: 'Podcasts', icon: Radio },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/library', label: 'Your library', icon: Library },
