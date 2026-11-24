@@ -9,8 +9,10 @@ import type {
   UserPreferences,
   PodcastShow,
   Album,
+  Artist,
 } from '../types/domain.ts'
 import type { LikedAlbumEntity } from '../services/sync/likedAlbumsSyncService.ts'
+import type { FollowedArtistEntity } from '../services/sync/followedArtistsSyncService.ts'
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
 import { db } from '../services/db/echoDatabase.ts'
@@ -155,6 +157,7 @@ type EchoState = {
   likedAlbumIds: string[]
   likedAlbums: LikedAlbumEntity[]
   followedArtistIds: string[]
+  followedArtists: FollowedArtistEntity[]
   queueIds: string[]
   currentTrackId: string
   currentTrack: Track | null
@@ -179,7 +182,8 @@ type EchoState = {
   toggleTrackLike: (trackOrId: Track | string) => void
   toggleAlbumLike: (idOrAlbum: string | Album, metadata?: Partial<Album>) => void
   setLikedAlbums: (albums: LikedAlbumEntity[]) => void
-  toggleArtistFollow: (id: string) => void
+  toggleArtistFollow: (idOrArtist: string | Artist, metadata?: Partial<Artist>) => void
+  setFollowedArtists: (artists: FollowedArtistEntity[]) => void
   createPlaylist: (title: string, description?: string) => string
   updatePlaylist: (id: string, title: string, description: string) => void
   deletePlaylist: (id: string) => void
@@ -227,6 +231,7 @@ export const useEchoStore = create<EchoState>()(
       likedAlbumIds: [],
       likedAlbums: [],
       followedArtistIds: [],
+      followedArtists: [],
       queueIds: [],
       currentTrackId: '',
       currentTrack: null,
@@ -320,11 +325,40 @@ export const useEchoStore = create<EchoState>()(
           likedAlbumIds: albums.map((a) => a.id),
         })),
 
-      toggleArtistFollow: (id) =>
-        set((state) => ({
-          followedArtistIds: state.followedArtistIds.includes(id)
+      toggleArtistFollow: (idOrArtist, metadata) =>
+        set((state) => {
+          const id = typeof idOrArtist === 'string' ? idOrArtist : idOrArtist.id
+          const artistMeta = typeof idOrArtist === 'object' ? idOrArtist : metadata
+          const isFollowed = state.followedArtistIds.includes(id)
+          const updatedIds = isFollowed
             ? state.followedArtistIds.filter((artistId) => artistId !== id)
-            : [id, ...state.followedArtistIds],
+            : [id, ...state.followedArtistIds]
+
+          let updatedArtists = state.followedArtists || []
+          if (isFollowed) {
+            updatedArtists = updatedArtists.filter((a) => a.id !== id)
+          } else {
+            const newArtist: FollowedArtistEntity = {
+              id,
+              name: artistMeta?.name || id,
+              thumbnailUrl: artistMeta?.image || artistMeta?.thumbnailUrl,
+              subscribers: artistMeta?.subscribers,
+              followedAt: Date.now(),
+              source: 'local',
+            }
+            updatedArtists = [newArtist, ...updatedArtists.filter((a) => a.id !== id)]
+          }
+
+          return {
+            followedArtistIds: updatedIds,
+            followedArtists: updatedArtists,
+          }
+        }),
+
+      setFollowedArtists: (artists: FollowedArtistEntity[]) =>
+        set(() => ({
+          followedArtists: artists,
+          followedArtistIds: artists.map((a) => a.id),
         })),
 
       createPlaylist: (title, description = '') => {
@@ -864,6 +898,7 @@ export const useEchoStore = create<EchoState>()(
           likedAlbumIds: state.likedAlbumIds,
           likedAlbums: state.likedAlbums,
           followedArtistIds: state.followedArtistIds,
+          followedArtists: state.followedArtists,
           queueIds: state.queueIds,
           currentTrackId: state.currentTrackId,
           recentlyPlayedIds: state.recentlyPlayedIds,
@@ -896,6 +931,7 @@ export const useEchoStore = create<EchoState>()(
           likedAlbumIds: saved.likedAlbumIds ?? [],
           likedAlbums: saved.likedAlbums ?? [],
           followedArtistIds: saved.followedArtistIds ?? [],
+          followedArtists: saved.followedArtists ?? [],
           queueIds: saved.queueIds ?? [],
           recentlyPlayedIds: saved.recentlyPlayedIds ?? [],
           recentItems: saved.recentItems ?? [],

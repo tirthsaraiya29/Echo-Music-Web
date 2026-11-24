@@ -168,6 +168,7 @@ export function MediaCard({
           id={item.id}
           track={isTrack ? (item as Track) : undefined}
           album={isAlbum ? (item as Album) : undefined}
+          artist={isArtist ? (item as Artist) : undefined}
         />
       </div>
     </article>
@@ -312,12 +313,14 @@ function MediaMenu({
   id,
   track,
   album,
+  artist,
   onRemove,
 }: {
   kind: MenuKind
   id: string
   track?: Track | undefined
   album?: Album | undefined
+  artist?: Artist | undefined
   onRemove?: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -459,7 +462,7 @@ function MediaMenu({
             menuItem(
               followed ? 'Unfollow artist' : 'Follow artist',
               () => {
-                toggleArtistFollow(id)
+                toggleArtistFollow(id, artist)
                 closeMenu()
               },
               <UserRound size={15} />,

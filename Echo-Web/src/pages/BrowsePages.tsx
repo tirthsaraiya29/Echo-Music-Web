@@ -21,8 +21,14 @@ import {
   RefreshCw,
   EyeOff,
   Disc3,
+  UserRound,
 } from 'lucide-react'
 import { syncLikedAlbumsWithCloud } from '../services/sync/likedAlbumsSyncService.ts'
+import {
+  syncFollowedArtistsWithCloud,
+  fetchNewReleasesForFollowedArtists,
+  type ArtistNewRelease,
+} from '../services/sync/followedArtistsSyncService.ts'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
 import type { Track } from '../types/domain.ts'
 import {
@@ -1465,7 +1471,7 @@ export function SearchPage() {
   )
 }
 
-const libraryTabs = ['All', 'Playlists', 'Albums', 'Liked', 'Spotify', 'Local Music', 'Podcasts'] as const
+const libraryTabs = ['All', 'Playlists', 'Albums', 'Artists', 'Liked', 'Spotify', 'Local Music', 'Podcasts'] as const
 type LibraryTab = (typeof libraryTabs)[number]
 
 export function LibraryPage() {
@@ -1486,6 +1492,11 @@ export function LibraryPage() {
   const likedAlbums = useEchoStore((state) => state.likedAlbums || [])
   const toggleAlbumLike = useEchoStore((state) => state.toggleAlbumLike)
   const [isSyncingAlbums, setIsSyncingAlbums] = useState(false)
+  const followedArtists = useEchoStore((state) => state.followedArtists || [])
+  const toggleArtistFollow = useEchoStore((state) => state.toggleArtistFollow)
+  const [isSyncingArtists, setIsSyncingArtists] = useState(false)
+  const [artistReleases, setArtistReleases] = useState<ArtistNewRelease[]>([])
+  const [isLoadingReleases, setIsLoadingReleases] = useState(false)
   const trackCache = useEchoStore((state) => state.trackCache)
   const cacheTrack = useEchoStore((state) => state.cacheTrack)
   const createPlaylist = useEchoStore((state) => state.createPlaylist)
@@ -1548,11 +1559,43 @@ export function LibraryPage() {
       a.title.toLowerCase().includes(filter.toLowerCase()) ||
       a.artistName.toLowerCase().includes(filter.toLowerCase()),
   )
+  const filteredArtists = followedArtists.filter((a) =>
+    a.name.toLowerCase().includes(filter.toLowerCase()),
+  )
   const filteredPodcasts = followedPodcasts.filter(
     (p) =>
       p.title.toLowerCase().includes(filter.toLowerCase()) ||
       p.author.toLowerCase().includes(filter.toLowerCase()),
   )
+
+  useEffect(() => {
+    if (tab !== 'Artists' || followedArtists.length === 0) return
+    let cancelled = false
+    setIsLoadingReleases(true)
+    fetchNewReleasesForFollowedArtists(followedArtists)
+      .then((res) => {
+        if (!cancelled) setArtistReleases(res)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoadingReleases(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, followedArtists.length])
+
+  const handleSyncArtists = async () => {
+    setIsSyncingArtists(true)
+    try {
+      const res = await syncFollowedArtistsWithCloud()
+      setToast(res.message)
+    } catch {
+      setToast('Failed to sync followed artists with cloud')
+    } finally {
+      setIsSyncingArtists(false)
+    }
+  }
 
   const handleSyncAlbums = async () => {
     setIsSyncingAlbums(true)
@@ -1838,6 +1881,151 @@ export function LibraryPage() {
                   trackCount: album.trackCount || 0,
                 }}
                 subtitle={`${album.artistName}${album.year ? ` · ${album.year}` : ''}`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Tab: Artists */}
+      {tab === 'Artists' && (
+        <section className="page-section">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">
+              Followed Artists ({filteredArtists.length})
+            </h2>
+            <button
+              type="button"
+              onClick={handleSyncArtists}
+              disabled={isSyncingArtists}
+              className="button button--secondary flex items-center gap-1.5 text-xs"
+              title="Sync followed artists with YouTube Music"
+            >
+              <RefreshCw size={14} className={isSyncingArtists ? 'animate-spin' : ''} />
+              {isSyncingArtists ? 'Syncing...' : 'Sync Cloud'}
+            </button>
+          </div>
+
+          {/* New Releases Shelf from Followed Artists */}
+          {(artistReleases.length > 0 || isLoadingReleases) && (
+            <div className="mb-6 rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center gap-2 mb-3 text-white">
+                <Sparkles
+                  size={16}
+                  className={classNames('text-[#b09cff]', isLoadingReleases && 'animate-pulse')}
+                />
+                <h3 className="text-sm font-semibold">New Releases from Followed Artists</h3>
+                {isLoadingReleases && (
+                  <span className="text-xs text-white/40">Loading latest...</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {artistReleases.map((rel) => (
+                  <Link
+                    key={rel.id}
+                    to={`/albums/${rel.id}`}
+                    className="group block rounded-lg bg-black/20 p-2.5 transition-colors hover:bg-white/10"
+                  >
+                    <div className="aspect-square overflow-hidden rounded-md bg-white/5">
+                      <img
+                        src={rel.coverUrl || artwork(rel.title, 200)}
+                        alt={rel.title}
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                        onError={(e) => {
+                          const fallback = artwork(rel.title || 'release', 200)
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
+                        }}
+                      />
+                    </div>
+                    <div className="mt-2 min-w-0">
+                      <h4 className="truncate text-xs font-medium text-white">{rel.title}</h4>
+                      <p className="truncate text-[11px] text-[#b09cff]">{rel.artistName}</p>
+                      {rel.year && (
+                        <p className="text-[10px] text-white/40">{rel.year}</p>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filteredArtists.length > 0 ? (
+            <div
+              className={classNames(
+                'library-collections',
+                layout === 'list' && 'library-collections--list',
+              )}
+            >
+              {filteredArtists.map((artist) => (
+                <div key={artist.id} className="media-card group relative text-center">
+                  <Link to={`/artists/${artist.id}`} className="block">
+                    <div className="mx-auto aspect-square w-32 overflow-hidden rounded-full bg-white/5 sm:w-40">
+                      <img
+                        src={artist.thumbnailUrl || artwork(artist.name, 200)}
+                        alt={artist.name}
+                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                        loading="lazy"
+                        onError={(e) => {
+                          const fallback = artwork(artist.name || 'artist', 200)
+                          if (e.currentTarget.src !== fallback) e.currentTarget.src = fallback
+                        }}
+                      />
+                    </div>
+                    <div className="media-card__info mt-3">
+                      <h4 className="truncate text-sm font-semibold text-white">{artist.name}</h4>
+                      <p className="truncate text-xs text-white/60">
+                        {artist.subscribers ? `${artist.subscribers} subscribers` : 'Artist'}
+                      </p>
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleArtistFollow(artist.id)
+                      setToast(`Unfollowed ${artist.name}`)
+                    }}
+                    className="button button--quiet mt-2 text-xs"
+                    title="Unfollow artist"
+                  >
+                    Following
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <UserRound size={27} />
+              <h3>No followed artists yet</h3>
+              <p>Follow your favorite artists to stay updated on their latest releases.</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'All' && followedArtists.length > 0 && (
+        <section className="page-section">
+          <SectionHeading title="Followed artists" to="/library?tab=artists" />
+          <div
+            className={classNames(
+              'library-collections',
+              layout === 'list' && 'library-collections--list',
+            )}
+          >
+            {followedArtists.slice(0, 4).map((artist) => (
+              <MediaCard
+                key={artist.id}
+                kind="artist"
+                item={{
+                  id: artist.id,
+                  name: artist.name,
+                  image: artist.thumbnailUrl || artwork(artist.name, 200),
+                  subscribers: artist.subscribers,
+                }}
+                subtitle={artist.subscribers ? `${artist.subscribers} subscribers` : 'Artist'}
               />
             ))}
           </div>

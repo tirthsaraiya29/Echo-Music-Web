@@ -836,7 +836,7 @@ export function ArtistPage() {
               aria-label={followed ? `Unfollow ${artist.name}` : `Follow ${artist.name}`}
               aria-pressed={followed}
               onClick={() => {
-                toggleFollow(artistId)
+                toggleFollow(artistId, artist)
                 setToast(followed ? `Unfollowed ${artist.name}` : `Following ${artist.name}`)
               }}
             >
