@@ -9,6 +9,11 @@ import {
   parseHomeFeed,
   parseSearchResults,
 } from './parser.ts'
+import {
+  filterShortsFromShelves,
+  filterShortsFromSearchResults,
+  isShortsFilterEnabled,
+} from './shortsFilterService.ts'
 import { fetchWithCache } from '../cache/metadataCache.ts'
 import { useEchoStore, cacheTracks } from '../../stores/useEchoStore.ts'
 
@@ -82,7 +87,8 @@ export class InnerTubeClient {
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
-    const cacheKey = `shelf:home:${region}:${showExplicit ? 'exp' : 'clean'}`
+    const filterShorts = isShortsFilterEnabled(prefs)
+    const cacheKey = `shelf:home:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}`
 
     return await fetchWithCache(
       cacheKey,
@@ -97,11 +103,14 @@ export class InnerTubeClient {
           if (options?.signal) fetchInit.signal = options.signal
 
           const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
-          const shelves = parseHomeFeed(data)
+          let shelves = parseHomeFeed(data)
           for (const shelf of shelves) {
             if (!showExplicit) {
               shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
             }
+          }
+          shelves = filterShortsFromShelves(shelves, filterShorts)
+          for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
           }
@@ -125,7 +134,8 @@ export class InnerTubeClient {
     const prefs = useEchoStore.getState().preferences
     const region = countryCode || prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
-    const key = `shelf:charts:${region}:${showExplicit ? 'exp' : 'clean'}`
+    const filterShorts = isShortsFilterEnabled(prefs)
+    const key = `shelf:charts:${region}:${showExplicit ? 'exp' : 'clean'}:${filterShorts ? 'noShorts' : 'withShorts'}`
 
     return await fetchWithCache(
       key,
@@ -144,11 +154,14 @@ export class InnerTubeClient {
           if (options?.signal) fetchInit.signal = options.signal
 
           const data = await apiFetch<Record<string, unknown>>('/api/innertube/browse', fetchInit)
-          const shelves = parseHomeFeed(data)
+          let shelves = parseHomeFeed(data)
           for (const shelf of shelves) {
             if (!showExplicit) {
               shelf.items = shelf.items.filter((item) => !('explicit' in item && item.explicit))
             }
+          }
+          shelves = filterShortsFromShelves(shelves, filterShorts)
+          for (const shelf of shelves) {
             const tracks = shelf.items.filter((i): i is Track => 'durationSeconds' in i)
             if (tracks.length > 0) cacheTracks(tracks)
           }
@@ -251,8 +264,10 @@ export class InnerTubeClient {
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
     const showExplicit = prefs.showExplicit ?? true
+    const filterShorts = isShortsFilterEnabled(prefs)
     const explicitFlag = showExplicit ? 'exp' : 'clean'
-    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}:${region}:${explicitFlag}`
+    const shortsFlag = filterShorts ? 'noShorts' : 'withShorts'
+    const key = `search:${trimmed.toLowerCase()}:${filter || 'all'}:${region}:${explicitFlag}:${shortsFlag}`
 
     return await fetchWithCache(
       key,
@@ -279,10 +294,11 @@ export class InnerTubeClient {
           if (options?.signal) fetchInit.signal = options.signal
 
           const data = await apiFetch<Record<string, unknown>>('/api/innertube/search', fetchInit)
-          const catalog = parseSearchResults(data)
+          let catalog = parseSearchResults(data)
           if (!showExplicit) {
             catalog.tracks = catalog.tracks.filter((t) => !t.explicit)
           }
+          catalog = filterShortsFromSearchResults(catalog, filterShorts)
           if (catalog.tracks.length > 0) {
             cacheTracks(catalog.tracks)
           }

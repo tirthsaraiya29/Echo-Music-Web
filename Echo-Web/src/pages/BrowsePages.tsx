@@ -18,6 +18,7 @@ import {
   Smartphone,
   FolderPlus,
   RefreshCw,
+  EyeOff,
 } from 'lucide-react'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
 import type { Track } from '../types/domain.ts'
@@ -932,6 +933,8 @@ export function SearchPage() {
   const { data: suggestions = [] } = useSearchSuggestions(query)
   const playTrack = useEchoStore((state) => state.playTrack)
   const setToast = useEchoStore((state) => state.setToast)
+  const preferences = useEchoStore((state) => state.preferences)
+  const isShortsFiltered = preferences.hideYoutubeShorts ?? preferences.filterShorts ?? true
 
   const handleSelectSearch = (term: string) => {
     setQuery(term)
@@ -1233,6 +1236,15 @@ export function SearchPage() {
               {item.label}
             </button>
           ))}
+          {isShortsFiltered && (
+            <span
+              className="ml-auto inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-[#a59fad]"
+              title="YouTube Shorts are excluded per Content settings"
+            >
+              <EyeOff size={12} />
+              <span>Shorts hidden</span>
+            </span>
+          )}
         </div>
       )}
 

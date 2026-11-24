@@ -60,6 +60,9 @@ export const userPreferencesSchema = z.object({
     .enum(['extension-first', 'youtube-first'])
     .optional()
     .default('extension-first'),
+  spotifyRecommendationBridge: z.boolean().optional().default(true),
+  hideYoutubeShorts: z.boolean().optional().default(true),
+  filterShorts: z.boolean().optional().default(true),
 })
 
 export type ValidatedUserPreferences = z.infer<typeof userPreferencesSchema>
@@ -125,6 +128,9 @@ const keyValidators: Partial<Record<keyof UserPreferences, z.ZodTypeAny>> = {
   discordMode: discordModeSchema,
   skipSilence: z.boolean(),
   googleCast: z.boolean(),
+  spotifyRecommendationBridge: z.boolean(),
+  hideYoutubeShorts: z.boolean(),
+  filterShorts: z.boolean(),
 }
 
 export function validatePreferenceUpdate<K extends keyof UserPreferences>(

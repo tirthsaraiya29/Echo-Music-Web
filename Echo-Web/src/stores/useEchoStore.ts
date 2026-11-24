@@ -106,6 +106,9 @@ const defaultPreferences: UserPreferences = {
   discordMode: 'auto',
   preferExtensionAudio: true,
   extensionSourcePriority: 'extension-first',
+  spotifyRecommendationBridge: true,
+  hideYoutubeShorts: true,
+  filterShorts: true,
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID

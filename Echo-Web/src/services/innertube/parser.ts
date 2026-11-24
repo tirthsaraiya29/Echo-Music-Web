@@ -330,6 +330,15 @@ function parseResponsiveListItemRenderer(
       col1Runs.some((r) => /\bexplicit\b/i.test(r.text || '')),
   )
 
+  const isShortItem = Boolean(
+    (col0Runs[0]?.navigationEndpoint &&
+      'reelWatchEndpoint' in (col0Runs[0].navigationEndpoint as Record<string, unknown>)) ||
+      (row.navigationEndpoint &&
+        'reelWatchEndpoint' in (row.navigationEndpoint as Record<string, unknown>)) ||
+      /(?:^|\s|[#([/])shorts(?:\s|[#)\]/]|$)/i.test(title) ||
+      browseId?.startsWith('SS'),
+  )
+
   // Check if this item is an Artist
   if (
     !videoId &&
@@ -406,6 +415,7 @@ function parseResponsiveListItemRenderer(
       thumbnailUrl: rawArtwork,
       image: rawArtwork,
       author: col1Runs[0]?.text?.trim(),
+      isShorts: isShortItem || (browseId?.startsWith('SS') ?? false),
     }
     return playlist
   }
@@ -475,6 +485,8 @@ function parseResponsiveListItemRenderer(
     }
   }
 
+  const isShort = Boolean(isShortItem || (durationSeconds <= 60 && title.includes('#')))
+
   const track: Track = {
     id: trackId,
     title,
@@ -483,6 +495,7 @@ function parseResponsiveListItemRenderer(
     durationSeconds,
     thumbnailUrl: rawArtwork,
     isExplicit,
+    isShort,
 
     // Phase 1 AudioEngine & UI contracts compatibility
     artistId,
@@ -580,7 +593,10 @@ function parseTwoRowItemRenderer(
   if (
     pageType === 'MUSIC_PAGE_TYPE_PLAYLIST' ||
     (browseId &&
-      (browseId.startsWith('VL') || browseId.startsWith('PL') || browseId.startsWith('RD')))
+      (browseId.startsWith('VL') ||
+        browseId.startsWith('PL') ||
+        browseId.startsWith('RD') ||
+        browseId.startsWith('SS')))
   ) {
     const playlist: PlaylistSummary = {
       id: browseId || '',
@@ -589,6 +605,7 @@ function parseTwoRowItemRenderer(
       image: rawArtwork,
       author: subtitleRuns[0]?.text?.trim(),
       description: subtitleRuns.map((r) => r.text).join(''),
+      isShorts: Boolean(browseId?.startsWith('SS') || /^#?shorts$/i.test(title)),
     }
     return playlist
   }
@@ -613,6 +630,12 @@ function parseTwoRowItemRenderer(
         subtitleRuns.some((r) => /\bexplicit\b/i.test(r.text || '')),
     )
 
+    const isShort = Boolean(
+      (endpoint && 'reelWatchEndpoint' in (endpoint as Record<string, unknown>)) ||
+        /(?:^|\s|[#([/])shorts(?:\s|[#)\]/]|$)/i.test(title) ||
+        browseId?.startsWith('SS'),
+    )
+
     const track: Track = {
       id: videoId,
       title,
@@ -621,6 +644,7 @@ function parseTwoRowItemRenderer(
       durationSeconds: 180,
       thumbnailUrl: rawArtwork,
       isExplicit,
+      isShort,
 
       artistId,
       artistName,

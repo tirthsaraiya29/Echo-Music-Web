@@ -34,6 +34,7 @@ export interface PlaylistSummary {
   trackCount?: number | undefined
   author?: string | undefined
   description?: string | undefined
+  isShorts?: boolean | undefined
 }
 
 export interface Track {
@@ -66,6 +67,8 @@ export interface Track {
   podcastShowId?: string | undefined
   episodeNumber?: number | undefined
   publishedAt?: string | undefined
+  isShort?: boolean | undefined
+  isVideo?: boolean | undefined
 }
 
 export interface PodcastEpisode extends Track {
@@ -155,4 +158,6 @@ export interface UserPreferences {
   preferExtensionAudio?: boolean | undefined
   extensionSourcePriority?: 'extension-first' | 'youtube-first' | undefined
   spotifyRecommendationBridge?: boolean | undefined
+  hideYoutubeShorts?: boolean | undefined
+  filterShorts?: boolean | undefined
 }

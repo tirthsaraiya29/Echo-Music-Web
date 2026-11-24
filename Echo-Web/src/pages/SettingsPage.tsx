@@ -264,7 +264,7 @@ export function SettingsPage() {
       id: 'content',
       label: 'Content & Region',
       icon: Globe,
-      keywords: 'region explicit start tab catalog language',
+      keywords: 'region explicit start tab catalog language shorts reel',
     },
     {
       id: 'lyrics',
@@ -1029,6 +1029,14 @@ export function SettingsPage() {
               description="Include tracks with explicit language markers in search results and charts."
               preference="showExplicit"
               value={preferences.showExplicit}
+              onChange={save}
+            />
+
+            <PreferenceToggle
+              label="Hide YouTube Shorts"
+              description="Exclude YouTube Shorts and short video reels from search results, discovery shelves, and feeds."
+              preference="hideYoutubeShorts"
+              value={preferences.hideYoutubeShorts ?? true}
               onChange={save}
             />
           </section>
