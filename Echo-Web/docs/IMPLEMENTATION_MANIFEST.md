@@ -27,7 +27,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-13 | P1 | Cast is not wired into playback | `src/services/cast/castService.ts, src/components/player/AudioOutputPicker.tsx` | Completed | 1e525ee82ea574eeea22ea794dc2cb927aa8fa2e | Yes (verified on origin/main) |
 | BUG-14 | P1 | Cast media type is hardcoded | `src/services/cast/castService.ts, src/engine/AudioEngine.ts` | Completed | 3f8d4c6b | Yes (verified on origin/main) |
 | BUG-15 | P1 | Local Taste skip penalties are unreachable | `src/services/recommendations/localTasteEngine.ts, src/engine/AudioEngine.ts` | Completed | cb1b9b4c | Yes (verified on origin/main) |
-| BUG-16 | P1 | Lyrics provider preference is ignored | `src/pages/SettingsPage.tsx, src/services/lyrics/LyricsOrchestrator.ts` | Pending | - | - |
+| BUG-16 | P1 | Lyrics provider preference is ignored | `src/pages/SettingsPage.tsx, src/services/lyrics/LyricsOrchestrator.ts` | Completed | 6977efb6 | Yes (verified on origin/main) |
 | BUG-17 | P1 | Several settings are inert or only partially implemented | `src/types/domain.ts, src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts` | Pending | - | - |
 | BUG-18 | P1 | Negative cache entries never expire | `src/services/lyrics/LyricsOrchestrator.ts, src/services/canvas/CanvasManager.ts` | Pending | - | - |
 | BUG-19 | P1 | Stale metadata cache revalidation is not deduplicated | `src/services/cache/metadataCache.ts` | Pending | - | - |
