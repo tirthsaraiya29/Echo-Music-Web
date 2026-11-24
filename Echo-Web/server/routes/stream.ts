@@ -42,6 +42,98 @@ function getCachedInfo(key: string): CachedVideoInfo | undefined {
 
 export type StreamQuality = 'low' | 'medium' | 'high' | 'lossless'
 
+export interface ParsedByteRange {
+  start: number
+  end?: number
+}
+
+export type ParseRangeResult =
+  | { valid: true; range: ParsedByteRange }
+  | { valid: false; status: 416 }
+
+/**
+ * Parses HTTP Range request header per RFC 9110 Section 14.1.2.
+ * Strictly supports single byte ranges:
+ * - Closed range: bytes=start-end (e.g. bytes=0-1024)
+ * - Open-ended range: bytes=start- (e.g. bytes=1024-)
+ * - Suffix range: bytes=-suffixLength (e.g. bytes=-500)
+ *
+ * Rejects multiple ranges (bytes=a-b,c-d), non-byte units, inverted ranges (start > end),
+ * suffix ranges with 0 length, and out-of-bounds start offsets by returning { valid: false, status: 416 }.
+ */
+export function parseByteRange(rangeHeader: string, totalBytes: number): ParseRangeResult {
+  if (typeof rangeHeader !== 'string') {
+    return { valid: false, status: 416 }
+  }
+
+  const trimmed = rangeHeader.trim()
+  // Reject multiple ranges (comma-separated byte-range-set per RFC 9110)
+  if (trimmed.includes(',')) {
+    return { valid: false, status: 416 }
+  }
+
+  // Must strictly match bytes=<range-spec>
+  const prefixMatch = /^bytes=(.+)$/i.exec(trimmed)
+  if (!prefixMatch || !prefixMatch[1]) {
+    return { valid: false, status: 416 }
+  }
+
+  const spec = prefixMatch[1].trim()
+
+  // Suffix range: -suffixLength (e.g. -500)
+  const suffixMatch = /^-(\d+)$/.exec(spec)
+  if (suffixMatch && suffixMatch[1]) {
+    const suffixLen = Number.parseInt(suffixMatch[1], 10)
+    if (suffixLen <= 0 || !Number.isFinite(suffixLen)) {
+      return { valid: false, status: 416 }
+    }
+    if (totalBytes <= 0) {
+      return { valid: false, status: 416 }
+    }
+    const start = Math.max(0, totalBytes - suffixLen)
+    const end = totalBytes - 1
+    return { valid: true, range: { start, end } }
+  }
+
+  // Closed range: start-end (e.g. 0-499)
+  const closedMatch = /^(\d+)-(\d+)$/.exec(spec)
+  if (closedMatch && closedMatch[1] && closedMatch[2]) {
+    const start = Number.parseInt(closedMatch[1], 10)
+    let end = Number.parseInt(closedMatch[2], 10)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+      return { valid: false, status: 416 }
+    }
+    if (totalBytes > 0) {
+      if (start >= totalBytes) {
+        return { valid: false, status: 416 }
+      }
+      if (end >= totalBytes) {
+        end = totalBytes - 1
+      }
+    }
+    return { valid: true, range: { start, end } }
+  }
+
+  // Open-ended range: start- (e.g. 500-)
+  const openMatch = /^(\d+)-$/.exec(spec)
+  if (openMatch && openMatch[1]) {
+    const start = Number.parseInt(openMatch[1], 10)
+    if (!Number.isFinite(start)) {
+      return { valid: false, status: 416 }
+    }
+    if (totalBytes > 0) {
+      if (start >= totalBytes) {
+        return { valid: false, status: 416 }
+      }
+      return { valid: true, range: { start, end: totalBytes - 1 } }
+    }
+    return { valid: true, range: { start } }
+  }
+
+  // Any other format is invalid/unsatisfiable
+  return { valid: false, status: 416 }
+}
+
 function selectBestAudioFormat(
   formats: readonly VideoFormat[],
   quality: StreamQuality = 'high',
@@ -183,19 +275,15 @@ streamRouter.get('/listen', async (c) => {
     let end: number | undefined = total > 0 ? total - 1 : undefined
 
     if (rangeHeader) {
-      const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
-      if (match) {
-        start = Number.parseInt(match[1] || '0', 10)
-        if (match[2]) {
-          end = Number.parseInt(match[2], 10)
-        }
-      }
-      if (total > 0 && start >= total) {
+      const parsed = parseByteRange(rangeHeader, total)
+      if (!parsed.valid) {
         const notSatHeaders = new Headers()
-        notSatHeaders.set('Content-Range', `bytes */${total}`)
+        notSatHeaders.set('Content-Range', `bytes */${total > 0 ? total : '*'}`)
         notSatHeaders.set('Accept-Ranges', 'bytes')
         return new Response(null, { status: 416, headers: notSatHeaders })
       }
+      start = parsed.range.start
+      end = parsed.range.end
     }
 
     const stream = await ytdl.download(videoId, {
@@ -257,7 +345,14 @@ streamRouter.get('/proxy', async (c) => {
   }
 
   if (rangeHeader) {
-    headers['Range'] = rangeHeader
+    const parsed = parseByteRange(rangeHeader, 0)
+    if (!parsed.valid) {
+      const notSatHeaders = new Headers()
+      notSatHeaders.set('Content-Range', 'bytes */*')
+      notSatHeaders.set('Accept-Ranges', 'bytes')
+      return new Response(null, { status: 416, headers: notSatHeaders })
+    }
+    headers['Range'] = rangeHeader.trim()
   }
 
   try {
