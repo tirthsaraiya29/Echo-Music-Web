@@ -14,6 +14,7 @@ import {
   Share2,
   FileDown,
   Disc3,
+  UserX,
 } from 'lucide-react'
 import type { Playlist, Track } from '../types/domain.ts'
 import { useAlbum } from '../hooks/useAlbum.ts'
@@ -733,6 +734,8 @@ export function ArtistPage() {
             <button
               className={classNames('button', followed ? 'button--quiet' : 'button--outline')}
               type="button"
+              aria-label={followed ? `Unfollow ${artist.name}` : `Follow ${artist.name}`}
+              aria-pressed={followed}
               onClick={() => {
                 toggleFollow(artistId)
                 setToast(followed ? `Unfollowed ${artist.name}` : `Following ${artist.name}`)
@@ -807,6 +810,21 @@ export function ArtistPage() {
           </div>
         </section>
       )}
+      {artistTracks.length === 0 &&
+        artistAlbums.length === 0 &&
+        artistSingles.length === 0 &&
+        related.length === 0 && (
+          <div
+            className="empty-state"
+            role="status"
+            aria-label="No music catalog available for this artist"
+            style={{ padding: '48px 16px', textAlign: 'center', opacity: 0.7 }}
+          >
+            <UserX size={36} style={{ margin: '0 auto 12px auto' }} />
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '6px' }}>No music available</h3>
+            <p style={{ fontSize: '0.9rem' }}>This artist currently has no public tracks or albums available.</p>
+          </div>
+        )}
     </div>
   )
 }
