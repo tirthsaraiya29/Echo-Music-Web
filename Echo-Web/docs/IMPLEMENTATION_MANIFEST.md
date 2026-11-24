@@ -15,7 +15,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-01 | P0 | Crossfade queue promotion is missing | `src/engine/AudioEngine.ts, src/engine/DeckController.ts, src/engine/QueueManager.ts` | Completed | c9acb71963329872881908c209edf2f1a15383ef | Yes (verified on origin/main) |
 | BUG-02 | P0 | Zustand queue actions mutate the same queue twice | `src/stores/useEchoStore.ts, src/hooks/useAudioEngine.ts, src/engine/AudioEngine.ts` | Completed | 5a4b9d92b6d6b1dbe997f1b0354d8041120f89f5 | Yes (verified on origin/main) |
 | BUG-03 | P0 | Track object identity changes on playback ticks | `src/engine/QueueManager.ts, src/engine/AudioEngine.ts, src/hooks/useAudioEngine.ts, src/components/player/LyricsView.tsx, src/components/player/CanvasVideo.tsx` | Completed | 71656d0b98c11e3b6f368c4aa8b69bd7bab06321 | Yes (verified on origin/main) |
-| BUG-04 | P0 | Production API deployment is not defined in the repository | `vite.config.ts, server/index.ts, src/services/api.ts` | Pending | - | - |
+| BUG-04 | P0 | Production API deployment is not defined in the repository | `vite.config.ts, server/index.ts, src/services/api.ts` | Completed | bfd7ca262b714ccd0219e4b23da621a283d128d6 | Yes (verified on origin/main) |
 | BUG-05 | P1 | Listen Together is HTTP polling, not WebSockets | `src/services/listenTogether/listenTogetherClient.ts, server/routes/listenTogether.ts, README.md` | Pending | - | - |
 | BUG-06 | P1 | Listen Together host updates can flood the backend | `src/components/modals/ListenTogetherModal.tsx, src/hooks/useAudioEngine.ts, src/services/listenTogether/listenTogetherClient.ts` | Pending | - | - |
 | BUG-07 | P1 | Listen Together room expiry ignores active heartbeats | `server/routes/listenTogether.ts` | Pending | - | - |
