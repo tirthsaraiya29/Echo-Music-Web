@@ -10,12 +10,14 @@ radioRouter.get('/continuation', async (c) => {
   const gl = c.req.query('gl') || 'US'
   const hl = c.req.query('hl') || 'en'
 
+  const explicitAllowed = c.req.query('explicit') !== 'false'
+
   if (!videoId && !continuationToken) {
     return c.json({ error: 'videoId or continuation parameter is required' }, 400)
   }
 
   try {
-    const radioData = await fetchInnerTubeRadio(videoId, continuationToken, gl, hl)
+    const radioData = await fetchInnerTubeRadio(videoId, continuationToken, gl, hl, explicitAllowed)
     return c.json(radioData)
   } catch (err: unknown) {
     return c.json(
@@ -57,6 +59,7 @@ async function fetchInnerTubeRadio(
   continuationToken?: string,
   gl = 'US',
   hl = 'en',
+  explicitAllowed = true,
 ): Promise<{ tracks: Track[]; continuationToken?: string }> {
   const visitorData = await fetchVisitorData()
   const context = buildClientContext('WEB_REMIX', visitorData, undefined, gl, hl)
@@ -129,6 +132,15 @@ async function fetchInnerTubeRadio(
       const lengthStr = renderer.lengthText?.runs?.[0]?.text
       const durationMs = parseTimeStringToMs(lengthStr)
 
+      const rawBadges = (renderer as Record<string, unknown>)['badges'] as
+        | Array<{ musicInlineBadgeRenderer?: { icon?: { iconType?: string } } }>
+        | undefined
+      const isExplicit = Boolean(
+        rawBadges?.some((b) =>
+          b.musicInlineBadgeRenderer?.icon?.iconType?.toLowerCase().includes('explicit'),
+        ) || /\b(explicit|\(explicit\)|\[explicit\])\b/i.test(title),
+      )
+
       tracks.push({
         id: trackVideoId,
         title,
@@ -139,7 +151,7 @@ async function fetchInnerTubeRadio(
         albumImage: artwork,
         durationMs,
         artwork,
-        explicit: false,
+        explicit: isExplicit,
         playCount: 0,
         videoId: trackVideoId,
       })
@@ -148,8 +160,9 @@ async function fetchInnerTubeRadio(
 
   const nextContinuationToken = extractNextContinuationToken(data)
 
+  const finalTracks = explicitAllowed ? tracks : tracks.filter((t) => !t.explicit)
   const result: { tracks: Track[]; continuationToken?: string } = {
-    tracks,
+    tracks: finalTracks,
   }
   if (nextContinuationToken) {
     result.continuationToken = nextContinuationToken

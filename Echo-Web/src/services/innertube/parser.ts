@@ -228,7 +228,9 @@ function parseResponsiveListItemRenderer(
   const isExplicit = Boolean(
     row.badges?.some((b) =>
       b.musicInlineBadgeRenderer?.icon?.iconType?.toLowerCase().includes('explicit'),
-    ),
+    ) ||
+      /\b(explicit|\(explicit\)|\[explicit\])\b/i.test(title) ||
+      col1Runs.some((r) => /\bexplicit\b/i.test(r.text || '')),
   )
 
   // Check if this item is an Artist
@@ -503,6 +505,17 @@ function parseTwoRowItemRenderer(
       subtitleRuns.length > 2 ? subtitleRuns[2]?.text?.trim() || 'Single' : 'Single'
     const albumId = `album-${videoId}`
 
+    const rawSubtitleBadges = (twoRow as Record<string, unknown>)['subtitleBadges'] as
+      | Array<{ musicInlineBadgeRenderer?: { icon?: { iconType?: string } } }>
+      | undefined
+    const isExplicit = Boolean(
+      rawSubtitleBadges?.some((b) =>
+        b.musicInlineBadgeRenderer?.icon?.iconType?.toLowerCase().includes('explicit'),
+      ) ||
+        /\b(explicit|\(explicit\)|\[explicit\])\b/i.test(title) ||
+        subtitleRuns.some((r) => /\bexplicit\b/i.test(r.text || '')),
+    )
+
     const track: Track = {
       id: videoId,
       title,
@@ -510,7 +523,7 @@ function parseTwoRowItemRenderer(
       album: { id: albumId, title: albumTitle },
       durationSeconds: 180,
       thumbnailUrl: rawArtwork,
-      isExplicit: false,
+      isExplicit,
 
       artistId,
       artistName,
@@ -519,7 +532,7 @@ function parseTwoRowItemRenderer(
       albumImage: rawArtwork,
       durationMs: 180000,
       artwork: rawArtwork,
-      explicit: false,
+      explicit: isExplicit,
       playCount: 0,
       videoId,
     }

@@ -354,8 +354,21 @@ export class AudioEngine {
   }
 
   public setQueue(tracks: Track[], startIndex = 0): void {
+    const prefs = useEchoStore.getState().preferences
+    const showExplicit = prefs.showExplicit ?? true
+    let validTracks = tracks
+    let validIndex = startIndex
+
+    // If explicit content is disabled and the queue has explicit tracks, filter them out
+    if (!showExplicit && tracks.length > 0) {
+      const selectedTrack = tracks[startIndex]
+      validTracks = tracks.filter((t, i) => !t.explicit || i === startIndex)
+      validIndex = selectedTrack ? validTracks.indexOf(selectedTrack) : 0
+      if (validIndex < 0) validIndex = 0
+    }
+
     this.recordCurrentTrackTransition(false)
-    const track = this.queueManager.setSourceQueue(tracks, startIndex)
+    const track = this.queueManager.setSourceQueue(validTracks, validIndex)
     this.emit('queueChange')
     if (track) {
       void this.loadAndPlayTrack(track)
@@ -1096,13 +1109,21 @@ export class AudioEngine {
     this.isFetchingRadioContinuation = true
 
     try {
-      const res = await fetch(`/api/radio/continuation?videoId=${encodeURIComponent(videoId)}`)
+      const prefs = useEchoStore.getState().preferences
+      const region = prefs.contentRegion || 'US'
+      const showExplicit = prefs.showExplicit ?? true
+      const res = await fetch(
+        `/api/radio/continuation?videoId=${encodeURIComponent(videoId)}&gl=${encodeURIComponent(region)}&explicit=${showExplicit}`,
+      )
       if (res.ok) {
         const data = (await res.json()) as { tracks: Track[] }
         if (Array.isArray(data.tracks) && data.tracks.length > 0) {
-          this.queueManager.addRadioTracks(data.tracks)
-          this.emit('queueChange')
-          this.emitState()
+          const filtered = showExplicit ? data.tracks : data.tracks.filter((t) => !t.explicit)
+          if (filtered.length > 0) {
+            this.queueManager.addRadioTracks(filtered)
+            this.emit('queueChange')
+            this.emitState()
+          }
         }
       }
     } catch {

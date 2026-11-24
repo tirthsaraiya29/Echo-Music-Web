@@ -303,10 +303,12 @@ export class InnerTubeClient {
   ): Promise<{ tracks: Track[]; continuationToken?: string }> {
     const prefs = useEchoStore.getState().preferences
     const region = prefs.contentRegion || 'US'
+    const showExplicit = prefs.showExplicit ?? true
     const queryParams = new URLSearchParams()
     if (videoId) queryParams.set('videoId', videoId)
     if (continuation) queryParams.set('continuation', continuation)
     queryParams.set('gl', region)
+    queryParams.set('explicit', String(showExplicit))
 
     return await apiFetch<{ tracks: Track[]; continuationToken?: string }>(
       `/api/radio/continuation?${queryParams.toString()}`,
