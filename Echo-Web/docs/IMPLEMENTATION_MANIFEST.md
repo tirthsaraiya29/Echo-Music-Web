@@ -152,7 +152,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-030 | Blocked artists | Completed | a8cdac09 | Yes |
 | FEATURE-031 | Podcast discovery | Completed | b3dadc64 | Yes |
 | FEATURE-032 | Followed podcast library | Completed | c52042ce | Yes |
-| FEATURE-033 | Continue listening | Pending | - | - |
+| FEATURE-033 | Continue listening | Completed | fc3467f6 | Yes |
 | FEATURE-034 | Episode ordering | Pending | - | - |
 | FEATURE-035 | Podcast playback speed | Pending | - | - |
 | FEATURE-036 | Podcast skip controls | Pending | - | - |
