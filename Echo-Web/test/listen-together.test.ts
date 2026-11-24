@@ -8,6 +8,8 @@ import {
   ROOM_CODE_ALPHABET,
   generateRoomCode,
   isValidRoomCode,
+  resetJoinRateLimits,
+  getClientIp,
 } from '../server/routes/listenTogether.ts'
 
 describe('Listen Together Room Storage & Endpoints', () => {
@@ -191,5 +193,59 @@ describe('Listen Together Room Storage & Endpoints', () => {
       32,
       `All 32 alphabet symbols must be generated across samples (observed ${observedSymbols.size})`,
     )
+  })
+
+  it('rate limiting ignores untrusted x-forwarded-for headers by default [BUG-33]', async () => {
+    assert.strictEqual(typeof getClientIp, 'function')
+    resetJoinRateLimits()
+    delete process.env['TRUST_PROXY']
+
+    // 1. Without TRUST_PROXY, spoofed X-Forwarded-For is ignored
+    for (let i = 0; i < 20; i++) {
+      const spoofedReq = new Request('http://localhost/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': `198.51.100.${i}`, // Attacker rotating IP headers
+        },
+        body: JSON.stringify({ code: 'ROOM99', userName: 'Attacker' }),
+      })
+      const res = await listenTogetherRouter.fetch(spoofedReq)
+      // First 20 attempts should return 404 (room not found), not 429 yet
+      assert.strictEqual(res.status, 404, `Attempt ${i + 1} should return 404, not rate-limited yet`)
+    }
+
+    // 21st attempt from the same socket (despite a new spoofed IP header) MUST be rate-limited (429)
+    const blockedReq = new Request('http://localhost/join', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.99',
+      },
+      body: JSON.stringify({ code: 'ROOM99', userName: 'Attacker' }),
+    })
+    const blockedRes = await listenTogetherRouter.fetch(blockedReq)
+    assert.strictEqual(blockedRes.status, 429, '21st attempt must be blocked by rate limiter regardless of spoofed header')
+
+    // 2. With TRUST_PROXY=true, proxy headers are trusted
+    resetJoinRateLimits()
+    process.env['TRUST_PROXY'] = 'true'
+    try {
+      // Mock request with cf-connecting-ip
+      const trustedReq = new Request('http://localhost/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'CF-Connecting-IP': '198.51.100.42',
+        },
+        body: JSON.stringify({ code: 'ROOM99', userName: 'Legit' }),
+      })
+      // Should evaluate under trusted IP and return 404 Room not found
+      const trustedRes = await listenTogetherRouter.fetch(trustedReq)
+      assert.strictEqual(trustedRes.status, 404)
+    } finally {
+      delete process.env['TRUST_PROXY']
+      resetJoinRateLimits()
+    }
   })
 })

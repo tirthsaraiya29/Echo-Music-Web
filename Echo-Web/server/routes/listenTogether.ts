@@ -1,5 +1,6 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { randomUUID, randomBytes } from 'node:crypto'
+import { getConnInfo } from '@hono/node-server/conninfo'
 
 export const listenTogetherRouter = new Hono()
 
@@ -80,12 +81,12 @@ export function setRoomStore(store: RoomStore): void {
   globalRoomStore = store
 }
 
-// Simple fixed-window rate limiting per IP to blunt code guessing and sync spam
+// Fixed-window rate limiting per IP to blunt code guessing and sync spam
 const joinAttemptsByIp = new Map<string, { windowStart: number; count: number }>()
 const JOIN_LIMIT_PER_WINDOW = 20
 const JOIN_WINDOW_MS = 10 * 60 * 1000
 
-function isJoinRateLimited(ip: string): boolean {
+export function isJoinRateLimited(ip: string): boolean {
   const now = Date.now()
   const entry = joinAttemptsByIp.get(ip)
   if (!entry || now - entry.windowStart > JOIN_WINDOW_MS) {
@@ -99,6 +100,49 @@ function isJoinRateLimited(ip: string): boolean {
   }
   entry.count++
   return entry.count > JOIN_LIMIT_PER_WINDOW
+}
+
+export function resetJoinRateLimits(): void {
+  joinAttemptsByIp.clear()
+}
+
+/**
+ * Derives the trusted client IP for rate limiting. Untrusted forwarded headers
+ * (like X-Forwarded-For) are ignored by default to prevent rate-limit evasion,
+ * unless TRUST_PROXY is explicitly enabled by platform configuration.
+ */
+export function getClientIp(c: Context): string {
+  const trustProxy = process.env['TRUST_PROXY'] === 'true' || process.env['TRUST_PROXY'] === '1'
+  if (trustProxy) {
+    const cfIp = c.req.header('cf-connecting-ip')?.trim()
+    if (cfIp) return cfIp
+    const xRealIp = c.req.header('x-real-ip')?.trim()
+    if (xRealIp) return xRealIp
+    const forwarded = c.req.header('x-forwarded-for')
+    if (forwarded) {
+      const parts = forwarded.split(',').map((p) => p.trim()).filter(Boolean)
+      if (parts.length > 0 && parts[0]) {
+        return parts[0]
+      }
+    }
+  }
+
+  // Use platform socket connection info
+  try {
+    const connInfo = getConnInfo(c)
+    if (connInfo?.remote?.address) {
+      return connInfo.remote.address
+    }
+  } catch {
+    // Context does not support getConnInfo
+  }
+
+  const envRemote = (c.env as Record<string, unknown> | undefined)?.['remoteAddress']
+  if (typeof envRemote === 'string' && envRemote.trim()) {
+    return envRemote.trim()
+  }
+
+  return '127.0.0.1'
 }
 
 // Cleanup stale rooms every 5 minutes
@@ -203,10 +247,7 @@ listenTogetherRouter.post('/create', async (c) => {
 
 // Join an existing room
 listenTogetherRouter.post('/join', async (c) => {
-  const ip =
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    ((c.env as Record<string, unknown> | undefined)?.['remoteAddress'] as string | undefined) ||
-    'unknown'
+  const ip = getClientIp(c)
   if (isJoinRateLimited(ip)) {
     return c.json({ error: 'Too many join attempts. Try again later.' }, 429)
   }
