@@ -1,13 +1,45 @@
 import type { Track } from '../../types/domain.ts'
-import type {
-  AddonEndpoint,
-  AddonManifest,
-  ExtensionHealthStatus,
-  ExtensionTelemetry,
-  ExtensionResolvedStream,
+import {
+  type AddonEndpoint,
+  type AddonManifest,
+  type ExtensionHealthStatus,
+  type ExtensionTelemetry,
+  type ExtensionResolvedStream,
+  type RegisterAddonInput,
+  type ExtensionRegistryMetrics,
+  addonEndpointSchema,
+  registerAddonInputSchema,
+  extensionHealthStatusSchema,
+  extensionRegistryMetricsSchema,
 } from '../../types/extension.ts'
 
 const STORAGE_KEY = 'echo_extension_addons_v1'
+
+const registryMetrics = {
+  registrations: 0,
+  removals: 0,
+  toggles: 0,
+  healthChecks: 0,
+  healthCheckFailures: 0,
+}
+
+export function recordExtensionRegistryMetric(
+  key: keyof typeof registryMetrics,
+): void {
+  registryMetrics[key] = (registryMetrics[key] || 0) + 1
+}
+
+export function resetExtensionRegistryMetrics(): void {
+  registryMetrics.registrations = 0
+  registryMetrics.removals = 0
+  registryMetrics.toggles = 0
+  registryMetrics.healthChecks = 0
+  registryMetrics.healthCheckFailures = 0
+}
+
+export function getExtensionRegistryMetrics(): ExtensionRegistryMetrics {
+  return extensionRegistryMetricsSchema.parse(registryMetrics)
+}
 
 export class ExtensionManager {
   private addons: AddonEndpoint[] = []
@@ -28,7 +60,15 @@ export class ExtensionManager {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
-        this.addons = JSON.parse(raw) as AddonEndpoint[]
+        const parsed = JSON.parse(raw) as unknown[]
+        const validAddons: AddonEndpoint[] = []
+        for (const item of parsed) {
+          const res = addonEndpointSchema.safeParse(item)
+          if (res.success) {
+            validAddons.push(res.data)
+          }
+        }
+        this.addons = validAddons
       }
     } catch {
       this.addons = []
@@ -64,9 +104,17 @@ export class ExtensionManager {
     return this.addons.some((a) => a.enabled)
   }
 
-  public async checkHealth(url: string): Promise<ExtensionHealthStatus> {
+  public async checkHealth(
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<ExtensionHealthStatus> {
+    recordExtensionRegistryMetric('healthChecks')
     try {
-      const res = await fetch(`/api/extensions/health?url=${encodeURIComponent(url)}`)
+      const fetchOptions: RequestInit = {}
+      if (signal) {
+        fetchOptions.signal = signal
+      }
+      const res = await fetch(`/api/extensions/health?url=${encodeURIComponent(url)}`, fetchOptions)
       const data = (await res.json()) as {
         ok: boolean
         latencyMs?: number | undefined
@@ -75,47 +123,57 @@ export class ExtensionManager {
       }
 
       if (res.ok && data.ok) {
-        return {
+        return extensionHealthStatusSchema.parse({
           status: 'online',
           latencyMs: data.latencyMs,
           manifest: data.manifest,
-        }
+        })
       }
-      return {
+      recordExtensionRegistryMetric('healthCheckFailures')
+      return extensionHealthStatusSchema.parse({
         status: 'error',
         latencyMs: data.latencyMs,
         error: data.error || `HTTP ${res.status}`,
-      }
+      })
     } catch (err) {
-      return {
+      recordExtensionRegistryMetric('healthCheckFailures')
+      return extensionHealthStatusSchema.parse({
         status: 'offline',
         error: err instanceof Error ? err.message : String(err),
-      }
+      })
     }
   }
 
-  public async addAddon(addon: {
-    name?: string | undefined
-    url: string
-    enabled?: boolean | undefined
-  }): Promise<AddonEndpoint> {
-    let resolvedName = (addon.name || '').trim()
+  public async addAddon(input: RegisterAddonInput): Promise<AddonEndpoint> {
+    const validated = registerAddonInputSchema.parse(input)
+    const normalizedUrl = validated.url.trim().replace(/\/+$/, '')
+
+    // Deduplication check
+    const existing = this.addons.find(
+      (a) => a.url.toLowerCase() === normalizedUrl.toLowerCase(),
+    )
+    if (existing) {
+      throw new Error(`Extension endpoint already registered: ${normalizedUrl}`)
+    }
+
+    let resolvedName = (validated.name || '').trim()
     if (!resolvedName) {
-      const health = await this.checkHealth(addon.url)
+      const health = await this.checkHealth(normalizedUrl)
       resolvedName = health.manifest?.name || 'Custom Extension'
     }
 
     const id = `addon_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-    const newEndpoint: AddonEndpoint = {
+    const newEndpoint = addonEndpointSchema.parse({
       id,
       name: resolvedName,
-      url: addon.url.trim().replace(/\/+$/, ''),
-      enabled: addon.enabled ?? true,
+      url: normalizedUrl,
+      enabled: validated.enabled ?? true,
       priority: this.addons.length + 1,
-    }
+    })
 
     this.addons.push(newEndpoint)
     this.save()
+    recordExtensionRegistryMetric('registrations')
     return newEndpoint
   }
 
@@ -124,13 +182,18 @@ export class ExtensionManager {
     if (target) {
       target.enabled = enabled
       this.save()
+      recordExtensionRegistryMetric('toggles')
     }
   }
 
   public removeAddon(id: string): void {
+    const beforeLen = this.addons.length
     this.addons = this.addons.filter((a) => a.id !== id)
-    this.reindexPriorities()
-    this.save()
+    if (this.addons.length < beforeLen) {
+      this.reindexPriorities()
+      this.save()
+      recordExtensionRegistryMetric('removals')
+    }
   }
 
   public reorderAddons(orderedIds: string[]): void {
@@ -143,7 +206,6 @@ export class ExtensionManager {
         map.delete(id)
       }
     })
-    // Append any remaining unlisted addons
     for (const remaining of map.values()) {
       reordered.push({ ...remaining, priority: reordered.length + 1 })
     }
