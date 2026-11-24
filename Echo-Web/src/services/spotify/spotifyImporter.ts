@@ -244,14 +244,54 @@ export async function importFromSpotify(
     title: string
     description?: string | undefined
     coverUrl?: string | undefined
-    tracks: Array<{ title: string; artist: string; album?: string; durationMs?: number }>
+    totalTracks?: number | undefined
+    hasMore?: boolean | undefined
+    tracks: Array<{
+      title: string
+      artist: string
+      album?: string | undefined
+      durationMs?: number | undefined
+      isrc?: string | undefined
+    }>
   }
 
-  if (!spotifyData.tracks || spotifyData.tracks.length === 0) {
+  const allSpotifyTracks = [...(spotifyData.tracks || [])]
+  let currentOffset = allSpotifyTracks.length
+
+  // Paginate if more tracks exist
+  while (
+    spotifyData.hasMore &&
+    (!spotifyData.totalTracks || allSpotifyTracks.length < spotifyData.totalTracks) &&
+    currentOffset < 1000
+  ) {
+    if (signal?.aborted) throw new DOMException('Import cancelled', 'AbortError')
+    try {
+      const pageRes = await fetch(
+        `/api/spotify/resolve?url=${encodeURIComponent(spotifyUrl.trim())}&offset=${currentOffset}&limit=100`,
+        { ...(signal ? { signal } : {}) },
+      )
+      if (!pageRes.ok) break
+      const pageData = (await pageRes.json()) as {
+        tracks?: typeof allSpotifyTracks
+        hasMore?: boolean
+      }
+      if (pageData.tracks && pageData.tracks.length > 0) {
+        allSpotifyTracks.push(...pageData.tracks)
+        currentOffset += pageData.tracks.length
+        if (!pageData.hasMore) break
+      } else {
+        break
+      }
+    } catch {
+      break
+    }
+  }
+
+  if (allSpotifyTracks.length === 0) {
     throw new Error('No tracks found in the provided Spotify link')
   }
 
-  const total = spotifyData.tracks.length
+  const total = allSpotifyTracks.length
   const matchedTracks: Track[] = []
   const unmatchedTitles: string[] = []
 
@@ -259,7 +299,7 @@ export async function importFromSpotify(
     if (signal?.aborted) {
       throw new DOMException('Import cancelled', 'AbortError')
     }
-    const item = spotifyData.tracks[i]!
+    const item = allSpotifyTracks[i]!
     const query = `${item.title} ${item.artist}`.trim()
 
     onProgress?.({
@@ -300,5 +340,62 @@ export async function importFromSpotify(
     totalSpotifyTracks: total,
     matchedTracks,
     unmatchedTitles,
+  }
+}
+
+export interface SpotifyUserPlaylist {
+  id: string
+  title: string
+  description?: string | undefined
+  coverUrl?: string | undefined
+  trackCount: number
+}
+
+export interface SpotifyPaginatedResponse<T> {
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+  items: T[]
+}
+
+export async function fetchSpotifyUserPlaylists(
+  token: string,
+  offset = 0,
+  limit = 50,
+): Promise<SpotifyPaginatedResponse<SpotifyUserPlaylist>> {
+  const res = await fetch(`/api/spotify/me/playlists?offset=${offset}&limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Spotify playlists (HTTP ${res.status})`)
+  }
+  return (await res.json()) as SpotifyPaginatedResponse<SpotifyUserPlaylist>
+}
+
+export async function fetchSpotifyUserSavedTracks(
+  token: string,
+  offset = 0,
+  limit = 50,
+): Promise<SpotifyPaginatedResponse<SpotifyTrackTarget>> {
+  const res = await fetch(`/api/spotify/me/tracks?offset=${offset}&limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Spotify saved tracks (HTTP ${res.status})`)
+  }
+  const data = (await res.json()) as {
+    total: number
+    offset: number
+    limit: number
+    hasMore: boolean
+    tracks: SpotifyTrackTarget[]
+  }
+  return {
+    total: data.total,
+    offset: data.offset,
+    limit: data.limit,
+    hasMore: data.hasMore,
+    items: data.tracks,
   }
 }

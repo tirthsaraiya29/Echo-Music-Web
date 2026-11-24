@@ -111,3 +111,88 @@ test('Spotify Matching: matches immediately on matching ISRC [BUG-23]', () => {
   assert.ok(match !== null)
   assert.strictEqual(match.confidence, 'high')
 })
+
+test('Spotify Router: requires authorization token for live library /me endpoints [BUG-24]', async () => {
+  const { spotifyRouter } = await import('../server/routes/spotify.ts')
+
+  // 1. Missing URL on /resolve
+  const resNoUrl = await spotifyRouter.request('http://localhost/resolve')
+  assert.strictEqual(resNoUrl.status, 400)
+
+  // 2. Invalid non-spotify domain
+  const resBadDomain = await spotifyRouter.request(
+    'http://localhost/resolve?url=' + encodeURIComponent('https://apple.com/playlist/123'),
+  )
+  assert.strictEqual(resBadDomain.status, 400)
+
+  // 3. /me/playlists without token returns 401
+  const resMePlaylistsNoToken = await spotifyRouter.request('http://localhost/me/playlists')
+  assert.strictEqual(resMePlaylistsNoToken.status, 401)
+
+  // 4. /me/tracks without token returns 401
+  const resMeTracksNoToken = await spotifyRouter.request('http://localhost/me/tracks')
+  assert.strictEqual(resMeTracksNoToken.status, 401)
+})
+
+test('Spotify Router: serves paginated user playlists and tracks with bearer token [BUG-24]', async () => {
+  const { spotifyRouter } = await import('../server/routes/spotify.ts')
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (url: string) => {
+    if (url.includes('/me/playlists')) {
+      return new Response(
+        JSON.stringify({
+          total: 10,
+          items: [
+            { id: 'p1', name: 'Chill Vibes', description: 'Relaxing music', images: [{ url: 'https://img.com/1.jpg' }], tracks: { total: 42 } },
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+    if (url.includes('/me/tracks')) {
+      return new Response(
+        JSON.stringify({
+          total: 25,
+          items: [
+            {
+              track: {
+                name: 'High and Dry',
+                artists: [{ name: 'Radiohead' }],
+                album: { name: 'The Bends' },
+                duration_ms: 257000,
+                external_ids: { isrc: 'GBAYE9500072' },
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+    return new Response(null, { status: 404 })
+  }) as any
+
+  try {
+    // With Authorization Bearer header
+    const resPlaylists = await spotifyRouter.request('http://localhost/me/playlists?offset=0&limit=50', {
+      headers: { Authorization: 'Bearer mock-user-token' },
+    })
+    assert.strictEqual(resPlaylists.status, 200)
+    const pData = (await resPlaylists.json()) as any
+    assert.strictEqual(pData.total, 10)
+    assert.strictEqual(pData.items[0].title, 'Chill Vibes')
+    assert.strictEqual(pData.items[0].trackCount, 42)
+
+    const resTracks = await spotifyRouter.request('http://localhost/me/tracks?offset=0&limit=50', {
+      headers: { Authorization: 'Bearer mock-user-token' },
+    })
+    assert.strictEqual(resTracks.status, 200)
+    const tData = (await resTracks.json()) as any
+    assert.strictEqual(tData.total, 25)
+    assert.strictEqual(tData.tracks[0].title, 'High and Dry')
+    assert.strictEqual(tData.tracks[0].isrc, 'GBAYE9500072')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
