@@ -14,6 +14,7 @@ import {
   FileText,
   Calendar,
   Laptop,
+  Sparkles,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { RecentlyPlayedItem, Track } from '../types/domain.ts'
@@ -23,6 +24,7 @@ import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
 import { formatDuration, formatTimestamp } from '../utils/format.ts'
 import { artwork } from '../utils/artwork.ts'
 import { classNames } from '../utils/classNames.ts'
+import { VibeSummaryModal } from '../components/modals/VibeSummaryModal.tsx'
 import {
   queryListeningHistory,
   deleteHistoryRecord,
@@ -211,6 +213,7 @@ export function RecentlyPlayedPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRange, setDateRange] = useState<HistoryFilterOptions['dateRange']>('all')
   const [sourceFilter, setSourceFilter] = useState<HistoryFilterOptions['source']>('all')
+  const [vibeModalOpen, setVibeModalOpen] = useState(false)
 
   const albumsInHistory = recentItems.filter((item) => item.kind === 'album')
   const artistsInHistory = recentItems.filter((item) => item.kind === 'artist')
@@ -310,6 +313,14 @@ export function RecentlyPlayedPage() {
         description="Your complete listening history, device attribution, and playback sessions."
         action={
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setVibeModalOpen(true)}
+              className="button button--primary text-xs flex items-center gap-1.5"
+              title="Open Vibe Summary"
+            >
+              <Sparkles size={14} /> Vibe Summary
+            </button>
             <button
               type="button"
               onClick={handleExportJson}
@@ -584,6 +595,7 @@ export function RecentlyPlayedPage() {
           )}
         </>
       )}
+      <VibeSummaryModal isOpen={vibeModalOpen} onClose={() => setVibeModalOpen(false)} />
     </div>
   )
 }
