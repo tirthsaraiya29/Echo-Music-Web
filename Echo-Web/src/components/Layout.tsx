@@ -706,7 +706,7 @@ export default function AppLayout() {
             </div>
           </header>
 
-          <main className="main-scroll" key={location.pathname}>
+          <main id="main-content" tabIndex={-1} className="main-scroll" key={location.pathname}>
             <Suspense
               fallback={
                 <div className="route-loading" role="status">

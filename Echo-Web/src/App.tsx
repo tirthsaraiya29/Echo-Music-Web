@@ -5,6 +5,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/Layout'
 import { bridgeAudioEngineWithStore } from './hooks/useAudioEngine'
 import { useEchoStore } from './stores/useEchoStore'
+import { RouteAnnouncer } from './app/router/RouteAnnouncer.tsx'
+import { NotFoundPage } from './app/router/NotFoundPage.tsx'
+import { RouteErrorBoundary } from './app/router/RouteErrorBoundary.tsx'
 
 const HomePage = lazy(() =>
   import('./pages/BrowsePages').then((module) => ({ default: module.HomePage })),
@@ -67,24 +70,27 @@ function HomeRoute() {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<HomeRoute />} />
-        <Route path="discover" element={<DiscoverPage />} />
-        <Route path="search" element={<SearchPage />} />
-        <Route path="library" element={<LibraryPage />} />
-        <Route path="liked" element={<LikedPage />} />
-        <Route path="recently-played" element={<RecentlyPlayedPage />} />
-        <Route path="queue" element={<QueuePage />} />
-        <Route path="podcasts" element={<PodcastsPage />} />
-        <Route path="flow" element={<MusicFlowPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="playlists/:playlistId" element={<PlaylistPage />} />
-        <Route path="albums/:albumId" element={<AlbumPage />} />
-        <Route path="artists/:artistId" element={<ArtistPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <RouteErrorBoundary>
+      <RouteAnnouncer />
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<HomeRoute />} />
+          <Route path="discover" element={<DiscoverPage />} />
+          <Route path="search" element={<SearchPage />} />
+          <Route path="library" element={<LibraryPage />} />
+          <Route path="liked" element={<LikedPage />} />
+          <Route path="recently-played" element={<RecentlyPlayedPage />} />
+          <Route path="queue" element={<QueuePage />} />
+          <Route path="podcasts" element={<PodcastsPage />} />
+          <Route path="flow" element={<MusicFlowPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="playlists/:playlistId" element={<PlaylistPage />} />
+          <Route path="albums/:albumId" element={<AlbumPage />} />
+          <Route path="artists/:artistId" element={<ArtistPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+    </RouteErrorBoundary>
   )
 }
 
