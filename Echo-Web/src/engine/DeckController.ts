@@ -6,6 +6,7 @@ export interface DeckControllerOptions {
   crossfadeDuration?: number
   crossfadeProfile?: CrossfadeProfile
   prebufferWindowMs?: number
+  varispeedEnabled?: boolean
 }
 
 export function generateCrossfadeCurves(
@@ -91,6 +92,7 @@ export class DeckController {
 
   private activeTrackDeckA: Track | null = null
   private activeTrackDeckB: Track | null = null
+  private varispeedEnabled = false
 
   private isPrebufferingTriggered = false
   private isCrossfading = false
@@ -127,6 +129,7 @@ export class DeckController {
     this.crossfadeDurationSeconds = options.crossfadeDuration ?? 3.0
     this.crossfadeProfileSetting = options.crossfadeProfile ?? 'equalPower'
     this.prebufferWindowMs = options.prebufferWindowMs ?? 15000
+    this.varispeedEnabled = Boolean(options.varispeedEnabled)
 
     this.deckAElement = new Audio()
     this.deckBElement = new Audio()
@@ -397,10 +400,54 @@ export class DeckController {
     const clamped = Math.max(0.5, Math.min(2.0, rate))
     this.deckAElement.playbackRate = clamped
     this.deckBElement.playbackRate = clamped
-    const a = this.deckAElement as unknown as { preservesPitch?: boolean }
-    const b = this.deckBElement as unknown as { preservesPitch?: boolean }
-    if ('preservesPitch' in a) a.preservesPitch = true
-    if ('preservesPitch' in b) b.preservesPitch = true
+    const a = this.deckAElement as unknown as {
+      preservesPitch?: boolean
+      mozPreservesPitch?: boolean
+      webkitPreservesPitch?: boolean
+    }
+    const b = this.deckBElement as unknown as {
+      preservesPitch?: boolean
+      mozPreservesPitch?: boolean
+      webkitPreservesPitch?: boolean
+    }
+    const preserve = !this.varispeedEnabled
+    if ('preservesPitch' in a) a.preservesPitch = preserve
+    if ('mozPreservesPitch' in a) a.mozPreservesPitch = preserve
+    if ('webkitPreservesPitch' in a) a.webkitPreservesPitch = preserve
+    if ('preservesPitch' in b) b.preservesPitch = preserve
+    if ('mozPreservesPitch' in b) b.mozPreservesPitch = preserve
+    if ('webkitPreservesPitch' in b) b.webkitPreservesPitch = preserve
+  }
+
+  public setVarispeed(enabled: boolean): void {
+    this.varispeedEnabled = Boolean(enabled)
+    const preserve = !this.varispeedEnabled
+    const a = this.deckAElement as unknown as {
+      preservesPitch?: boolean
+      mozPreservesPitch?: boolean
+      webkitPreservesPitch?: boolean
+    }
+    const b = this.deckBElement as unknown as {
+      preservesPitch?: boolean
+      mozPreservesPitch?: boolean
+      webkitPreservesPitch?: boolean
+    }
+    if ('preservesPitch' in a) a.preservesPitch = preserve
+    if ('mozPreservesPitch' in a) a.mozPreservesPitch = preserve
+    if ('webkitPreservesPitch' in a) a.webkitPreservesPitch = preserve
+    if ('preservesPitch' in b) b.preservesPitch = preserve
+    if ('mozPreservesPitch' in b) b.mozPreservesPitch = preserve
+    if ('webkitPreservesPitch' in b) b.webkitPreservesPitch = preserve
+  }
+
+  public getVarispeed(): boolean {
+    return this.varispeedEnabled
+  }
+
+  public getPitchShiftSemitones(): number {
+    if (!this.varispeedEnabled) return 0
+    const rate = this.deckAElement.playbackRate || 1.0
+    return Math.round(12 * Math.log2(rate) * 10) / 10
   }
 
   private currentSinkId = 'default'
@@ -556,6 +603,15 @@ export class DeckController {
   private setupAudioElement(el: HTMLAudioElement, deckId: DeckId): void {
     el.crossOrigin = 'anonymous'
     el.preload = 'metadata'
+    const elWithPitch = el as unknown as {
+      preservesPitch?: boolean
+      mozPreservesPitch?: boolean
+      webkitPreservesPitch?: boolean
+    }
+    const preserve = !this.varispeedEnabled
+    if ('preservesPitch' in elWithPitch) elWithPitch.preservesPitch = preserve
+    if ('mozPreservesPitch' in elWithPitch) elWithPitch.mozPreservesPitch = preserve
+    if ('webkitPreservesPitch' in elWithPitch) elWithPitch.webkitPreservesPitch = preserve
     const signal = this.abortController.signal
 
     el.addEventListener(

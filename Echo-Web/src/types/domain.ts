@@ -137,6 +137,7 @@ export interface UserPreferences {
   crossfadeDuration?: number | undefined
   crossfadeProfile?: CrossfadeProfile | undefined
   echoBrainEnabled?: boolean | undefined
+  varispeedEnabled?: boolean | undefined
   preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | undefined
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined

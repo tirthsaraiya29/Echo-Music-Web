@@ -65,6 +65,8 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
     equalizerGains,
     playbackRate,
     setPlaybackRate,
+    varispeedEnabled,
+    pitchShiftSemitones,
     sleepTimerRemaining,
     sleepTimerEndOfTrack,
     getAudioTelemetry,
@@ -193,7 +195,12 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
     const curIdx = rates.indexOf(playbackRate)
     const nextRate = rates[(curIdx + 1) % rates.length]!
     setPlaybackRate(nextRate)
-    setToast(`Speed: ${nextRate}x`)
+    if (varispeedEnabled && nextRate !== 1.0) {
+      const semitones = Math.round(12 * Math.log2(nextRate) * 10) / 10
+      setToast(`Speed: ${nextRate}x (Varispeed: ${semitones > 0 ? '+' : ''}${semitones} st)`)
+    } else {
+      setToast(`Speed: ${nextRate}x`)
+    }
   }
 
   if (!isOpen || !currentTrack) return null
@@ -560,9 +567,18 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                   type="button"
                   onClick={cyclePlaybackRate}
                   className="rounded-lg bg-white/4 px-2.5 py-1 font-mono text-xs font-semibold text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
-                  title="Change playback speed"
+                  title={
+                    varispeedEnabled && pitchShiftSemitones
+                      ? `Playback rate: ${playbackRate}x (Varispeed pitch shift: ${pitchShiftSemitones > 0 ? '+' : ''}${pitchShiftSemitones} semitones)`
+                      : 'Change playback speed'
+                  }
                 >
                   {playbackRate}x
+                  {varispeedEnabled && pitchShiftSemitones !== 0 ? (
+                    <span className="ml-1 text-[10px] text-[#b09cff]">
+                      {pitchShiftSemitones > 0 ? `+${pitchShiftSemitones}` : pitchShiftSemitones}st
+                    </span>
+                  ) : null}
                 </button>
 
                 <button

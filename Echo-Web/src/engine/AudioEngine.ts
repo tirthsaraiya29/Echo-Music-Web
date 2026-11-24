@@ -110,9 +110,11 @@ export class AudioEngine {
       crossfadeDuration: config.crossfadeDuration ?? 3.0,
       crossfadeProfile: useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower',
       prebufferWindowMs: config.prebufferWindowMs ?? 15000,
+      varispeedEnabled: useEchoStore.getState().preferences.varispeedEnabled ?? false,
     })
     this.deckController.setGaplessPlayback(useEchoStore.getState().preferences.gaplessPlayback ?? true)
     this.deckController.setCrossfadeProfile(useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower')
+    this.deckController.setVarispeed(useEchoStore.getState().preferences.varispeedEnabled ?? false)
 
     this.queueManager = new QueueManager()
 
@@ -188,6 +190,8 @@ export class AudioEngine {
       crossfadeDuration: this.deckController.crossfadeDuration,
       crossfadeProfile: this.deckController.getCrossfadeProfile(),
       gaplessPlayback: this.deckController.getGaplessPlayback(),
+      varispeedEnabled: this.deckController.getVarispeed(),
+      pitchShiftSemitones: this.deckController.getPitchShiftSemitones(),
       continuationState: this.queueManager.getContinuationState(),
       radioContinuationState: radioContinuationService.getState(),
       echoBrainTelemetry: echoBrainService.getTelemetry(),
@@ -463,6 +467,19 @@ export class AudioEngine {
   public setGaplessPlayback(enabled: boolean): void {
     this.deckController.setGaplessPlayback(enabled)
     this.emitState()
+  }
+
+  public setVarispeed(enabled: boolean): void {
+    this.deckController.setVarispeed(enabled)
+    this.emitState()
+  }
+
+  public getVarispeed(): boolean {
+    return this.deckController.getVarispeed()
+  }
+
+  public getPitchShiftSemitones(): number {
+    return this.deckController.getPitchShiftSemitones()
   }
 
   public setVolumeNormalization(enabled: boolean): void {

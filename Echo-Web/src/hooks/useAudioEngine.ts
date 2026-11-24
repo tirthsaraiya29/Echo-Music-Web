@@ -82,6 +82,9 @@ export const audioEngineActions = {
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
   setGaplessPlayback: (enabled: boolean) => AudioEngine.getInstance().setGaplessPlayback(enabled),
+  setVarispeed: (enabled: boolean) => AudioEngine.getInstance().setVarispeed(enabled),
+  getVarispeed: () => AudioEngine.getInstance().getVarispeed(),
+  getPitchShiftSemitones: () => AudioEngine.getInstance().getPitchShiftSemitones(),
   setCrossfadeProfile: (profile: CrossfadeProfile) =>
     AudioEngine.getInstance().setCrossfadeProfile(profile),
   getContinuationState: () => AudioEngine.getInstance().getContinuationState(),
@@ -131,6 +134,8 @@ export function useAudioEngine() {
     crossfadeDuration: state.crossfadeDuration,
     crossfadeProfile: state.crossfadeProfile ?? 'equalPower',
     gaplessPlayback: state.gaplessPlayback ?? true,
+    varispeedEnabled: state.varispeedEnabled ?? false,
+    pitchShiftSemitones: state.pitchShiftSemitones ?? 0,
     continuationState: state.continuationState,
     radioContinuationState: state.radioContinuationState,
     echoBrainTelemetry: state.echoBrainTelemetry,
@@ -284,6 +289,13 @@ export function bridgeAudioEngineWithStore(): () => void {
         typeof currPrefs.gaplessPlayback === 'boolean'
       ) {
         engine.setGaplessPlayback(currPrefs.gaplessPlayback)
+        changed = true
+      }
+      if (
+        currPrefs.varispeedEnabled !== prevPrefs.varispeedEnabled &&
+        typeof currPrefs.varispeedEnabled === 'boolean'
+      ) {
+        engine.setVarispeed(currPrefs.varispeedEnabled)
         changed = true
       }
       if (

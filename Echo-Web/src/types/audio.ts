@@ -132,6 +132,8 @@ export interface AudioEngineState {
   crossfadeDuration: number
   crossfadeProfile?: CrossfadeProfile | undefined
   gaplessPlayback?: boolean | undefined
+  varispeedEnabled?: boolean | undefined
+  pitchShiftSemitones?: number | undefined
   continuationState?: ContinuationPagingState | undefined
   radioContinuationState?: RadioContinuationState | undefined
   echoBrainTelemetry?: import('../services/recommendations/echoBrainTypes.ts').EchoBrainTelemetry | undefined

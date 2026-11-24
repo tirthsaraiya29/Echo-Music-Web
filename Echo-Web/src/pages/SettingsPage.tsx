@@ -136,6 +136,7 @@ export function SettingsPage() {
     setCrossfadeProfile,
     setVolumeNormalization,
     setGaplessPlayback,
+    setVarispeed,
     getAudioTelemetry,
     clearHistory,
   } = useAudioEngine()
@@ -452,6 +453,9 @@ export function SettingsPage() {
     }
     if (key === 'gaplessPlayback' && typeof value === 'boolean') {
       setGaplessPlayback(value)
+    }
+    if (key === 'varispeedEnabled' && typeof value === 'boolean') {
+      setVarispeed(value)
     }
     notify('Preference saved')
   }
@@ -791,6 +795,14 @@ export function SettingsPage() {
               description="Continuous playback without silence or reloading between consecutive tracks using dual-deck prebuffering."
               preference="gaplessPlayback"
               value={preferences.gaplessPlayback ?? true}
+              onChange={save}
+            />
+
+            <PreferenceToggle
+              label="Varispeed mode (pitch-linked speed)"
+              description="Links playback speed to musical pitch (analog tape and vinyl turntable varispeed behavior)."
+              preference="varispeedEnabled"
+              value={preferences.varispeedEnabled ?? false}
               onChange={save}
             />
 
