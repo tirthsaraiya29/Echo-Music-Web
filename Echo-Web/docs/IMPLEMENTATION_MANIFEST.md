@@ -149,7 +149,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-027 | Mood and genre browsing | Completed | edd28ed2 | Yes (verified on origin/main) |
 | FEATURE-028 | Shorts filtering | Completed | e4ff222e | Yes (verified on origin/main) |
 | FEATURE-029 | Video-song filtering | Completed | f17fedc2 | Yes (verified on origin/main) |
-| FEATURE-030 | Blocked artists | Pending | - | - |
+| FEATURE-030 | Blocked artists | Completed | a8cdac09 | Yes |
 | FEATURE-031 | Podcast discovery | Pending | - | - |
 | FEATURE-032 | Followed podcast library | Pending | - | - |
 | FEATURE-033 | Continue listening | Pending | - | - |
