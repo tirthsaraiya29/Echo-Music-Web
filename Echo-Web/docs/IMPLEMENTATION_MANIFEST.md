@@ -33,7 +33,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-19 | P1 | Stale metadata cache revalidation is not deduplicated | `src/services/cache/metadataCache.ts` | Completed | bf35917c | Yes (verified on origin/main) |
 | BUG-20 | P1 | Metadata cache cap is not a hard cap | `src/services/cache/metadataCache.ts` | Completed | 94940f68 | Yes (verified on origin/main) |
 | BUG-21 | P1 | Security tests do not exercise production allowlist code | `test/security.test.ts, server/routes/stream.ts, server/routes/canvas.ts` | Completed | d6e617c1 | Yes (verified on origin/main) |
-| BUG-22 | P1 | CI does not run tests | `.github/workflows/ci.yml, package.json` | Pending | - | - |
+| BUG-22 | P1 | CI does not run tests | `.github/workflows/ci.yml, package.json` | Completed | 10861db1 | Yes (verified on origin/main) |
 | BUG-23 | P2 | Spotify matching accepts the first search result | `src/services/spotify/spotifyImporter.ts` | Pending | - | - |
 | BUG-24 | P2 | Spotify importer has no robust pagination or live-library flow | `server/routes/spotify.ts, src/services/spotify/spotifyImporter.ts` | Pending | - | - |
 | BUG-25 | P2 | Lyrics loading state is never activated | `src/components/player/LyricsView.tsx` | Pending | - | - |
