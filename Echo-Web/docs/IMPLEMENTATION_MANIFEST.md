@@ -79,7 +79,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-14 | Metadata cache | 10 tasks in backlog | Completed | fec180ad | Yes (verified on origin/main) |
 | SMALL-15 | Home discovery shelves | 10 tasks in backlog | Completed | 5364984d | Yes (verified on origin/main) |
 | SMALL-16 | Search and suggestions | 10 tasks in backlog | Completed | 7d6cdb40 | Yes (verified on origin/main) |
-| SMALL-17 | Album detail pages | 10 tasks in backlog | Pending | - | - |
+| SMALL-17 | Album detail pages | 10 tasks in backlog | Completed | ece6d751 | Yes (verified on origin/main) |
 | SMALL-18 | Artist detail pages | 10 tasks in backlog | Pending | - | - |
 | SMALL-19 | Playlist management | 10 tasks in backlog | Pending | - | - |
 | SMALL-20 | Backup and restore | 10 tasks in backlog | Pending | - | - |
