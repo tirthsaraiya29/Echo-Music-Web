@@ -8,6 +8,7 @@ import type {
   DeckId,
   PlaybackState,
   QueueSnapshot,
+  RadioContinuationState,
   RepeatMode,
   RestoreQueueOptions,
   SponsorSegment,
@@ -28,6 +29,7 @@ import { updateDiscordPresence, clearDiscordPresence } from '../services/discord
 import { castService } from '../services/cast/castService.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { ExtensionResolvedStream } from '../types/extension.ts'
+import { radioContinuationService } from '../services/radio/radioContinuationService.ts'
 import {
   isDataSaverActive,
   isMeteredConnection,
@@ -185,6 +187,7 @@ export class AudioEngine {
       crossfadeProfile: this.deckController.getCrossfadeProfile(),
       gaplessPlayback: this.deckController.getGaplessPlayback(),
       continuationState: this.queueManager.getContinuationState(),
+      radioContinuationState: radioContinuationService.getState(),
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
@@ -757,6 +760,16 @@ export class AudioEngine {
 
   public getContinuationState(): Readonly<ContinuationPagingState> {
     return this.queueManager.getContinuationState()
+  }
+
+  public getRadioContinuationState(): RadioContinuationState {
+    return radioContinuationService.getState()
+  }
+
+  public async retryRadioContinuation(): Promise<void> {
+    const current = this.queueManager.currentTrack
+    if (!current) return
+    await this.fetchRadioContinuation(current.videoId || current.id)
   }
 
   public getVisualizerData(): Uint8Array<ArrayBuffer> {
@@ -1406,6 +1419,7 @@ export class AudioEngine {
     this.radioAbortController = abortController
     this.isFetchingRadioContinuation = true
     this.inFlightRadioVideoId = videoId
+    this.emitState()
 
     try {
       const prefs = useEchoStore.getState().preferences
@@ -1414,38 +1428,32 @@ export class AudioEngine {
       const continuationState = this.queueManager.getContinuationState()
       const token = continuationState.continuationToken
 
-      const queryParams = new URLSearchParams()
-      if (token) {
-        queryParams.set('continuation', token)
-      } else {
-        queryParams.set('videoId', videoId)
-      }
-      queryParams.set('gl', region)
-      queryParams.set('explicit', String(showExplicit))
-
-      const res = await fetch(
-        `/api/radio/continuation?${queryParams.toString()}`,
-        { signal: abortController.signal },
+      const data = await radioContinuationService.fetchWithRetry(
+        {
+          videoId: token ? undefined : videoId,
+          continuationToken: token || undefined,
+          region,
+          explicit: showExplicit,
+        },
+        { maxRetries: 3 },
+        abortController.signal,
       )
-      if (res.ok) {
-        const data = (await res.json()) as { tracks: Track[]; continuationToken?: string }
-        if (Array.isArray(data.tracks) && data.tracks.length > 0) {
-          const filtered = showExplicit ? data.tracks : data.tracks.filter((t) => !t.explicit)
-          if (filtered.length > 0) {
-            this.queueManager.addRadioTracks(filtered, data.continuationToken ?? null)
-            this.emit('queueChange')
-            this.emitState()
-          } else if (data.continuationToken) {
-            this.queueManager.setContinuationToken(data.continuationToken, true)
-          }
+
+      if (Array.isArray(data.tracks) && data.tracks.length > 0) {
+        const filtered = showExplicit ? data.tracks : data.tracks.filter((t) => !Boolean(t.explicit))
+        if (filtered.length > 0) {
+          this.queueManager.addRadioTracks(filtered, data.continuationToken ?? null)
+          this.emit('queueChange')
         } else if (data.continuationToken) {
           this.queueManager.setContinuationToken(data.continuationToken, true)
-        } else {
-          this.queueManager.setContinuationToken(null, false)
         }
+      } else if (data.continuationToken) {
+        this.queueManager.setContinuationToken(data.continuationToken, true)
+      } else {
+        this.queueManager.setContinuationToken(null, false)
       }
     } catch {
-      // Radio continuation fetch failures are non-fatal
+      // Radio continuation fetch failures are non-fatal: queue and playback remain intact
     } finally {
       if (this.inFlightRadioVideoId === videoId) {
         this.isFetchingRadioContinuation = false
@@ -1454,6 +1462,7 @@ export class AudioEngine {
       if (this.radioAbortController === abortController) {
         this.radioAbortController = null
       }
+      this.emitState()
     }
   }
 

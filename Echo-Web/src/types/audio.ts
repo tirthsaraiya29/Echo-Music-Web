@@ -23,6 +23,26 @@ export type RepeatMode = 'OFF' | 'ALL' | 'ONE'
 
 export type DeckId = 'A' | 'B'
 export type CrossfadeProfile = 'equalPower' | 'linear' | 'logarithmic' | 'scurve'
+export type RadioContinuationStatus = 'idle' | 'fetching' | 'retrying' | 'error' | 'exhausted'
+
+export interface RadioContinuationMetrics {
+  totalAttempts: number
+  successCount: number
+  retryAttempts: number
+  successAfterRetryCount: number
+  failureCount: number
+  lastErrorReason: string | null
+  lastDurationMs: number
+}
+
+export interface RadioContinuationState {
+  status: RadioContinuationStatus
+  attempt: number
+  maxRetries: number
+  nextRetryDelayMs: number | null
+  lastError: string | null
+  metrics: RadioContinuationMetrics
+}
 
 export interface SponsorSegment {
   category: 'music_offtopic' | 'intro' | 'outro' | 'preview' | string
@@ -113,6 +133,7 @@ export interface AudioEngineState {
   crossfadeProfile?: CrossfadeProfile | undefined
   gaplessPlayback?: boolean | undefined
   continuationState?: ContinuationPagingState | undefined
+  radioContinuationState?: RadioContinuationState | undefined
   playbackRate?: number
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean

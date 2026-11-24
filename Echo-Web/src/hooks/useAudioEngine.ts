@@ -85,6 +85,8 @@ export const audioEngineActions = {
   setCrossfadeProfile: (profile: CrossfadeProfile) =>
     AudioEngine.getInstance().setCrossfadeProfile(profile),
   getContinuationState: () => AudioEngine.getInstance().getContinuationState(),
+  getRadioContinuationState: () => AudioEngine.getInstance().getRadioContinuationState(),
+  retryRadioContinuation: () => AudioEngine.getInstance().retryRadioContinuation(),
 }
 
 export function useAudioEngine() {
@@ -125,6 +127,7 @@ export function useAudioEngine() {
     crossfadeProfile: state.crossfadeProfile ?? 'equalPower',
     gaplessPlayback: state.gaplessPlayback ?? true,
     continuationState: state.continuationState,
+    radioContinuationState: state.radioContinuationState,
     equalizerGains: state.equalizerGains,
     playbackRate: state.playbackRate ?? 1.0,
     sleepTimerRemaining: state.sleepTimerRemaining,
