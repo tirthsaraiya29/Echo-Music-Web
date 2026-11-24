@@ -55,7 +55,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-41 | P2 | Cloud media providers are absent | `src/services, server/routes` | Completed | 434b77bc | Yes (verified on origin/main) |
 | BUG-42 | P2 | Extension audio framework is absent | `src/services, server/routes, src/types` | Completed | 80ccc061 | Yes (verified on origin/main) |
 | BUG-43 | P2 | Browser Discord integration is deployment-dependent | `server/routes/discord.ts, src/services` | Completed | 73bf0feb | Yes (verified on origin/main) |
-| BUG-44 | P2 | Recognition is a configured integration, not a complete default service | `server/routes/recognition.ts` | Pending | - | - |
+| BUG-44 | P2 | Recognition is a configured integration, not a complete default service | `server/routes/recognition.ts` | Completed | c78a453e | Yes (verified on origin/main) |
 | BUG-45 | P2 | Preferred content region is not propagated | `src/pages/SettingsPage.tsx, src/services/innertube/client.ts, server/utils/potoken.ts` | Pending | - | - |
 | BUG-46 | P2 | Explicit-content preference is not applied | `src/pages/SettingsPage.tsx, src/services/innertube/parser.ts` | Pending | - | - |
 
