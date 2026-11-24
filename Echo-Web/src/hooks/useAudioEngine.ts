@@ -82,6 +82,8 @@ export const audioEngineActions = {
   },
   skipPodcastBackward: (seconds?: number) => AudioEngine.getInstance().skipPodcastBackward(seconds),
   skipPodcastForward: (seconds?: number) => AudioEngine.getInstance().skipPodcastForward(seconds),
+  queuePodcastEpisodes: (episodes: Track[], playFirst = false) =>
+    AudioEngine.getInstance().queuePodcastEpisodes(episodes, playFirst),
   setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),

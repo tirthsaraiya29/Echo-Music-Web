@@ -12,6 +12,7 @@ import {
   filterBlockedArtistsFromTracks,
   isTrackBlocked,
 } from '../services/innertube/blockedArtistsService.ts'
+import { filterSpokenAudioTracks } from '../services/podcast/podcastQueueService.ts'
 
 export const TrackSchema = z
   .object({
@@ -492,7 +493,10 @@ export class QueueManager {
         ? filterBlockedArtistsFromTracks(tracks, blockedArtists)
         : tracks
 
-    const valid = unblocked.filter((t) => {
+    const isPodcastActive = Boolean(this.activeTrack?.isPodcast || this.activeTrack?.showTitle)
+    const { podcastTracks: spokenFiltered } = filterSpokenAudioTracks(unblocked, isPodcastActive)
+
+    const valid = spokenFiltered.filter((t) => {
       const ok = isValidTrack(t)
       if (!ok) {
         this.metrics.invalidDropsCount++

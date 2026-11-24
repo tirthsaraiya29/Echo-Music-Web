@@ -6,6 +6,7 @@ import {
   ListMusic,
   Pause,
   Play,
+  Radio,
   Search,
   Shuffle,
   Trash2,
@@ -372,6 +373,18 @@ export function QueuePage() {
           ) : undefined
         }
       />
+
+      {currentTrack?.isPodcast && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-[#7c5cff]/30 bg-[#7c5cff]/10 p-3.5 text-sm text-[#f4f1f7]">
+          <Radio size={20} className="text-[#7c5cff] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white">Podcast Episode Queue Active</p>
+            <p className="text-xs text-[#a59fad]">
+              Spoken audio episodes are strictly segregated from music radio continuation to ensure uninterrupted listening.
+            </p>
+          </div>
+        </div>
+      )}
 
       <section className="page-section">
         <SectionHeading title="Now playing" />

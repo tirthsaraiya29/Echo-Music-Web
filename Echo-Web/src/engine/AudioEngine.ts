@@ -421,6 +421,23 @@ export class AudioEngine {
     this.emitState()
   }
 
+  public queuePodcastEpisodes(episodes: Track[], playFirst = false): void {
+    if (!Array.isArray(episodes) || episodes.length === 0) return
+    const [first, ...rest] = episodes
+    if (playFirst && first) {
+      void this.play(first)
+      for (const ep of rest) {
+        this.queueManager.addToQueue(ep)
+      }
+    } else {
+      for (const ep of episodes) {
+        this.queueManager.addToQueue(ep)
+      }
+    }
+    this.emit('queueChange')
+    this.emitState()
+  }
+
   public removeFromQueue(index: number): void {
     this.queueManager.removeUpNext(index)
     this.emit('queueChange')
