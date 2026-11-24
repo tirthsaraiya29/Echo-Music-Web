@@ -539,11 +539,15 @@ export class AudioEngine {
   }
 
   public async setAudioOutput(sinkId: string): Promise<boolean> {
-    const success = await this.deckController.setAudioSink(sinkId)
+    if (typeof sinkId !== 'string' || !sinkId.trim()) {
+      return false
+    }
+    const cleanSinkId = sinkId.trim()
+    const success = await this.deckController.setAudioSink(cleanSinkId)
     if (success) {
       if (typeof localStorage !== 'undefined') {
         try {
-          localStorage.setItem('echo_audio_output_device_id', sinkId)
+          localStorage.setItem('echo_audio_output_device_id', cleanSinkId)
         } catch {
           // Ignore storage write failures
         }

@@ -321,6 +321,10 @@ export class DeckController {
   }
 
   public async setAudioSink(sinkId: string): Promise<boolean> {
+    if (typeof sinkId !== 'string' || !sinkId.trim()) {
+      return false
+    }
+    const cleanSinkId = sinkId.trim()
     const elA = this.deckAElement as unknown as { setSinkId?: (id: string) => Promise<void> }
     const elB = this.deckBElement as unknown as { setSinkId?: (id: string) => Promise<void> }
 
@@ -331,21 +335,21 @@ export class DeckController {
     let success = true
     if (typeof elA.setSinkId === 'function') {
       try {
-        await elA.setSinkId(sinkId)
+        await elA.setSinkId(cleanSinkId)
       } catch {
         success = false
       }
     }
     if (typeof elB.setSinkId === 'function') {
       try {
-        await elB.setSinkId(sinkId)
+        await elB.setSinkId(cleanSinkId)
       } catch {
         success = false
       }
     }
 
     if (success) {
-      this.currentSinkId = sinkId
+      this.currentSinkId = cleanSinkId
     }
     return success
   }

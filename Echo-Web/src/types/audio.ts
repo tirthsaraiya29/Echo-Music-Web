@@ -1,5 +1,13 @@
+import { z } from 'zod'
 import type { Track } from './domain.ts'
 export type { Track } from './domain.ts'
+
+export const audioDeviceSchema = z.object({
+  deviceId: z.string().min(1),
+  label: z.string().min(1),
+})
+
+export type AudioDeviceItem = z.infer<typeof audioDeviceSchema>
 
 export type PlaybackState =
   | 'IDLE'

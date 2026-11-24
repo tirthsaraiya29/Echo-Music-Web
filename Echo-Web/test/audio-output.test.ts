@@ -251,3 +251,46 @@ test('AudioEngine: state versioning, event metrics, and lifecycle cleanup [SMALL
   // Cleanup subscriber
   unsubscribe()
 })
+
+import { audioDeviceSchema } from '../src/types/audio.ts'
+
+test('AudioOutputPicker: audioDeviceSchema validates devices and rejects malformed payloads [SMALL-06]', () => {
+  const validDevice = {
+    deviceId: 'usb-dac-001',
+    label: 'FiiO USB DAC',
+  }
+  const parsed = audioDeviceSchema.safeParse(validDevice)
+  assert.strictEqual(parsed.success, true)
+  if (parsed.success) {
+    assert.strictEqual(parsed.data.deviceId, 'usb-dac-001')
+    assert.strictEqual(parsed.data.label, 'FiiO USB DAC')
+  }
+
+  // Missing or empty deviceId
+  assert.strictEqual(audioDeviceSchema.safeParse({ deviceId: '', label: 'Speaker' }).success, false)
+  // Non-string deviceId
+  assert.strictEqual(audioDeviceSchema.safeParse({ deviceId: 123, label: 'Speaker' }).success, false)
+  // Missing or empty label
+  assert.strictEqual(audioDeviceSchema.safeParse({ deviceId: 'dev-1', label: '' }).success, false)
+})
+
+test('DeckController & AudioEngine: setAudioSink and setAudioOutput reject invalid or empty sink IDs [SMALL-06]', async () => {
+  const engine = AudioEngine.getInstance()
+  const currentSink = engine.getAudioOutput()
+
+  // Empty string
+  const res1 = await engine.setAudioOutput('')
+  assert.strictEqual(res1, false)
+  assert.strictEqual(engine.getAudioOutput(), currentSink)
+
+  // Whitespace only
+  const res2 = await engine.setAudioOutput('   ')
+  assert.strictEqual(res2, false)
+  assert.strictEqual(engine.getAudioOutput(), currentSink)
+
+  // @ts-expect-error test non-string runtime input
+  const res3 = await engine.setAudioOutput(null)
+  assert.strictEqual(res3, false)
+  assert.strictEqual(engine.getAudioOutput(), currentSink)
+})
+

@@ -1,21 +1,18 @@
-import { useState, useEffect } from 'react'
-import { Speaker, Headphones, Check, X, ShieldAlert, Cast } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Speaker, Headphones, Check, X, ShieldAlert, Cast, Loader2 } from 'lucide-react'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
 import { useEchoStore } from '../../stores/useEchoStore'
 import { castService } from '../../services/cast/castService'
+import { audioDeviceSchema, type AudioDeviceItem } from '../../types/audio.ts'
 
 interface AudioOutputPickerProps {
   isOpen: boolean
   onClose: () => void
 }
 
-interface AudioDeviceItem {
-  deviceId: string
-  label: string
-}
-
 export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
   const [devices, setDevices] = useState<AudioDeviceItem[]>([])
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false)
   const { setAudioOutput, getAudioOutput, audioSinkId } = useAudioEngine()
   const currentEngineSink = getAudioOutput?.() || audioSinkId || 'default'
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
@@ -31,6 +28,11 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
 
   const isRoutingSupported =
     typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
+
+  const handleClose = useCallback(() => {
+    setErrorMessage(null)
+    onClose()
+  }, [onClose])
 
   useEffect(() => {
     const unsubConnected = castService.subscribe((connected) => {
@@ -51,54 +53,82 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
     }
   }, [isOpen, isCastEnabled])
 
+  // Keyboard navigation: Escape key closes picker
   useEffect(() => {
     if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, handleClose])
+
+  // Device enumeration with cancellation and schema validation
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
 
     const loadDevices = async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-        setHasPermission(false)
+        if (!cancelled) {
+          setHasPermission(false)
+          setIsLoadingDevices(false)
+        }
         return
       }
 
+      setIsLoadingDevices(true)
       try {
         const allDevices = await navigator.mediaDevices.enumerateDevices()
-        const outputs = allDevices
-          .filter((d) => d.kind === 'audiooutput')
-          .map((d, index) => ({
-            deviceId: d.deviceId,
-            label: d.label || `Audio Output ${index + 1}`,
-          }))
+        if (cancelled) return
+
+        const rawOutputs = allDevices.filter((d) => d.kind === 'audiooutput')
+        const outputs: AudioDeviceItem[] = []
+
+        for (let i = 0; i < rawOutputs.length; i++) {
+          const d = rawOutputs[i]!
+          const parsed = audioDeviceSchema.safeParse({
+            deviceId: d.deviceId || (i === 0 ? 'default' : `device-${i}`),
+            label: d.label || `Audio Output ${i + 1}`,
+          })
+          if (parsed.success) {
+            outputs.push(parsed.data)
+          }
+        }
 
         if (outputs.length === 0) {
           outputs.push({ deviceId: 'default', label: 'Default System Output' })
         }
 
         setDevices(outputs)
+        setHasPermission(true)
       } catch {
-        setHasPermission(false)
+        if (!cancelled) setHasPermission(false)
+      } finally {
+        if (!cancelled) setIsLoadingDevices(false)
       }
     }
 
     void loadDevices()
 
     const onDeviceChange = () => {
-      void loadDevices()
+      if (!cancelled) void loadDevices()
     }
 
     navigator.mediaDevices?.addEventListener('devicechange', onDeviceChange)
     return () => {
+      cancelled = true
       navigator.mediaDevices?.removeEventListener('devicechange', onDeviceChange)
     }
   }, [isOpen])
 
   if (!isOpen) return null
 
-  const handleClose = () => {
-    setErrorMessage(null)
-    onClose()
-  }
-
   const handleSelectDevice = async (deviceId: string) => {
+    if (isSwitching) return
+    if (!deviceId || typeof deviceId !== 'string') return
     if (deviceId === activeDeviceId) {
       handleClose()
       return
@@ -128,6 +158,7 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
   }
 
   const handleCastClick = async () => {
+    if (isCastLoading) return
     if (isCastConnected) {
       await castService.disconnect()
       return
@@ -158,7 +189,7 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Audio output device picker"
+      aria-labelledby="audio-output-title"
     >
       <div className="relative w-full max-w-xs rounded-2xl border border-white/10 bg-[#16141e] p-5 text-[#f4f1f7] shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
@@ -166,11 +197,14 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
             <div className="rounded-lg bg-[#7c5cff]/15 p-1.5 text-[#b09cff]">
               <Speaker size={16} />
             </div>
-            <h3 className="text-sm font-bold text-white">Audio Output Sink</h3>
+            <h3 id="audio-output-title" className="text-sm font-bold text-white">
+              Audio Output Sink
+            </h3>
           </div>
           <button
             type="button"
             onClick={handleClose}
+            aria-label="Close audio output picker"
             className="rounded-lg bg-white/4 p-1.5 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
           >
             <X size={15} />
@@ -196,8 +230,17 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
             <ShieldAlert size={16} className="mt-0.5 shrink-0" />
             <span>Audio device enumeration is restricted by browser security policies.</span>
           </div>
+        ) : isLoadingDevices ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-6 text-xs text-[#a59fad]">
+            <Loader2 size={20} className="animate-spin text-[#7c5cff]" />
+            <span>Enumerating audio devices...</span>
+          </div>
         ) : (
-          <div className="custom-scrollbar flex max-h-60 flex-col gap-1.5 overflow-y-auto">
+          <div
+            role="radiogroup"
+            aria-label="Audio output devices"
+            className="custom-scrollbar flex max-h-60 flex-col gap-1.5 overflow-y-auto"
+          >
             {isCastEnabled && (
               <button
                 type="button"
@@ -235,31 +278,40 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
                 )}
               </button>
             )}
-            {devices.map((device) => {
-              const isSelected = activeDeviceId === device.deviceId
-              const isHeadphones = /headphone|earbud|airpod|headset/i.test(device.label)
-              const Icon = isHeadphones ? Headphones : Speaker
+            {devices.length === 0 ? (
+              <div className="py-4 text-center text-xs text-[#a59fad]">
+                No audio output devices found.
+              </div>
+            ) : (
+              devices.map((device) => {
+                const isSelected = activeDeviceId === device.deviceId
+                const isHeadphones = /headphone|earbud|airpod|headset/i.test(device.label)
+                const Icon = isHeadphones ? Headphones : Speaker
 
-              return (
-                <button
-                  key={device.deviceId}
-                  type="button"
-                  disabled={isSwitching}
-                  onClick={() => void handleSelectDevice(device.deviceId)}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
-                    isSelected
-                      ? 'border border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#b09cff]'
-                      : 'text-white hover:bg-white/6'
-                  } ${isSwitching ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className="flex items-center gap-2.5 truncate pr-2">
-                    <Icon size={15} className={isSelected ? 'text-[#7c5cff]' : 'text-[#a59fad]'} />
-                    <span className="truncate">{device.label}</span>
-                  </span>
-                  {isSelected && <Check size={14} className="shrink-0 text-[#7c5cff]" />}
-                </button>
-              )
-            })}
+                return (
+                  <button
+                    key={device.deviceId}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    tabIndex={isSelected ? 0 : -1}
+                    disabled={isSwitching}
+                    onClick={() => void handleSelectDevice(device.deviceId)}
+                    className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
+                      isSelected
+                        ? 'border border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#b09cff]'
+                        : 'text-white hover:bg-white/6'
+                    } ${isSwitching ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <span className="flex items-center gap-2.5 truncate pr-2">
+                      <Icon size={15} className={isSelected ? 'text-[#7c5cff]' : 'text-[#a59fad]'} />
+                      <span className="truncate">{device.label}</span>
+                    </span>
+                    {isSelected && <Check size={14} className="shrink-0 text-[#7c5cff]" />}
+                  </button>
+                )
+              })
+            )}
           </div>
         )}
 
