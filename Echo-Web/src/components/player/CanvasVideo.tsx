@@ -1,18 +1,37 @@
+/**
+ * Canvas video player component.
+ *
+ * Responsibilities:
+ * - Renders dynamic looping Canvas background videos resolved from Tidal and Apple Music.
+ * - Ambient ambient-blur artwork fallback layer during resolution, loading, or video error.
+ * - Respects prefers-reduced-motion media query: skips video playback to prevent motion sickness.
+ * - Bounded 8s video loading timeout with graceful fallback.
+ * - Full lifecycle cleanup: pauses media, removes source, and aborts pending resolution on unmount.
+ * - Telemetry metrics instrumentation for renders, video load outcomes, and reduced motion skips.
+ */
+
 import { useEffect, useRef, useState } from 'react'
 import type { Track } from '../../types/domain.ts'
 import { CanvasManager } from '../../services/canvas/CanvasManager.ts'
 import { artwork } from '../../utils/artwork.ts'
+import {
+  recordCanvasVideoMetric,
+  isReducedMotionPreferred,
+} from '../../services/canvas/canvasVideoTypes.ts'
 
-interface CanvasVideoProps {
+export interface CanvasVideoProps {
   track: Track | null
   className?: string
 }
 
 export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
+  recordCanvasVideoMetric('renders')
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isVideoReady, setIsVideoReady] = useState(false)
   const [hasError, setHasError] = useState(false)
+  const loadTimeoutRef = useRef<number | null>(null)
 
   const coverArt =
     track?.artwork ||
@@ -20,9 +39,14 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
     track?.albumImage ||
     artwork(track?.title || 'echo-track', 800)
 
+  const prefersReducedMotion = isReducedMotionPreferred()
+
   useEffect(() => {
     const video = videoRef.current
-    if (!track) {
+    if (!track || prefersReducedMotion) {
+      if (prefersReducedMotion) {
+        recordCanvasVideoMetric('reducedMotionSkips')
+      }
       return () => {
         if (video) {
           video.pause()
@@ -57,18 +81,36 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
         video.removeAttribute('src')
         video.load()
       }
+      if (loadTimeoutRef.current !== null) {
+        window.clearTimeout(loadTimeoutRef.current)
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id, track?.videoId])
+  }, [track, prefersReducedMotion])
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !videoUrl) return
+    if (!video || !videoUrl || prefersReducedMotion) return
 
+    recordCanvasVideoMetric('videoLoadStarts')
     setIsVideoReady(false)
     setHasError(false)
 
+    // Bounded 8s timeout to avoid permanent hanging video state
+    if (loadTimeoutRef.current !== null) {
+      window.clearTimeout(loadTimeoutRef.current)
+    }
+    loadTimeoutRef.current = window.setTimeout(() => {
+      recordCanvasVideoMetric('videoLoadErrors')
+      setHasError(true)
+      setIsVideoReady(false)
+    }, 8000)
+
     const handleCanPlay = () => {
+      if (loadTimeoutRef.current !== null) {
+        window.clearTimeout(loadTimeoutRef.current)
+        loadTimeoutRef.current = null
+      }
+      recordCanvasVideoMetric('videoLoadSuccesses')
       setIsVideoReady(true)
       video.play().catch(() => {
         // Autoplay may be restricted by browser until user gesture
@@ -76,6 +118,11 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
     }
 
     const handleError = () => {
+      if (loadTimeoutRef.current !== null) {
+        window.clearTimeout(loadTimeoutRef.current)
+        loadTimeoutRef.current = null
+      }
+      recordCanvasVideoMetric('videoLoadErrors')
       setHasError(true)
       setIsVideoReady(false)
     }
@@ -87,13 +134,17 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
     video.load()
 
     return () => {
+      if (loadTimeoutRef.current !== null) {
+        window.clearTimeout(loadTimeoutRef.current)
+        loadTimeoutRef.current = null
+      }
       video.removeEventListener('canplaythrough', handleCanPlay)
       video.removeEventListener('error', handleError)
       video.pause()
       video.removeAttribute('src')
       video.load()
     }
-  }, [videoUrl])
+  }, [videoUrl, prefersReducedMotion])
 
   return (
     <div
@@ -105,13 +156,13 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
         className="canvas-artwork-layer absolute inset-0 bg-cover bg-center transition-opacity duration-700 ease-out"
         style={{
           backgroundImage: `url(${coverArt})`,
-          transform: 'scale(1.15)',
+          transform: prefersReducedMotion ? 'none' : 'scale(1.15)',
           filter: 'blur(56px) saturate(160%) brightness(0.65)',
         }}
       />
 
       {/* Looping Canvas Video Layer */}
-      {videoUrl && !hasError && (
+      {videoUrl && !hasError && !prefersReducedMotion && (
         <video
           ref={videoRef}
           className={`canvas-video-element absolute inset-0 h-full w-full object-cover transition-opacity duration-400 ease-in-out ${
