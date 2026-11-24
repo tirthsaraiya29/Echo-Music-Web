@@ -10,14 +10,32 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const custom = (window as unknown as { __ECHO_API_BASE_URL__?: string }).__ECHO_API_BASE_URL__
+    const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> })?.env?.[
+      'VITE_API_BASE_URL'
+    ]
+    const resolved = (custom || viteEnv || '').trim()
+    return resolved.replace(/\/+$/, '')
+  }
   const globalProcess = (
     globalThis as unknown as { process?: { env?: Record<string, string | undefined> } }
   ).process
-  const baseUrl =
-    typeof window === 'undefined'
-      ? globalProcess?.env?.['API_BASE_URL'] || 'http://localhost:3000'
-      : ''
+  return (globalProcess?.env?.['API_BASE_URL'] || 'http://localhost:3000').trim().replace(/\/+$/, '')
+}
+
+export function buildApiUrl(pathWithQuery: string): string {
+  const baseUrl = getApiBaseUrl()
+  const cleanPath = pathWithQuery.startsWith('/') ? pathWithQuery : `/${pathWithQuery}`
+  if (!baseUrl) {
+    return cleanPath
+  }
+  return `${baseUrl}${cleanPath}`
+}
+
+export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const baseUrl = getApiBaseUrl()
   const fullPath = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
   const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${fullPath}`
 

@@ -1,7 +1,10 @@
 import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
+import path from 'node:path'
 import process from 'node:process'
 import { innertubeRouter } from './routes/innertube.ts'
 import { radioRouter } from './routes/radio.ts'
@@ -64,6 +67,16 @@ app.route('/api/recognition', recognitionRouter)
 app.route('/api/music-dna', musicDnaRouter)
 app.route('/api/lastfm', lastfmRouter)
 app.route('/api/discord', discordRouter)
+
+// Production static asset serving & SPA client-side routing fallback
+const staticDir = process.env['STATIC_DIR'] || './dist'
+if (fs.existsSync(staticDir)) {
+  app.use('/*', serveStatic({ root: staticDir }))
+  const indexHtmlPath = path.join(staticDir, 'index.html').replace(/\\/g, '/')
+  if (fs.existsSync(indexHtmlPath)) {
+    app.get('*', serveStatic({ path: indexHtmlPath }))
+  }
+}
 
 const port = Number.parseInt(process.env['PORT'] || '3000', 10)
 
