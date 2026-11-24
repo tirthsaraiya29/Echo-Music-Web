@@ -11,6 +11,15 @@ export const audioQualitySchema = z.enum(['low', 'medium', 'high', 'lossless'])
 export const repeatModeSchema = z.enum(['off', 'all', 'one'])
 export const lastPlayedLayoutSchema = z.enum(['grid', 'list'])
 export const lyricsProviderSchema = z.enum(['LRCLIB', 'BETTER_LYRICS', 'KUGOU', 'LYRICS_PLUS'])
+export const lyricsAnimationStyleSchema = z.enum([
+  'karaoke',
+  'apple',
+  'glow',
+  'slide',
+  'fade',
+  'metro',
+  'none',
+])
 export const defaultTabSchema = z.enum(['home', 'search', 'library', 'discover', 'settings'])
 export const discordModeSchema = z.enum(['auto', 'companion', 'backend'])
 export const crossfadeProfileSchema = z.enum(['equalPower', 'linear', 'logarithmic', 'scurve'])
@@ -47,6 +56,7 @@ export const userPreferencesSchema = z.object({
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),
   romanizeLyrics: z.boolean().optional().default(false),
+  lyricsAnimationStyle: lyricsAnimationStyleSchema.optional().default('karaoke'),
   lastfmSession: z
     .object({
       sessionKey: z.string().min(1),
@@ -129,6 +139,7 @@ const keyValidators: Partial<Record<keyof UserPreferences, z.ZodTypeAny>> = {
   defaultTab: defaultTabSchema,
   dataSaver: z.boolean(),
   romanizeLyrics: z.boolean(),
+  lyricsAnimationStyle: lyricsAnimationStyleSchema.optional(),
   lastfmScrobbling: z.boolean(),
   discordRpc: z.boolean(),
   discordBridgeUrl: z.string(),

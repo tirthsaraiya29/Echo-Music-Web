@@ -1424,6 +1424,36 @@ export function SettingsPage() {
               </div>
             </div>
 
+            {/* Lyrics Animation Style */}
+            <div className="settings-field">
+              <label htmlFor="lyrics-animation-style">
+                <strong>Lyrics presentation style</strong>
+                <small>
+                  Visual animation, typography, and motion effects applied to synchronized lyric lines.
+                </small>
+              </label>
+              <select
+                id="lyrics-animation-style"
+                aria-label="Lyrics presentation and animation style"
+                className="settings-select"
+                value={preferences.lyricsAnimationStyle || 'karaoke'}
+                onChange={(e) =>
+                  save(
+                    'lyricsAnimationStyle',
+                    e.target.value as UserPreferences['lyricsAnimationStyle'],
+                  )
+                }
+              >
+                <option value="karaoke">Karaoke Sweep (Sub-word Progressive Fill)</option>
+                <option value="apple">Apple Style (Fluid Kinetic Zoom & Blur)</option>
+                <option value="glow">Neon Glow (Luminescent Aura & Harmonics)</option>
+                <option value="slide">Kinetic Slide (Vertical Glide Transition)</option>
+                <option value="fade">Gentle Fade (Smooth Crossfade Transitions)</option>
+                <option value="metro">Metro Minimal (Bold Flat High-Contrast Snap)</option>
+                <option value="none">Static Snap (Zero Motion & Minimal CPU)</option>
+              </select>
+            </div>
+
             <PreferenceToggle
               label="Romanize lyrics"
               description="Show phonetic romanizations (pinyin / romaja / romaji) when non-Latin scripts are present."

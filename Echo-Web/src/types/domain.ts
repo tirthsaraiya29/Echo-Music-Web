@@ -158,6 +158,15 @@ export interface UserPreferences {
   bluetoothResumeEnabled?: boolean | undefined
   preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | 'LYRICS_PLUS' | undefined
   lyricsProviderOrder?: Array<'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | 'LYRICS_PLUS'> | undefined
+  lyricsAnimationStyle?:
+    | 'karaoke'
+    | 'apple'
+    | 'glow'
+    | 'slide'
+    | 'fade'
+    | 'metro'
+    | 'none'
+    | undefined
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined
   romanizeLyrics?: boolean | undefined

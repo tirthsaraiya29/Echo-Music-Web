@@ -38,6 +38,7 @@ export const lyricsUiMetricsSchema = z.object({
   translationsTriggered: z.number().int().nonnegative(),
   wordAnimationTicks: z.number().int().nonnegative().optional(),
   wordSeeks: z.number().int().nonnegative().optional(),
+  animationStyleSwitches: z.number().int().nonnegative().optional(),
 })
 
 export type LyricsUiMetrics = z.infer<typeof lyricsUiMetricsSchema>
@@ -52,6 +53,7 @@ let lyricsUiMetrics: LyricsUiMetrics = {
   translationsTriggered: 0,
   wordAnimationTicks: 0,
   wordSeeks: 0,
+  animationStyleSwitches: 0,
 }
 
 export function getLyricsUiMetrics(): LyricsUiMetrics {
@@ -68,6 +70,7 @@ export function resetLyricsUiMetrics(): void {
     translationsTriggered: 0,
     wordAnimationTicks: 0,
     wordSeeks: 0,
+    animationStyleSwitches: 0,
   }
 }
 

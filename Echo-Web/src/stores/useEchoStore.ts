@@ -115,6 +115,7 @@ const defaultPreferences: UserPreferences = {
   bluetoothResumeEnabled: false,
   preferredLyricsProvider: 'LRCLIB',
   lyricsProviderOrder: ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU'],
+  lyricsAnimationStyle: 'karaoke',
   dataSaver: false,
   discordRpc: false,
   discordBridgeUrl: 'http://127.0.0.1:6463',

@@ -20,6 +20,7 @@ import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
 import { TranslationClient } from '../../services/ai/TranslationClient.ts'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
+import { useEchoStore } from '../../stores/useEchoStore.ts'
 import {
   syncOffsetPayloadSchema,
   recordLyricsUiMetric,
@@ -169,6 +170,58 @@ function StaticWordKaraokeLine({ words, isPast, onWordClick }: StaticWordKaraoke
   )
 }
 
+function getLineAnimationStyleClasses(
+  style: string,
+  isActive: boolean,
+  isPast: boolean,
+): string {
+  switch (style) {
+    case 'apple':
+      return isActive
+        ? 'lyric-line--active origin-left scale-[1.05] font-bold text-white drop-shadow-[0_2px_12px_rgba(255,255,255,0.4)]'
+        : isPast
+          ? 'lyric-line--past opacity-40 blur-[1px] hover:blur-none hover:opacity-80 transition-all duration-300'
+          : 'lyric-line--upcoming opacity-30 blur-[1.5px] hover:blur-none hover:opacity-70 transition-all duration-300'
+    case 'glow':
+      return isActive
+        ? 'lyric-line--active origin-left scale-[1.03] text-white drop-shadow-[0_0_24px_rgba(176,156,255,0.85)] bg-[#7c5cff]/10 border border-[#7c5cff]/30'
+        : isPast
+          ? 'lyric-line--past opacity-50 text-white/70 hover:opacity-80'
+          : 'lyric-line--upcoming opacity-30 text-white/50 hover:opacity-60'
+    case 'slide':
+      return isActive
+        ? 'lyric-line--active translate-y-0 scale-[1.02] text-white bg-white/8 transition-transform duration-300'
+        : isPast
+          ? 'lyric-line--past -translate-y-0.5 opacity-50 hover:opacity-80 transition-transform duration-300'
+          : 'lyric-line--upcoming translate-y-0.5 opacity-35 hover:opacity-75 transition-transform duration-300'
+    case 'fade':
+      return isActive
+        ? 'lyric-line--active text-white bg-white/5 transition-opacity duration-500 ease-in-out'
+        : isPast
+          ? 'lyric-line--past opacity-50 transition-opacity duration-500 ease-in-out'
+          : 'lyric-line--upcoming opacity-30 transition-opacity duration-500 ease-in-out'
+    case 'metro':
+      return isActive
+        ? 'lyric-line--active scale-100 font-black tracking-tight text-white bg-white/10 uppercase'
+        : isPast
+          ? 'lyric-line--past scale-100 font-bold opacity-45 uppercase'
+          : 'lyric-line--upcoming scale-100 font-medium opacity-25 uppercase'
+    case 'none':
+      return isActive
+        ? 'lyric-line--active text-white bg-white/5 font-semibold transition-none'
+        : isPast
+          ? 'lyric-line--past opacity-55 transition-none'
+          : 'lyric-line--upcoming opacity-35 transition-none'
+    case 'karaoke':
+    default:
+      return isActive
+        ? 'lyric-line--active origin-left scale-[1.02] bg-white/6 font-semibold'
+        : isPast
+          ? 'lyric-line--past opacity-55 hover:opacity-85'
+          : 'lyric-line--upcoming opacity-35 hover:opacity-75'
+  }
+}
+
 interface LyricLineRowProps {
   line: LyricLine
   idx: number
@@ -176,6 +229,7 @@ interface LyricLineRowProps {
   isPast: boolean
   isPlaying: boolean
   syncOffsetMs: number
+  animationStyle?: string
   onClick: (startTimeMs: number) => void
   setLineRef: (el: HTMLDivElement | null) => void
 }
@@ -187,11 +241,13 @@ const LyricLineRow = memo(function LyricLineRow({
   isPast,
   isPlaying,
   syncOffsetMs,
+  animationStyle = 'karaoke',
   onClick,
   setLineRef,
 }: LyricLineRowProps) {
   const lineSeconds = Math.floor(line.startTimeMs / 1000)
   const lineLabel = `Jump to ${lineSeconds} seconds: ${line.text}`
+  const animationClasses = getLineAnimationStyleClasses(animationStyle, isActive, isPast)
 
   return (
     <div
@@ -207,13 +263,7 @@ const LyricLineRow = memo(function LyricLineRow({
           onClick(line.startTimeMs)
         }
       }}
-      className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c5cff] ${
-        isActive
-          ? 'lyric-line--active origin-left scale-[1.02] bg-white/6'
-          : isPast
-            ? 'lyric-line--past opacity-55 hover:opacity-85'
-            : 'lyric-line--upcoming opacity-35 hover:opacity-75'
-      }`}
+      className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c5cff] ${animationClasses}`}
     >
       <p
         className={`text-xl font-semibold tracking-tight transition-colors duration-200 md:text-2xl ${
@@ -274,6 +324,9 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   const activeLineIndexRef = useRef<number>(-1)
   const [syncOffsetMs, setSyncOffsetMs] = useState<number>(0)
   const syncDebounceRef = useRef<number | null>(null)
+  const animationStyle = useEchoStore(
+    (state) => state.preferences.lyricsAnimationStyle || 'karaoke',
+  )
 
   // AI Translation State
   const [isTranslating, setIsTranslating] = useState(false)
@@ -579,6 +632,29 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
               </button>
             </div>
           )}
+
+          {/* Lyrics Animation Presentation Style Selector */}
+          <select
+            title="Lyrics presentation animation style"
+            aria-label="Lyrics animation style"
+            className="rounded-lg border border-white/10 bg-white/6 px-2.5 py-1.5 font-mono text-xs text-[#b09cff] transition hover:bg-white/12 focus:outline-none focus:ring-1 focus:ring-[#7c5cff]"
+            value={animationStyle}
+            onChange={(e) => {
+              recordLyricsUiMetric('animationStyleSwitches')
+              useEchoStore
+                .getState()
+                .setPreference('lyricsAnimationStyle', e.target.value as any)
+            }}
+          >
+            <option value="karaoke" className="bg-[#1e1a24] text-white">Karaoke Sweep</option>
+            <option value="apple" className="bg-[#1e1a24] text-white">Apple Blur</option>
+            <option value="glow" className="bg-[#1e1a24] text-white">Neon Glow</option>
+            <option value="slide" className="bg-[#1e1a24] text-white">Kinetic Slide</option>
+            <option value="fade" className="bg-[#1e1a24] text-white">Gentle Fade</option>
+            <option value="metro" className="bg-[#1e1a24] text-white">Metro Minimal</option>
+            <option value="none" className="bg-[#1e1a24] text-white">Static Snap</option>
+          </select>
+
           {lyricsData && (
             <button
               type="button"
@@ -667,6 +743,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
                 isPast={idx < activeLineIndex}
                 isPlaying={isPlaying}
                 syncOffsetMs={syncOffsetMs}
+                animationStyle={animationStyle}
                 onClick={handleLineClick}
                 setLineRef={(el) => {
                   lineRefs.current[idx] = el
