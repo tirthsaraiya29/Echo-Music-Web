@@ -83,7 +83,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-18 | Artist detail pages | 10 tasks in backlog | Completed | 55bafdf6 | Yes (verified on origin/main) |
 | SMALL-19 | Playlist management | 10 tasks in backlog | Completed | dcd5c6a5 | Yes (verified on origin/main) |
 | SMALL-20 | Backup and restore | 10 tasks in backlog | Completed | 6a2929c6 | Yes (verified on origin/main) |
-| SMALL-21 | Listening history | 10 tasks in backlog | Pending | - | - |
+| SMALL-21 | Listening history | 10 tasks in backlog | Completed | 62447000 | Yes (verified on origin/main) |
 | SMALL-22 | Local music import | 10 tasks in backlog | Pending | - | - |
 | SMALL-23 | Local metadata parsing | 10 tasks in backlog | Pending | - | - |
 | SMALL-24 | Local artwork lifecycle | 10 tasks in backlog | Pending | - | - |
