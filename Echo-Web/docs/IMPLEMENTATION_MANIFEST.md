@@ -160,7 +160,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-038 | Podcast queue | Completed | 82572c18 | Yes |
 | FEATURE-039 | Podcast progress sync | Completed | d192da43 | Yes |
 | FEATURE-040 | Podcast metadata pages | Completed | 4bb1cc38 | Yes |
-| FEATURE-041 | Live Spotify library | Pending | - | - |
+| FEATURE-041 | Live Spotify library | Completed | 26f5cf61 | Yes |
 | FEATURE-042 | Spotify playlist detail pages | Pending | - | - |
 | FEATURE-043 | YouTube Music account authentication | Pending | - | - |
 | FEATURE-044 | Playlist cloud synchronization | Pending | - | - |
