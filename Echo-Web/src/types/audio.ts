@@ -27,7 +27,7 @@ export interface SponsorSegment {
   category: 'music_offtopic' | 'intro' | 'outro' | 'preview' | string
   start: number
   end: number
-  uuid?: string
+  uuid?: string | undefined
 }
 
 export interface QueueSnapshot {

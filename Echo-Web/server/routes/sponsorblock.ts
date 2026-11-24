@@ -24,6 +24,7 @@ sponsorblockRouter.get('/:videoId', async (c) => {
         'User-Agent': 'Echo-Music-Web/1.0',
         Accept: 'application/json',
       },
+      signal: AbortSignal.timeout(4000),
     })
 
     if (res.status === 404) {
