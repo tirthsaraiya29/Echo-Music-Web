@@ -35,6 +35,11 @@ import { AudioOutputPicker } from './AudioOutputPicker.tsx'
 import { KeyboardShortcutsModal } from '../modals/KeyboardShortcutsModal.tsx'
 import { shareTrack } from '../../services/sharing/playlistPortability.ts'
 import { recordDesktopPlayerMetric } from './desktopPlayerTypes.ts'
+import {
+  cyclePodcastSpeed,
+  formatPodcastSpeed,
+  recordPodcastSpeedMetric,
+} from '../../services/podcast/podcastSpeedService.ts'
 
 interface DesktopPlayerViewProps {
   isOpen: boolean
@@ -191,6 +196,15 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
 
   const cyclePlaybackRate = () => {
     recordDesktopPlayerMetric('speedChanges')
+    if (currentTrack?.isPodcast) {
+      recordPodcastSpeedMetric('speedsCycled')
+      const nextRate = cyclePodcastSpeed(preferences.podcastPlaybackRate ?? 1.0)
+      setPreference('podcastPlaybackRate', nextRate)
+      setPlaybackRate(nextRate)
+      setToast(`Podcast Speed: ${formatPodcastSpeed(nextRate)}`)
+      return
+    }
+
     const rates = [1.0, 1.25, 1.5, 0.75]
     const curIdx = rates.indexOf(playbackRate)
     const nextRate = rates[(curIdx + 1) % rates.length]!
@@ -568,13 +582,17 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                   onClick={cyclePlaybackRate}
                   className="rounded-lg bg-white/4 px-2.5 py-1 font-mono text-xs font-semibold text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
                   title={
-                    varispeedEnabled && pitchShiftSemitones
-                      ? `Playback rate: ${playbackRate}x (Varispeed pitch shift: ${pitchShiftSemitones > 0 ? '+' : ''}${pitchShiftSemitones} semitones)`
-                      : 'Change playback speed'
+                    currentTrack?.isPodcast
+                      ? `Podcast speed: ${formatPodcastSpeed(preferences.podcastPlaybackRate ?? playbackRate)} (Click to cycle)`
+                      : varispeedEnabled && pitchShiftSemitones
+                        ? `Playback rate: ${playbackRate}x (Varispeed pitch shift: ${pitchShiftSemitones > 0 ? '+' : ''}${pitchShiftSemitones} semitones)`
+                        : 'Change playback speed'
                   }
                 >
-                  {playbackRate}x
-                  {varispeedEnabled && pitchShiftSemitones !== 0 ? (
+                  {currentTrack?.isPodcast
+                    ? formatPodcastSpeed(preferences.podcastPlaybackRate ?? playbackRate)
+                    : `${playbackRate}x`}
+                  {!currentTrack?.isPodcast && varispeedEnabled && pitchShiftSemitones !== 0 ? (
                     <span className="ml-1 text-[10px] text-[#b09cff]">
                       {pitchShiftSemitones > 0 ? `+${pitchShiftSemitones}` : pitchShiftSemitones}st
                     </span>

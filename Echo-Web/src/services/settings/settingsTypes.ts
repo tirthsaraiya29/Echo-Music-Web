@@ -64,6 +64,7 @@ export const userPreferencesSchema = z.object({
   hideYoutubeShorts: z.boolean().optional().default(true),
   filterShorts: z.boolean().optional().default(true),
   hideVideoSongs: z.boolean().optional().default(false),
+  podcastPlaybackRate: z.number().min(0.5).max(2.5).optional().default(1.0),
 })
 
 export type ValidatedUserPreferences = z.infer<typeof userPreferencesSchema>

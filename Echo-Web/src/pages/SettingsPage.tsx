@@ -832,6 +832,31 @@ export function SettingsPage() {
               onChange={save}
             />
 
+            <div className="settings-field">
+              <div className="settings-field__info">
+                <span className="settings-field__label">Podcast playback speed</span>
+                <span className="settings-field__description">
+                  Independent playback speed for podcast episodes and spoken audio with automatic pitch preservation.
+                </span>
+              </div>
+              <select
+                className="select"
+                value={preferences.podcastPlaybackRate ?? 1.0}
+                onChange={(e) => {
+                  const val = Number.parseFloat(e.target.value)
+                  save('podcastPlaybackRate', val)
+                }}
+                aria-label="Default podcast playback speed"
+              >
+                <option value={0.75}>0.75x</option>
+                <option value={1.0}>1.0x (Normal)</option>
+                <option value={1.25}>1.25x</option>
+                <option value={1.5}>1.5x</option>
+                <option value={1.75}>1.75x</option>
+                <option value={2.0}>2.0x</option>
+              </select>
+            </div>
+
             <PreferenceToggle
               label="Pause on mute"
               description="Automatically pauses playback when audio output is muted or volume is set to zero."

@@ -38,6 +38,7 @@ import {
   isNearEnd,
   recordPodcastProgressMetric,
 } from '../services/podcast/podcastProgressService.ts'
+import { resolveEffectivePlaybackRate } from '../services/podcast/podcastSpeedService.ts'
 import {
   bluetoothReconnectService,
   type BluetoothReconnectTelemetry,
@@ -1362,6 +1363,8 @@ export class AudioEngine {
     this.queueManager.setActiveDeck(this.deckController.activeDeck)
 
     const prefs = useEchoStore.getState().preferences
+    const effectiveRate = resolveEffectivePlaybackRate(track, prefs)
+    this.setPlaybackRate(effectiveRate)
 
     // Last.fm Now Playing update
     if (prefs.lastfmScrobbling && prefs.lastfmSession?.sessionKey) {

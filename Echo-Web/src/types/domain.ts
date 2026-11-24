@@ -166,6 +166,7 @@ export interface UserPreferences {
   hideYoutubeShorts?: boolean | undefined
   filterShorts?: boolean | undefined
   hideVideoSongs?: boolean | undefined
+  podcastPlaybackRate?: number | undefined
 }
 
 export interface SearchResultCatalog {
