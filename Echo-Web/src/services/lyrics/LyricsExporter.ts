@@ -54,12 +54,26 @@ export const lyricsExportResultSchema = z.object({
 
 export type LyricsExportResult = z.infer<typeof lyricsExportResultSchema>
 
+export const lyricsDownloadResultSchema = z.object({
+  success: z.boolean(),
+  fileName: z.string(),
+  format: lyricsExportFormatSchema,
+  mimeType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  exportedAt: z.string(),
+  error: z.string().optional(),
+})
+
+export type LyricsDownloadResult = z.infer<typeof lyricsDownloadResultSchema>
+
 export const lyricsExportMetricsSchema = z.object({
   totalExports: z.number().int().nonnegative(),
   exportsByFormat: z.record(z.string(), z.number().int().nonnegative()),
   metadataIncludedCount: z.number().int().nonnegative(),
   translationsIncludedCount: z.number().int().nonnegative(),
   wordTimingsIncludedCount: z.number().int().nonnegative(),
+  totalDownloads: z.number().int().nonnegative(),
+  downloadsByFormat: z.record(z.string(), z.number().int().nonnegative()),
 })
 
 export type LyricsExportMetrics = z.infer<typeof lyricsExportMetricsSchema>
@@ -75,12 +89,20 @@ let exportMetrics: LyricsExportMetrics = {
   metadataIncludedCount: 0,
   translationsIncludedCount: 0,
   wordTimingsIncludedCount: 0,
+  totalDownloads: 0,
+  downloadsByFormat: {
+    lrc: 0,
+    ttml: 0,
+    json: 0,
+    txt: 0,
+  },
 }
 
 export function getLyricsExportMetrics(): LyricsExportMetrics {
   return {
     ...exportMetrics,
     exportsByFormat: { ...exportMetrics.exportsByFormat },
+    downloadsByFormat: { ...exportMetrics.downloadsByFormat },
   }
 }
 
@@ -96,6 +118,47 @@ export function resetLyricsExportMetrics(): void {
     metadataIncludedCount: 0,
     translationsIncludedCount: 0,
     wordTimingsIncludedCount: 0,
+    totalDownloads: 0,
+    downloadsByFormat: {
+      lrc: 0,
+      ttml: 0,
+      json: 0,
+      txt: 0,
+    },
+  }
+}
+
+/**
+ * Sanitizes a string for use in filenames across Windows, macOS, and Linux.
+ * Strips invalid characters: \ / : * ? " < > | and ASCII/Unicode control characters.
+ */
+export function sanitizeFileName(name: string): string {
+  if (!name) return ''
+  return name
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/[\x00-\x1f\x80-\x9f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+}
+
+/**
+ * Builds standard lyrics filename based on track and export format:
+ * "${Artist} - ${Title}.${ext}" or "${Title}.${ext}" or "lyrics.${ext}".
+ */
+export function buildLyricsFileName(track: Track, format: LyricsExportFormat): string {
+  const cleanArtist = sanitizeFileName(track.artistName || '')
+  const cleanTitle = sanitizeFileName(track.title || '')
+  const ext = format.toLowerCase()
+
+  if (cleanArtist && cleanTitle) {
+    return `${cleanArtist} - ${cleanTitle}.${ext}`
+  } else if (cleanTitle) {
+    return `${cleanTitle}.${ext}`
+  } else if (cleanArtist) {
+    return `${cleanArtist} - lyrics.${ext}`
+  } else {
+    return `lyrics.${ext}`
   }
 }
 
@@ -221,6 +284,67 @@ export class LyricsExporter {
         software,
         exportedAt,
       },
+    }
+  }
+
+  /**
+   * Generates lyrics and triggers local file download in browser or creates blob.
+   */
+  public downloadLyrics(
+    track: Track,
+    lyrics: SynchronizedLyrics,
+    options?: Partial<LyricsExportOptions>,
+  ): LyricsDownloadResult {
+    const exportResult = this.exportLyrics(track, lyrics, options)
+    const fileName = buildLyricsFileName(track, exportResult.format)
+
+    try {
+      const mimeType = exportResult.mimeType
+      let blobSize = 0
+
+      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        const blob = new Blob([exportResult.content], { type: `${mimeType};charset=utf-8` })
+        blobSize = blob.size
+
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = fileName
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      } else if (typeof Blob !== 'undefined') {
+        const blob = new Blob([exportResult.content], { type: `${mimeType};charset=utf-8` })
+        blobSize = blob.size
+      } else {
+        blobSize = new TextEncoder().encode(exportResult.content).length
+      }
+
+      exportMetrics.totalDownloads++
+      exportMetrics.downloadsByFormat[exportResult.format] =
+        (exportMetrics.downloadsByFormat[exportResult.format] || 0) + 1
+
+      return lyricsDownloadResultSchema.parse({
+        success: true,
+        fileName,
+        format: exportResult.format,
+        mimeType,
+        sizeBytes: blobSize,
+        exportedAt: exportResult.metadata.exportedAt,
+      })
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      return {
+        success: false,
+        fileName,
+        format: exportResult.format,
+        mimeType: exportResult.mimeType,
+        sizeBytes: 0,
+        exportedAt: exportResult.metadata.exportedAt,
+        error: errorMsg,
+      }
     }
   }
 

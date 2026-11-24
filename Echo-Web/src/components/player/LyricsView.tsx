@@ -31,7 +31,11 @@ import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
 import { db } from '../../services/db/echoDatabase.ts'
 import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
-import { lyricsExporter, type LyricsExportFormat } from '../../services/lyrics/LyricsExporter.ts'
+import {
+  lyricsExporter,
+  buildLyricsFileName,
+  type LyricsExportFormat,
+} from '../../services/lyrics/LyricsExporter.ts'
 import {
   TranslationClient,
   type ConnectionTestResult,
@@ -1263,6 +1267,9 @@ function ExportLyricsModal({
   const [includeWordTimings, setIncludeWordTimings] = useState(true)
   const [encoding, setEncoding] = useState<'UTF-8' | 'UTF-8-BOM'>('UTF-8')
   const [copied, setCopied] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
+
+  const fileName = useMemo(() => buildLyricsFileName(track, format), [track, format])
 
   const exportResult = useMemo(() => {
     return lyricsExporter.exportLyrics(track, lyrics, {
@@ -1296,6 +1303,19 @@ function ExportLyricsModal({
     }
   }
 
+  const handleDownload = () => {
+    lyricsExporter.downloadLyrics(track, lyrics, {
+      format,
+      includeMetadata,
+      includeTranslation,
+      includeWordTimings,
+      encoding,
+      offsetMs: syncOffsetMs,
+    })
+    setDownloaded(true)
+    setTimeout(() => setDownloaded(false), 2000)
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
@@ -1313,15 +1333,18 @@ function ExportLyricsModal({
         <div className="flex items-center justify-between border-b border-white/8 pb-3">
           <div>
             <h3 id="lyrics-export-dialog-title" className="text-base font-semibold text-white">
-              Export Timed Lyrics
+              Export & Download Lyrics
             </h3>
             <p className="text-xs text-[#a59fad]">
               {track.title} &bull; {track.artistName}
             </p>
           </div>
-          <span className="rounded bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] uppercase text-[#b09cff]">
-            {exportResult.format.toUpperCase()}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[11px] text-[#8e8799]">{fileName}</span>
+            <span className="rounded bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] uppercase text-[#b09cff]">
+              {exportResult.format.toUpperCase()}
+            </span>
+          </div>
         </div>
 
         {/* Format Selector */}
@@ -1418,11 +1441,19 @@ function ExportLyricsModal({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleDownload}
+              className="flex items-center gap-1.5 rounded-lg bg-[#7c5cff] px-3.5 py-1.5 text-xs font-semibold text-[#0b0a0f] transition hover:bg-[#6c4be8]"
+            >
+              {downloaded ? <Check size={13} className="text-[#0b0a0f]" /> : <FileDown size={13} />}
+              {downloaded ? 'Downloaded!' : `Download .${format}`}
+            </button>
+            <button
+              type="button"
               onClick={handleCopy}
               className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/10"
             >
               {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-              {copied ? 'Copied to Clipboard!' : 'Copy to Clipboard'}
+              {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
 
