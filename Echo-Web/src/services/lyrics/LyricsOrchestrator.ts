@@ -71,6 +71,27 @@ export const cachedLyricsPayloadSchema = z.object({
   fetchedAt: z.number().nonnegative(),
 })
 
+export const lyricsProviderOrderSchema = z.array(
+  z.enum(['LRCLIB', 'BETTER_LYRICS', 'KUGOU', 'LYRICS_PLUS']),
+)
+
+export function serializeLyricsProviderOrder(order: LyricsProviderKey[]): string {
+  return order.join(',')
+}
+
+export function deserializeLyricsProviderOrder(orderStr: string): LyricsProviderKey[] {
+  if (!orderStr || typeof orderStr !== 'string') {
+    return ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU']
+  }
+  const validKeys: LyricsProviderKey[] = ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU']
+  const parsed = orderStr
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is LyricsProviderKey => validKeys.includes(s as LyricsProviderKey))
+  const distinct = Array.from(new Set(parsed))
+  return [...distinct, ...validKeys.filter((k) => !distinct.includes(k))]
+}
+
 export const lyricsOrchestratorMetricsSchema = z.object({
   totalRequests: z.number().int().nonnegative(),
   memoryCacheHits: z.number().int().nonnegative(),
@@ -85,6 +106,8 @@ export const lyricsOrchestratorMetricsSchema = z.object({
   }),
   coalescedRequests: z.number().int().nonnegative(),
   failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
+  customOrderUsedCount: z.number().int().nonnegative().optional(),
+  orderReorderCount: z.number().int().nonnegative().optional(),
   avgLatencyMs: z.number().nonnegative(),
   lastLatencyMs: z.number().nonnegative(),
 })
@@ -130,8 +153,14 @@ let orchestratorMetrics: LyricsOrchestratorMetrics = {
   },
   coalescedRequests: 0,
   failuresByReason: {},
+  customOrderUsedCount: 0,
+  orderReorderCount: 0,
   avgLatencyMs: 0,
   lastLatencyMs: 0,
+}
+
+export function recordProviderReorder(): void {
+  orchestratorMetrics.orderReorderCount = (orchestratorMetrics.orderReorderCount || 0) + 1
 }
 
 export function getLyricsOrchestratorMetrics(): LyricsOrchestratorMetrics {
@@ -157,6 +186,8 @@ export function resetLyricsOrchestratorMetrics(): void {
     },
     coalescedRequests: 0,
     failuresByReason: {},
+    customOrderUsedCount: 0,
+    orderReorderCount: 0,
     avgLatencyMs: 0,
     lastLatencyMs: 0,
   }
@@ -190,9 +221,28 @@ export class LyricsOrchestrator {
   }
 
   public getProviderCascade(
-    preferred: string = useEchoStore.getState().preferences.preferredLyricsProvider || 'LRCLIB',
+    preferred?: string,
+    customOrder?: LyricsProviderKey[],
   ): LyricsProviderKey[] {
-    return PROVIDER_CASCADE[preferred as LyricsProviderKey] || PROVIDER_CASCADE.LRCLIB
+    const defaultPreferred = useEchoStore.getState().preferences.preferredLyricsProvider || 'LRCLIB'
+    const actualPreferred = preferred || defaultPreferred
+
+    if (customOrder && customOrder.length > 0) {
+      const validKeys: LyricsProviderKey[] = ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU']
+      const sanitized = customOrder.filter((k) => validKeys.includes(k))
+      const distinct = Array.from(new Set(sanitized))
+      return [...distinct, ...validKeys.filter((k) => !distinct.includes(k))]
+    }
+
+    const storeOrder = useEchoStore.getState().preferences.lyricsProviderOrder
+    if (storeOrder && storeOrder.length > 0 && (!preferred || preferred === defaultPreferred)) {
+      const validKeys: LyricsProviderKey[] = ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU']
+      const sanitized = storeOrder.filter((k) => validKeys.includes(k))
+      const distinct = Array.from(new Set(sanitized))
+      return [...distinct, ...validKeys.filter((k) => !distinct.includes(k))]
+    }
+
+    return PROVIDER_CASCADE[actualPreferred as LyricsProviderKey] || PROVIDER_CASCADE.LRCLIB
   }
 
   public buildCacheKey(
@@ -335,7 +385,12 @@ export class LyricsOrchestrator {
       let lyrics: SynchronizedLyrics | null = null
 
       try {
-        const cascade = this.getProviderCascade(preferred)
+        const customOrder = prefs.lyricsProviderOrder
+        if (customOrder && customOrder.length > 0) {
+          orchestratorMetrics.customOrderUsedCount =
+            (orchestratorMetrics.customOrderUsedCount || 0) + 1
+        }
+        const cascade = this.getProviderCascade(preferred, customOrder)
 
         for (const provider of cascade) {
           if (lyrics || signal.aborted) break

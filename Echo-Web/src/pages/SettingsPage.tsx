@@ -26,7 +26,10 @@ import {
   RefreshCw,
   Wifi,
   Send,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
+import { recordProviderReorder } from '../services/lyrics/LyricsOrchestrator.ts'
 import {
   broadcastLibrarySnapshot,
   requestSyncFromPeers,
@@ -1285,6 +1288,140 @@ export function SettingsPage() {
                 <option value="BETTER_LYRICS">BetterLyrics (TTML Word Timing)</option>
                 <option value="KUGOU">KuGou (Global Asian Catalog)</option>
               </select>
+            </div>
+
+            {/* Provider Cascade Priority Ordering */}
+            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-white">Provider Cascade Priority</h4>
+                  <p className="text-xs text-[#a59fad]">
+                    Order of fallback databases queried when resolving lyrics for catalog songs.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultOrder: Array<'LRCLIB' | 'LYRICS_PLUS' | 'BETTER_LYRICS' | 'KUGOU'> = [
+                      'LRCLIB',
+                      'LYRICS_PLUS',
+                      'BETTER_LYRICS',
+                      'KUGOU',
+                    ]
+                    recordProviderReorder()
+                    save('lyricsProviderOrder', defaultOrder)
+                    save('preferredLyricsProvider', defaultOrder[0])
+                  }}
+                  className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-[#a59fad] transition hover:bg-white/10 hover:text-white"
+                >
+                  Reset Priority
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {(
+                  preferences.lyricsProviderOrder || [
+                    'LRCLIB',
+                    'LYRICS_PLUS',
+                    'BETTER_LYRICS',
+                    'KUGOU',
+                  ]
+                ).map((prov, idx, arr) => {
+                  const meta: Record<string, { label: string; badge: string; desc: string }> = {
+                    LRCLIB: {
+                      label: 'LRCLIB',
+                      badge: 'Open Source',
+                      desc: 'Fast, community-sourced open lyrics database.',
+                    },
+                    LYRICS_PLUS: {
+                      label: 'Lyrics+ (YouLyPlus)',
+                      badge: 'Rich Syllables',
+                      desc: 'Multi-mirror edge network with karaoke syllables and background vocals.',
+                    },
+                    BETTER_LYRICS: {
+                      label: 'BetterLyrics',
+                      badge: 'TTML Timing',
+                      desc: 'Millisecond word-level timing via TTML structures.',
+                    },
+                    KUGOU: {
+                      label: 'KuGou',
+                      badge: 'Global Asian',
+                      desc: 'Comprehensive Asian and international catalog.',
+                    },
+                  }
+                  const info = meta[prov] || { label: prov, badge: 'Provider', desc: '' }
+
+                  return (
+                    <div
+                      key={prov}
+                      className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 font-mono text-xs font-bold text-[#b09cff]">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-white">{info.label}</span>
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-[#b09cff]">
+                              {info.badge}
+                            </span>
+                            {idx === 0 && (
+                              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                Primary
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#8f8899]">{info.desc}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          aria-label={`Move ${info.label} up`}
+                          onClick={() => {
+                            const current = [...arr]
+                            const temp = current[idx]!
+                            current[idx] = current[idx - 1]!
+                            current[idx - 1] = temp
+                            recordProviderReorder()
+                            save('lyricsProviderOrder', current)
+                            if (current[0]) save('preferredLyricsProvider', current[0])
+                          }}
+                          className={classNames(
+                            'rounded p-1 text-white/70 transition hover:bg-white/10 hover:text-white',
+                            idx === 0 && 'cursor-not-allowed opacity-30',
+                          )}
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === arr.length - 1}
+                          aria-label={`Move ${info.label} down`}
+                          onClick={() => {
+                            const current = [...arr]
+                            const temp = current[idx]!
+                            current[idx] = current[idx + 1]!
+                            current[idx + 1] = temp
+                            recordProviderReorder()
+                            save('lyricsProviderOrder', current)
+                            if (current[0]) save('preferredLyricsProvider', current[0])
+                          }}
+                          className={classNames(
+                            'rounded p-1 text-white/70 transition hover:bg-white/10 hover:text-white',
+                            idx === arr.length - 1 && 'cursor-not-allowed opacity-30',
+                          )}
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
             <PreferenceToggle

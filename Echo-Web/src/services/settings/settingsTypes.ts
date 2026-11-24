@@ -40,6 +40,10 @@ export const userPreferencesSchema = z.object({
   pauseOnMute: z.boolean().optional().default(false),
   bluetoothResumeEnabled: z.boolean().optional().default(false),
   preferredLyricsProvider: lyricsProviderSchema.optional().default('LRCLIB'),
+  lyricsProviderOrder: z
+    .array(lyricsProviderSchema)
+    .optional()
+    .default(['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU']),
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),
   romanizeLyrics: z.boolean().optional().default(false),
@@ -121,6 +125,7 @@ const keyValidators: Partial<Record<keyof UserPreferences, z.ZodTypeAny>> = {
   contentRegion: z.string().regex(/^[A-Z]{2}$/),
   crossfadeDuration: z.number().min(0).max(12),
   preferredLyricsProvider: lyricsProviderSchema,
+  lyricsProviderOrder: z.array(lyricsProviderSchema).optional(),
   defaultTab: defaultTabSchema,
   dataSaver: z.boolean(),
   romanizeLyrics: z.boolean(),
