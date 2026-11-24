@@ -137,6 +137,7 @@ export function SettingsPage() {
     setVolumeNormalization,
     setGaplessPlayback,
     setVarispeed,
+    setPauseOnMute,
     getAudioTelemetry,
     clearHistory,
   } = useAudioEngine()
@@ -456,6 +457,9 @@ export function SettingsPage() {
     }
     if (key === 'varispeedEnabled' && typeof value === 'boolean') {
       setVarispeed(value)
+    }
+    if (key === 'pauseOnMute' && typeof value === 'boolean') {
+      setPauseOnMute(value)
     }
     notify('Preference saved')
   }
@@ -803,6 +807,14 @@ export function SettingsPage() {
               description="Links playback speed to musical pitch (analog tape and vinyl turntable varispeed behavior)."
               preference="varispeedEnabled"
               value={preferences.varispeedEnabled ?? false}
+              onChange={save}
+            />
+
+            <PreferenceToggle
+              label="Pause on mute"
+              description="Automatically pauses playback when audio output is muted or volume is set to zero."
+              preference="pauseOnMute"
+              value={preferences.pauseOnMute ?? false}
               onChange={save}
             />
 

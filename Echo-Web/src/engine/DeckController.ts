@@ -122,6 +122,7 @@ export class DeckController {
   public onCrossfadeCancelled?: (fromDeck: DeckId, toDeck: DeckId) => void
   public onCrossfadeComplete?: (newActiveDeck: DeckId) => void
   public onGaplessTransition?: (fromDeck: DeckId, toDeck: DeckId) => void
+  public onVolumeChange?: (volume: number, muted: boolean) => void
   public onError?: (error: Error) => void
 
   constructor(graph: WebAudioGraph, options: DeckControllerOptions = {}) {
@@ -685,6 +686,16 @@ export class DeckController {
       () => {
         if (deckId === this.activeDeckId && !this.isCrossfading) {
           this.setPlaybackState('PAUSED')
+        }
+      },
+      { signal },
+    )
+
+    el.addEventListener(
+      'volumechange',
+      () => {
+        if (deckId === this.activeDeckId) {
+          this.onVolumeChange?.(el.volume, el.muted)
         }
       },
       { signal },

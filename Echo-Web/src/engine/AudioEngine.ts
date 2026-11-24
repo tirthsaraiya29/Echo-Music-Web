@@ -46,6 +46,7 @@ export interface AudioEngineMetrics {
   tracksLoadedCount: number
   errorsCaughtCount: number
   lastTransitionDurationMs: number
+  pauseOnMuteCount: number
 }
 
 export class AudioEngine {
@@ -62,6 +63,7 @@ export class AudioEngine {
 
   private volumeLevel = 0.8
   private isMuted = false
+  private pauseOnMute = false
   private autoRadioEnabled = true
 
   private stateVersion = 0
@@ -72,6 +74,7 @@ export class AudioEngine {
     tracksLoadedCount: 0,
     errorsCaughtCount: 0,
     lastTransitionDurationMs: 0,
+    pauseOnMuteCount: 0,
   }
 
   // LRU-bounded stream URL cache and registry of created blob object URLs, which are revoked
@@ -115,6 +118,7 @@ export class AudioEngine {
     this.deckController.setGaplessPlayback(useEchoStore.getState().preferences.gaplessPlayback ?? true)
     this.deckController.setCrossfadeProfile(useEchoStore.getState().preferences.crossfadeProfile ?? 'equalPower')
     this.deckController.setVarispeed(useEchoStore.getState().preferences.varispeedEnabled ?? false)
+    this.pauseOnMute = useEchoStore.getState().preferences.pauseOnMute ?? false
 
     this.queueManager = new QueueManager()
 
@@ -192,6 +196,7 @@ export class AudioEngine {
       gaplessPlayback: this.deckController.getGaplessPlayback(),
       varispeedEnabled: this.deckController.getVarispeed(),
       pitchShiftSemitones: this.deckController.getPitchShiftSemitones(),
+      pauseOnMute: this.pauseOnMute,
       continuationState: this.queueManager.getContinuationState(),
       radioContinuationState: radioContinuationService.getState(),
       echoBrainTelemetry: echoBrainService.getTelemetry(),
@@ -429,6 +434,14 @@ export class AudioEngine {
   public setVolume(volume: number): void {
     this.volumeLevel = Math.max(0, Math.min(1, volume))
     this.graph.setMasterVolume(this.volumeLevel, this.isMuted)
+    if (
+      this.pauseOnMute &&
+      (this.volumeLevel === 0 || this.isMuted) &&
+      this.deckController.state === 'PLAYING'
+    ) {
+      this.metrics.pauseOnMuteCount++
+      this.pause()
+    }
     this.emit('volumeChange', this.volumeLevel, this.isMuted)
     this.emitState()
   }
@@ -436,6 +449,10 @@ export class AudioEngine {
   public setMuted(muted: boolean): void {
     this.isMuted = muted
     this.graph.setMasterVolume(this.volumeLevel, this.isMuted)
+    if (this.pauseOnMute && this.isMuted && this.deckController.state === 'PLAYING') {
+      this.metrics.pauseOnMuteCount++
+      this.pause()
+    }
     this.emit('volumeChange', this.volumeLevel, this.isMuted)
     this.emitState()
   }
@@ -480,6 +497,23 @@ export class AudioEngine {
 
   public getPitchShiftSemitones(): number {
     return this.deckController.getPitchShiftSemitones()
+  }
+
+  public setPauseOnMute(enabled: boolean): void {
+    this.pauseOnMute = Boolean(enabled)
+    if (
+      this.pauseOnMute &&
+      (this.isMuted || this.volumeLevel === 0) &&
+      this.deckController.state === 'PLAYING'
+    ) {
+      this.metrics.pauseOnMuteCount++
+      this.pause()
+    }
+    this.emitState()
+  }
+
+  public getPauseOnMute(): boolean {
+    return this.pauseOnMute
   }
 
   public setVolumeNormalization(enabled: boolean): void {
@@ -985,6 +1019,13 @@ export class AudioEngine {
 
     this.deckController.onBufferedUpdate = (buffered) => {
       this.emit('bufferedUpdate', buffered)
+    }
+
+    this.deckController.onVolumeChange = (vol, muted) => {
+      if (this.pauseOnMute && (muted || vol === 0) && this.deckController.state === 'PLAYING') {
+        this.metrics.pauseOnMuteCount++
+        this.pause()
+      }
     }
 
     this.deckController.onTrackEnded = () => {

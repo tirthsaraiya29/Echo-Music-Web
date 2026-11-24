@@ -85,6 +85,8 @@ export const audioEngineActions = {
   setVarispeed: (enabled: boolean) => AudioEngine.getInstance().setVarispeed(enabled),
   getVarispeed: () => AudioEngine.getInstance().getVarispeed(),
   getPitchShiftSemitones: () => AudioEngine.getInstance().getPitchShiftSemitones(),
+  setPauseOnMute: (enabled: boolean) => AudioEngine.getInstance().setPauseOnMute(enabled),
+  getPauseOnMute: () => AudioEngine.getInstance().getPauseOnMute(),
   setCrossfadeProfile: (profile: CrossfadeProfile) =>
     AudioEngine.getInstance().setCrossfadeProfile(profile),
   getContinuationState: () => AudioEngine.getInstance().getContinuationState(),
@@ -136,6 +138,7 @@ export function useAudioEngine() {
     gaplessPlayback: state.gaplessPlayback ?? true,
     varispeedEnabled: state.varispeedEnabled ?? false,
     pitchShiftSemitones: state.pitchShiftSemitones ?? 0,
+    pauseOnMute: state.pauseOnMute ?? false,
     continuationState: state.continuationState,
     radioContinuationState: state.radioContinuationState,
     echoBrainTelemetry: state.echoBrainTelemetry,
@@ -296,6 +299,13 @@ export function bridgeAudioEngineWithStore(): () => void {
         typeof currPrefs.varispeedEnabled === 'boolean'
       ) {
         engine.setVarispeed(currPrefs.varispeedEnabled)
+        changed = true
+      }
+      if (
+        currPrefs.pauseOnMute !== prevPrefs.pauseOnMute &&
+        typeof currPrefs.pauseOnMute === 'boolean'
+      ) {
+        engine.setPauseOnMute(currPrefs.pauseOnMute)
         changed = true
       }
       if (

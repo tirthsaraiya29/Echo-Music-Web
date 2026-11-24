@@ -96,6 +96,7 @@ const defaultPreferences: UserPreferences = {
   crossfadeProfile: 'equalPower',
   echoBrainEnabled: true,
   varispeedEnabled: false,
+  pauseOnMute: false,
   preferredLyricsProvider: 'LRCLIB',
   dataSaver: false,
   discordRpc: false,

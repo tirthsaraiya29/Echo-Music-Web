@@ -36,6 +36,7 @@ export const userPreferencesSchema = z.object({
   crossfadeProfile: crossfadeProfileSchema.optional().default('equalPower'),
   echoBrainEnabled: z.boolean().optional().default(true),
   varispeedEnabled: z.boolean().optional().default(false),
+  pauseOnMute: z.boolean().optional().default(false),
   preferredLyricsProvider: lyricsProviderSchema.optional().default('LRCLIB'),
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),
