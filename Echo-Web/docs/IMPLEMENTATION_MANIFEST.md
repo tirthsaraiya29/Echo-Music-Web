@@ -88,7 +88,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-23 | Local metadata parsing | 10 tasks in backlog | Completed | 65c6a0ae | Yes (verified on origin/main) |
 | SMALL-24 | Local artwork lifecycle | 10 tasks in backlog | Completed | 8df76420 | Yes (verified on origin/main) |
 | SMALL-25 | Lyrics provider orchestration | 10 tasks in backlog | Completed | 55695385 | Yes (verified on origin/main) |
-| SMALL-26 | Lyrics player UI | 10 tasks in backlog | Pending | - | - |
+| SMALL-26 | Lyrics player UI | 10 tasks in backlog | Completed | 5cd147e4 | Yes (verified on origin/main) |
 | SMALL-27 | AI lyrics translation | 10 tasks in backlog | Pending | - | - |
 | SMALL-28 | Canvas resolution | 10 tasks in backlog | Pending | - | - |
 | SMALL-29 | Canvas video rendering | 10 tasks in backlog | Pending | - | - |
