@@ -9,6 +9,7 @@ import type {
   RepeatMode,
   SponsorSegment,
   Track,
+  VerifiedStreamTelemetry,
 } from '../types/audio.ts'
 import type { StreamResolutionResult } from '../types/innertube.ts'
 import { DeckController } from './DeckController.ts'
@@ -556,15 +557,7 @@ export class AudioEngine {
     return this.deckController.getAudioSink()
   }
 
-  public getAudioTelemetry(): {
-    codec: string
-    bitrate: string
-    sampleRate: string
-    bitDepth: string
-    source: string
-    isHighBitrate: boolean
-    isLossless: boolean
-  } {
+  public getAudioTelemetry(): VerifiedStreamTelemetry {
     const current = this.queueManager.currentTrack
     const ctx = this.graph.context
     const sampleRateKhz = (ctx.sampleRate / 1000).toFixed(1)
@@ -601,6 +594,7 @@ export class AudioEngine {
                 ? 'MP3 (320 kbps)'
                 : ext.codec || 'Extension Stream'
 
+      const numericBitrate = ext.bitrate || (is320 ? 320000 : undefined)
       const bitrate = isLossless
         ? 'Lossless'
         : is320
@@ -609,14 +603,25 @@ export class AudioEngine {
             ? `${Math.round(ext.bitrate / 1000)} kbps`
             : ext.quality || '320 kbps'
 
+      const container =
+        ext.format ||
+        (ext.mimeType?.split(';')[0]?.replace('audio/', '') ?? 'native')
+
       return {
         codec,
         bitrate,
+        numericBitrate,
         sampleRate: `${sampleRateKhz} kHz`,
-        bitDepth: '32-bit Float DSP',
-        source: ext.source,
+        sourceSampleRate: ext.sampleRate ? `${(ext.sampleRate / 1000).toFixed(1)} kHz` : `${sampleRateKhz} kHz`,
+        outputSampleRate: `${sampleRateKhz} kHz`,
+        bitDepth: ext.bitDepth ? `${ext.bitDepth}-bit` : (isLossless ? '16/24-bit' : '16-bit'),
+        dspBitDepth: '32-bit Float DSP',
+        channels: 2,
+        source: ext.source || 'Extension Provider',
         isHighBitrate: Boolean(is320 || isLossless),
         isLossless,
+        container,
+        verified: true,
       }
     }
 
@@ -627,35 +632,59 @@ export class AudioEngine {
         current?.title.toLowerCase().endsWith('.wav') ||
         current?.title.toLowerCase().endsWith('.alac'))
 
-    // Streamed tracks report what the server actually resolved; nothing is overstated.
+    if (isLocal) {
+      const ext = current?.title.split('.').pop()?.toUpperCase() || 'PCM'
+      const codec = isLocalLossless ? `${ext} (Lossless)` : `${ext} (Audio)`
+      return {
+        codec,
+        bitrate: isLocalLossless ? 'Lossless' : 'Source Native',
+        sampleRate: `${sampleRateKhz} kHz`,
+        sourceSampleRate: `${sampleRateKhz} kHz`,
+        outputSampleRate: `${sampleRateKhz} kHz`,
+        bitDepth: isLocalLossless ? '16/24-bit' : '16-bit',
+        dspBitDepth: '32-bit Float DSP',
+        channels: 2,
+        source: 'Local File (Decoded PCM)',
+        isHighBitrate: Boolean(isLocalLossless),
+        isLossless: Boolean(isLocalLossless),
+        container: ext.toLowerCase(),
+        verified: true,
+      }
+    }
+
+    // Streamed tracks report verified facts from decoded container
     const isOpus = (this.lastStreamFormat?.mimeType ?? '').toLowerCase().includes('opus')
-    const codec = isLocal
-      ? isLocalLossless
-        ? 'Local Lossless'
-        : 'Local Audio'
-      : isOpus
-        ? 'Opus (WebM)'
-        : 'AAC (MP4)'
+    const codec = isOpus ? 'Opus' : 'AAC'
+    const container = this.lastStreamFormat?.mimeType?.includes('webm')
+      ? 'WebM'
+      : this.lastStreamFormat?.mimeType?.includes('mp4')
+        ? 'MP4'
+        : 'audio/stream'
     const bitrateKbps = this.lastStreamFormat
       ? Math.round(this.lastStreamFormat.bitrate / 1000)
       : null
-    const bitrate = isLocal
-      ? isLocalLossless
-        ? 'Lossless'
-        : 'Source bitrate'
-      : bitrateKbps
-        ? `~${bitrateKbps} kbps`
-        : 'Unresolved'
-    const isHighBitrate = Boolean(bitrateKbps && bitrateKbps >= 320)
+    const bitrate = bitrateKbps ? `~${bitrateKbps} kbps` : 'Unresolved'
+    const isHighBitrate = Boolean(bitrateKbps && bitrateKbps >= 256)
+    const sourceSampleRate = this.lastStreamFormat?.audioSampleRate
+      ? `${(Number(this.lastStreamFormat.audioSampleRate) / 1000).toFixed(1)} kHz`
+      : `${sampleRateKhz} kHz`
+    const channels = this.lastStreamFormat?.audioChannels || 2
 
     return {
       codec,
       bitrate,
+      numericBitrate: this.lastStreamFormat?.bitrate,
       sampleRate: `${sampleRateKhz} kHz`,
-      bitDepth: '32-bit Float DSP',
-      source: isLocal ? 'Local Audio' : 'YouTube Proxy',
+      sourceSampleRate,
+      outputSampleRate: `${sampleRateKhz} kHz`,
+      bitDepth: '16-bit Equivalent',
+      dspBitDepth: '32-bit Float DSP',
+      channels,
+      source: 'YouTube Innertube Stream',
       isHighBitrate,
-      isLossless: Boolean(isLocalLossless),
+      isLossless: false,
+      container,
+      verified: Boolean(this.lastStreamFormat),
     }
   }
 

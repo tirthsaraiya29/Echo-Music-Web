@@ -117,3 +117,22 @@ export type AudioEngineEventMap = {
 }
 
 export type AudioEngineEvent = keyof AudioEngineEventMap
+
+export const verifiedStreamTelemetrySchema = z.object({
+  codec: z.string().min(1),
+  bitrate: z.string().min(1),
+  numericBitrate: z.number().nonnegative().optional(),
+  sampleRate: z.string().min(1),
+  sourceSampleRate: z.string().optional(),
+  outputSampleRate: z.string().min(1),
+  bitDepth: z.string().min(1),
+  dspBitDepth: z.string().min(1),
+  channels: z.number().int().positive().default(2),
+  source: z.string().min(1),
+  isLossless: z.boolean(),
+  isHighBitrate: z.boolean(),
+  container: z.string().optional(),
+  verified: z.boolean().default(true),
+})
+
+export type VerifiedStreamTelemetry = z.infer<typeof verifiedStreamTelemetrySchema>

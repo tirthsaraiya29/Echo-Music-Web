@@ -57,6 +57,9 @@ export const addonStreamResponseSchema = z.object({
   streamQuality: z.string().optional(),
   audioQuality: z.string().optional(),
   codec: z.string().optional(),
+  bitrate: z.number().nonnegative().optional(),
+  sampleRate: z.number().positive().optional(),
+  bitDepth: z.number().int().positive().optional(),
 })
 
 export type AddonStreamResponse = z.infer<typeof addonStreamResponseSchema>
@@ -106,5 +109,8 @@ export interface ExtensionResolvedStream {
   codec?: string | undefined
   quality?: string | undefined
   bitrate?: number | undefined
+  sampleRate?: number | undefined
+  bitDepth?: number | undefined
+  format?: string | undefined
   source: string
 }

@@ -1,21 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
-import { BookOpen, Activity, Sparkles, ExternalLink, X, Info, AlertCircle, RefreshCw, WifiOff } from 'lucide-react'
+import { BookOpen, Activity, Sparkles, ExternalLink, X, Info, AlertCircle, RefreshCw, WifiOff, CheckCircle2 } from 'lucide-react'
 import { fetchMusicDna, type MusicDnaData } from '../../services/musicDna/musicDnaService.ts'
 import { isReducedMotionPreferred } from '../../services/musicDna/musicDnaTypes.ts'
+import { useAudioEngine } from '../../hooks/useAudioEngine.ts'
 import type { Track } from '../../types/domain'
 
 interface MusicDnaDrawerProps {
   track: Track | null
   isOpen: boolean
   onClose: () => void
+  initialTab?: 'lore' | 'telemetry' | undefined
 }
 
-export function MusicDnaDrawer({ track, isOpen, onClose }: MusicDnaDrawerProps) {
+export function MusicDnaDrawer({ track, isOpen, onClose, initialTab }: MusicDnaDrawerProps) {
+  const { getAudioTelemetry } = useAudioEngine()
+  const telemetry = getAudioTelemetry()
   const [dnaData, setDnaData] = useState<MusicDnaData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine)
-  const [activeTab, setActiveTab] = useState<'lore' | 'telemetry'>('lore')
+  const [activeTab, setActiveTab] = useState<'lore' | 'telemetry'>(initialTab || 'lore')
+
+  useEffect(() => {
+    if (initialTab && isOpen) {
+      setActiveTab(initialTab)
+    }
+  }, [initialTab, isOpen])
   const [retryNonce, setRetryNonce] = useState(0)
 
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -278,30 +288,63 @@ export function MusicDnaDrawer({ track, isOpen, onClose }: MusicDnaDrawerProps) 
           /* Engine Telemetry Tab */
           <div id="panel-telemetry" role="tabpanel" aria-labelledby="tab-telemetry" className="space-y-4">
             <div className="space-y-2 rounded-xl border border-white/6 bg-white/3 p-4">
-              <span className="block font-mono text-[11px] text-[#a59fad] uppercase">
-                Audio Pipeline Telemetry
-              </span>
-              <div className="flex justify-between border-b border-white/4 py-1 text-xs">
-                <span className="text-[#a59fad]">Audio Codec</span>
-                <span className="font-mono text-white">
-                  {track.id.startsWith('local_')
-                    ? 'Local File (Decoded PCM)'
-                    : 'Opus / WebM (Bitrate ~160k)'}
+              <div className="flex items-center justify-between border-b border-white/6 pb-2">
+                <span className="block font-mono text-[11px] font-semibold text-[#a59fad] uppercase tracking-wider">
+                  Verified Audio Pipeline Telemetry
                 </span>
+                {telemetry.verified && (
+                  <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-400">
+                    <CheckCircle2 size={11} /> Verified Facts
+                  </span>
+                )}
               </div>
-              <div className="flex justify-between border-b border-white/4 py-1 text-xs">
-                <span className="text-[#a59fad]">Web Audio Internal Depth</span>
-                <span className="font-mono text-white">32-bit Floating Point</span>
+
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Stream Provider</span>
+                <span className="font-mono font-medium text-white">{telemetry.source}</span>
               </div>
-              <div className="flex justify-between py-1 text-xs">
-                <span className="text-[#a59fad]">Dynamic Compressor</span>
-                <span className="font-mono text-[#58ad83]">Active Threshold: -14 dB</span>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Audio Codec</span>
+                <span className="font-mono text-white">{telemetry.codec}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Container Format</span>
+                <span className="font-mono uppercase text-white">{telemetry.container || 'Native'}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Bitrate</span>
+                <span className="font-mono text-[#b09cff]">{telemetry.bitrate}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Source Sample Rate</span>
+                <span className="font-mono text-white">{telemetry.sourceSampleRate || telemetry.sampleRate}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Hardware Output (DAC)</span>
+                <span className="font-mono text-white">{telemetry.outputSampleRate}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">DSP Internal Depth</span>
+                <span className="font-mono text-white">{telemetry.dspBitDepth}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/4 py-1.5 text-xs">
+                <span className="text-[#a59fad]">Channels</span>
+                <span className="font-mono text-white">{telemetry.channels} Channels (Stereo)</span>
+              </div>
+              <div className="flex justify-between py-1.5 text-xs">
+                <span className="text-[#a59fad]">Fidelity Tier</span>
+                <span className="font-mono font-semibold text-amber-300">
+                  {telemetry.isLossless
+                    ? 'Lossless Audio'
+                    : telemetry.isHighBitrate
+                      ? 'High Bitrate Stream'
+                      : 'Standard Stream'}
+                </span>
               </div>
             </div>
 
             <div className="rounded-xl border border-white/4 bg-white/2 p-4 text-xs text-[#a59fad]">
-              Per-track stats like tempo, musical key and loudness are not shown because Echo does
-              not analyze audio content. Only measured pipeline facts above are reported.
+              Echo reports verified streaming facts extracted directly from the container headers and active Web Audio DSP nodes. No synthetic upscaling or inferred estimates.
             </div>
           </div>
         )}

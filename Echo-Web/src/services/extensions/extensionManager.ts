@@ -393,6 +393,8 @@ export class ExtensionManager {
             codec?: string | undefined
             quality?: string | undefined
             bitrate?: number | undefined
+            sampleRate?: number | undefined
+            bitDepth?: number | undefined
           } | undefined
         }
 
@@ -409,6 +411,9 @@ export class ExtensionManager {
             codec: resolveData.stream.codec,
             quality: resolveData.stream.quality || 'lossless',
             bitrate: resolveData.stream.bitrate,
+            sampleRate: resolveData.stream.sampleRate,
+            bitDepth: resolveData.stream.bitDepth,
+            format: resolveData.stream.format,
             source: addon.name,
           }
         }

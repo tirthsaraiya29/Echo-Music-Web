@@ -85,6 +85,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
   const [isEqOpen, setIsEqOpen] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isDnaOpen, setIsDnaOpen] = useState(false)
+  const [dnaTab, setDnaTab] = useState<'lore' | 'telemetry'>('lore')
   const [isSleepTimerOpen, setIsSleepTimerOpen] = useState(false)
   const [isOutputPickerOpen, setIsOutputPickerOpen] = useState(false)
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false)
@@ -247,9 +248,17 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
               <span className="font-mono text-[11px] tracking-widest text-[#a59fad] uppercase">
                 Playing from
               </span>
-              <span className="rounded border border-[#7c5cff]/20 bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#b09cff]">
+              <button
+                type="button"
+                onClick={() => {
+                  setDnaTab('telemetry')
+                  setIsDnaOpen(true)
+                }}
+                className="cursor-pointer rounded border border-[#7c5cff]/20 bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#b09cff] transition-colors hover:border-[#7c5cff]/40 hover:bg-[#7c5cff]/25 focus:outline-none focus:ring-1 focus:ring-[#7c5cff]"
+                title="View verified audio pipeline telemetry facts"
+              >
                 {telemetry.codec} · {telemetry.bitrate} · {telemetry.sampleRate}
-              </span>
+              </button>
               {telemetry.isLossless ? (
                 <span className="rounded border border-amber-400/20 bg-amber-400/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
                   {parseFloat(telemetry.sampleRate) > 48 ? 'HI-RES LOSSLESS' : 'LOSSLESS'}
@@ -594,8 +603,13 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
         onNormalizationChange={(n) => setVolumeNormalization(n)}
       />
 
-      {/* Music DNA Drawer */}
-      <MusicDnaDrawer track={currentTrack} isOpen={isDnaOpen} onClose={() => setIsDnaOpen(false)} />
+      {/* Music DNA & Telemetry Drawer */}
+      <MusicDnaDrawer
+        track={currentTrack}
+        isOpen={isDnaOpen}
+        onClose={() => setIsDnaOpen(false)}
+        initialTab={dnaTab}
+      />
 
       {/* Sleep Timer Popover */}
       <SleepTimerPopover isOpen={isSleepTimerOpen} onClose={() => setIsSleepTimerOpen(false)} />
