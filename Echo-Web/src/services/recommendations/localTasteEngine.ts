@@ -1,9 +1,72 @@
+import { z } from 'zod'
 import {
   db,
   type ListeningHistoryRecord,
   type RecommendationExclusionRecord,
 } from '../db/echoDatabase.ts'
 import type { Track } from '../../types/domain.ts'
+
+export const listeningEventInputSchema = z.object({
+  track: z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    artistName: z.string().min(1),
+    artistId: z.string().optional(),
+    albumTitle: z.string().optional(),
+    artwork: z.string().optional(),
+    thumbnailUrl: z.string().optional(),
+    album: z.object({ title: z.string().optional() }).optional(),
+  }),
+  durationPlayedMs: z.number().nonnegative(),
+  trackDurationMs: z.number().nonnegative(),
+  completed: z.boolean(),
+  skipped: z.boolean(),
+})
+
+export type ListeningEventInput = z.infer<typeof listeningEventInputSchema>
+
+export const listeningHistoryRecordSchema = z.object({
+  id: z.number().optional(),
+  trackId: z.string().min(1),
+  trackTitle: z.string().min(1),
+  artistName: z.string().min(1),
+  artistId: z.string().optional(),
+  albumTitle: z.string().optional(),
+  artwork: z.string().optional(),
+  playedAt: z.number().positive(),
+  durationPlayedMs: z.number().nonnegative(),
+  trackDurationMs: z.number().nonnegative(),
+  completed: z.boolean(),
+  skipped: z.boolean(),
+  timeOfDay: z.enum(['morning', 'afternoon', 'evening', 'night']),
+})
+
+export const listeningHistoryMetricsSchema = z.object({
+  eventsRecorded: z.number().nonnegative(),
+  eventsDropped: z.number().nonnegative(),
+  historyClearedCount: z.number().nonnegative(),
+  lastError: z.string().nullable(),
+})
+
+export type ListeningHistoryMetrics = z.infer<typeof listeningHistoryMetricsSchema>
+
+const listeningHistoryMetrics: ListeningHistoryMetrics = {
+  eventsRecorded: 0,
+  eventsDropped: 0,
+  historyClearedCount: 0,
+  lastError: null,
+}
+
+export function getListeningHistoryMetrics(): ListeningHistoryMetrics {
+  return { ...listeningHistoryMetrics }
+}
+
+export function resetListeningHistoryMetrics(): void {
+  listeningHistoryMetrics.eventsRecorded = 0
+  listeningHistoryMetrics.eventsDropped = 0
+  listeningHistoryMetrics.historyClearedCount = 0
+  listeningHistoryMetrics.lastError = null
+}
 
 export interface ScoredTrack {
   trackId: string
@@ -29,31 +92,70 @@ export function getCurrentTimeOfDay(): 'morning' | 'afternoon' | 'evening' | 'ni
 /**
  * Record a listening event into the Local Taste Engine history
  */
-export async function recordListeningEvent(params: {
-  track: Track
-  durationPlayedMs: number
-  trackDurationMs: number
-  completed: boolean
-  skipped: boolean
-}): Promise<void> {
-  if (typeof indexedDB === 'undefined') return
+export async function recordListeningEvent(
+  params: {
+    track: Track
+    durationPlayedMs: number
+    trackDurationMs: number
+    completed: boolean
+    skipped: boolean
+  },
+  options?: { signal?: AbortSignal },
+): Promise<void> {
+  if (options?.signal?.aborted) {
+    listeningHistoryMetrics.eventsDropped++
+    listeningHistoryMetrics.lastError = 'Listening event recording cancelled'
+    return
+  }
+
+  const parsed = listeningEventInputSchema.safeParse(params)
+  if (!parsed.success) {
+    listeningHistoryMetrics.eventsDropped++
+    listeningHistoryMetrics.lastError =
+      parsed.error.issues[0]?.message || 'Invalid listening event payload'
+    return
+  }
+
+  const valid = parsed.data
   const timeOfDay = getCurrentTimeOfDay()
   const record: ListeningHistoryRecord = {
-    trackId: params.track.id,
-    trackTitle: params.track.title,
-    artistName: params.track.artistName,
-    artistId: params.track.artistId,
-    albumTitle: params.track.albumTitle || params.track.album?.title,
-    artwork: params.track.artwork || params.track.thumbnailUrl,
+    trackId: valid.track.id,
+    trackTitle: valid.track.title,
+    artistName: valid.track.artistName,
+    artistId: valid.track.artistId,
+    albumTitle: valid.track.albumTitle || valid.track.album?.title,
+    artwork: valid.track.artwork || valid.track.thumbnailUrl,
     playedAt: Date.now(),
-    durationPlayedMs: params.durationPlayedMs,
-    trackDurationMs: params.trackDurationMs,
-    completed: params.completed,
-    skipped: params.skipped,
+    durationPlayedMs: valid.durationPlayedMs,
+    trackDurationMs: valid.trackDurationMs,
+    completed: valid.completed,
+    skipped: valid.skipped,
     timeOfDay,
   }
 
-  await db.history.add(record)
+  listeningHistoryMetrics.eventsRecorded++
+
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      await db.history.add(record)
+    } catch (err) {
+      listeningHistoryMetrics.lastError = err instanceof Error ? err.message : String(err)
+    }
+  }
+}
+
+/**
+ * Clear listening history records and track telemetry
+ */
+export async function clearTasteListeningHistory(): Promise<void> {
+  listeningHistoryMetrics.historyClearedCount++
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      await db.history.clear()
+    } catch (err) {
+      listeningHistoryMetrics.lastError = err instanceof Error ? err.message : String(err)
+    }
+  }
 }
 
 /**
