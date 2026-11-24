@@ -123,3 +123,36 @@ test('Lyrics Loading Lifecycle: transitions from loading to resolved/empty state
   assert.strictEqual(activeLineIndex, -1)
 })
 
+test('Lyrics Binary Search: findActiveLineIndex locates active lyric line in O(log N) without full scan [BUG-26]', async () => {
+  const { findActiveLineIndex } = await import('../src/services/lyrics/lyricsUtils.ts')
+  const lines = [
+    { startTimeMs: 2000, endTimeMs: 5000, text: 'First line' },
+    { startTimeMs: 6000, endTimeMs: 10000, text: 'Second line' },
+    { startTimeMs: 11000, endTimeMs: 15000, text: 'Third line' },
+    { startTimeMs: 18000, endTimeMs: 22000, text: 'Fourth line' },
+    { startTimeMs: 25000, endTimeMs: 30000, text: 'Final line' },
+  ]
+
+  // 1. Before first line
+  assert.strictEqual(findActiveLineIndex(lines, 0), -1)
+  assert.strictEqual(findActiveLineIndex(lines, 1999), -1)
+
+  // 2. Exactly on first line start
+  assert.strictEqual(findActiveLineIndex(lines, 2000), 0)
+  assert.strictEqual(findActiveLineIndex(lines, 3500), 0)
+
+  // 3. Middle lines
+  assert.strictEqual(findActiveLineIndex(lines, 6000), 1)
+  assert.strictEqual(findActiveLineIndex(lines, 8500), 1)
+  assert.strictEqual(findActiveLineIndex(lines, 12000), 2)
+  assert.strictEqual(findActiveLineIndex(lines, 20000), 3)
+
+  // 4. Final line and past end
+  assert.strictEqual(findActiveLineIndex(lines, 25000), 4)
+  assert.strictEqual(findActiveLineIndex(lines, 45000), 4)
+
+  // 5. Empty array
+  assert.strictEqual(findActiveLineIndex([], 5000), -1)
+})
+
+

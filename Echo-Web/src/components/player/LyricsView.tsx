@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, memo } from 'react'
 import { Languages, Loader2, Sparkles, AlertCircle, Plus, Minus } from 'lucide-react'
 import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
@@ -7,6 +7,147 @@ import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
 import { TranslationClient } from '../../services/ai/TranslationClient.ts'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
+import { findActiveLineIndex } from '../../services/lyrics/lyricsUtils.ts'
+
+interface ActiveWordKaraokeLineProps {
+  words: LyricWord[]
+  syncOffsetMs: number
+  isPlaying: boolean
+}
+
+function ActiveWordKaraokeLine({
+  words,
+  syncOffsetMs,
+  isPlaying,
+}: ActiveWordKaraokeLineProps) {
+  const [nowMs, setNowMs] = useState(() => {
+    return Math.max(0, AudioEngine.getInstance().getCurrentTime() * 1000 - syncOffsetMs)
+  })
+
+  useEffect(() => {
+    let rafId: number | null = null
+    const engine = AudioEngine.getInstance()
+
+    const tick = () => {
+      const ms = Math.max(0, engine.getCurrentTime() * 1000 - syncOffsetMs)
+      setNowMs(ms)
+      if (isPlaying) {
+        rafId = requestAnimationFrame(tick)
+      }
+    }
+
+    if (isPlaying) {
+      rafId = requestAnimationFrame(tick)
+    } else {
+      tick()
+    }
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [isPlaying, syncOffsetMs])
+
+  return (
+    <>
+      {words.map((word, wordIdx) => {
+        const isPast = nowMs >= word.endTimeMs
+        const isCurrent = nowMs >= word.startTimeMs && nowMs < word.endTimeMs
+        const progress = isCurrent
+          ? Math.max(
+              0,
+              Math.min(1, (nowMs - word.startTimeMs) / (word.endTimeMs - word.startTimeMs)),
+            )
+          : isPast
+            ? 1
+            : 0
+
+        return (
+          <span
+            key={wordIdx}
+            className="lyric-word relative mr-1.5 inline-block transition-all duration-75"
+            style={{
+              color: isPast ? '#ffffff' : isCurrent ? '#ffffff' : 'rgba(244, 241, 247, 0.45)',
+              textShadow: isCurrent
+                ? '0 0 16px rgba(124, 92, 255, 0.8), 0 0 32px rgba(124, 92, 255, 0.4)'
+                : 'none',
+            }}
+          >
+            {isCurrent && (
+              <span
+                className="absolute inset-0 overflow-hidden font-bold text-[#ffffff]"
+                style={{
+                  clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
+                  textShadow: '0 0 12px #7c5cff',
+                }}
+              >
+                {word.text}
+              </span>
+            )}
+            {word.text}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+interface LyricLineRowProps {
+  line: LyricLine
+  idx: number
+  isActive: boolean
+  isPast: boolean
+  isPlaying: boolean
+  syncOffsetMs: number
+  onClick: (startTimeMs: number) => void
+  setLineRef: (el: HTMLDivElement | null) => void
+}
+
+const LyricLineRow = memo(function LyricLineRow({
+  line,
+  idx: _idx,
+  isActive,
+  isPast,
+  isPlaying,
+  syncOffsetMs,
+  onClick,
+  setLineRef,
+}: LyricLineRowProps) {
+  return (
+    <div
+      ref={setLineRef}
+      onClick={() => onClick(line.startTimeMs)}
+      className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none ${
+        isActive
+          ? 'lyric-line--active origin-left scale-[1.02] bg-white/6'
+          : isPast
+            ? 'lyric-line--past opacity-55 hover:opacity-85'
+            : 'lyric-line--upcoming opacity-35 hover:opacity-75'
+      }`}
+    >
+      <p
+        className={`text-xl font-semibold tracking-tight transition-colors duration-200 md:text-2xl ${
+          isActive ? 'text-white' : 'text-[#f4f1f7]'
+        }`}
+      >
+        {line.words && line.words.length > 0 && isActive ? (
+          <ActiveWordKaraokeLine
+            words={line.words}
+            syncOffsetMs={syncOffsetMs}
+            isPlaying={isPlaying}
+          />
+        ) : (
+          line.text
+        )}
+      </p>
+
+      {line.translatedText && (
+        <p className="lyric-translation mt-1.5 text-sm font-medium tracking-normal text-[#b09cff] opacity-90 md:text-base">
+          {line.translatedText}
+        </p>
+      )}
+    </div>
+  )
+})
 
 interface LyricsViewProps {
   track: Track | null
@@ -23,7 +164,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [activeLineIndex, setActiveLineIndex] = useState<number>(-1)
-  const [currentTimeMs, setCurrentTimeMs] = useState<number>(0)
+  const activeLineIndexRef = useRef<number>(-1)
   // Sync offset (ms) shifts when lyric lines are matched against playback; persisted per track.
   const [syncOffsetMs, setSyncOffsetMs] = useState<number>(0)
 
@@ -71,6 +212,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
 
     setIsLoading(true)
     setLyricsData(null)
+    activeLineIndexRef.current = -1
     setActiveLineIndex(-1)
     setLoadError(false)
     setIsTranslated(false)
@@ -123,27 +265,13 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     const syncTick = () => {
       const currentSeconds = engine.getCurrentTime()
       const ms = Math.max(0, currentSeconds * 1000)
-      setCurrentTimeMs(ms)
 
       if (lyricsData?.lines && lyricsData.lines.length > 0) {
-        const lines = lyricsData.lines
-        let matchedIdx = -1
+        const adjustedMs = ms - syncOffsetMs
+        const matchedIdx = findActiveLineIndex(lyricsData.lines, adjustedMs)
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i]!
-          const nextLine = lines[i + 1]
-          const lineEnd =
-            line.endTimeMs ?? (nextLine ? nextLine.startTimeMs : line.startTimeMs + 4000)
-
-          if (ms >= line.startTimeMs + syncOffsetMs && ms < lineEnd + syncOffsetMs) {
-            matchedIdx = i
-            break
-          } else if (ms >= line.startTimeMs + syncOffsetMs) {
-            matchedIdx = i
-          }
-        }
-
-        if (matchedIdx !== -1) {
+        if (matchedIdx !== -1 && matchedIdx !== activeLineIndexRef.current) {
+          activeLineIndexRef.current = matchedIdx
           setActiveLineIndex(matchedIdx)
         }
       }
@@ -241,83 +369,6 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     } finally {
       setIsTranslating(false)
     }
-  }
-
-  const renderWord = (word: LyricWord, wordIdx: number) => {
-    const isPast = currentTimeMs >= word.endTimeMs
-    const isCurrent = currentTimeMs >= word.startTimeMs && currentTimeMs < word.endTimeMs
-    const progress = isCurrent
-      ? Math.max(
-          0,
-          Math.min(1, (currentTimeMs - word.startTimeMs) / (word.endTimeMs - word.startTimeMs)),
-        )
-      : isPast
-        ? 1
-        : 0
-
-    return (
-      <span
-        key={wordIdx}
-        className="lyric-word relative mr-1.5 inline-block transition-all duration-75"
-        style={{
-          color: isPast ? '#ffffff' : isCurrent ? '#ffffff' : 'rgba(244, 241, 247, 0.45)',
-          textShadow: isCurrent
-            ? '0 0 16px rgba(124, 92, 255, 0.8), 0 0 32px rgba(124, 92, 255, 0.4)'
-            : 'none',
-        }}
-      >
-        {isCurrent && (
-          <span
-            className="absolute inset-0 overflow-hidden font-bold text-[#ffffff]"
-            style={{
-              clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
-              textShadow: '0 0 12px #7c5cff',
-            }}
-          >
-            {word.text}
-          </span>
-        )}
-        {word.text}
-      </span>
-    )
-  }
-
-  const renderLine = (line: LyricLine, idx: number) => {
-    const isActive = idx === activeLineIndex
-    const isPast = idx < activeLineIndex
-
-    return (
-      <div
-        key={idx}
-        ref={(el) => {
-          lineRefs.current[idx] = el
-        }}
-        onClick={() => handleLineClick(line.startTimeMs)}
-        className={`lyric-line group cursor-pointer rounded-xl px-4 py-3.5 transition-all duration-300 select-none ${
-          isActive
-            ? 'lyric-line--active origin-left scale-[1.02] bg-white/6'
-            : isPast
-              ? 'lyric-line--past opacity-55 hover:opacity-85'
-              : 'lyric-line--upcoming opacity-35 hover:opacity-75'
-        }`}
-      >
-        <p
-          className={`text-xl font-semibold tracking-tight transition-colors duration-200 md:text-2xl ${
-            isActive ? 'text-white' : 'text-[#f4f1f7]'
-          }`}
-        >
-          {line.words && line.words.length > 0 && isActive
-            ? line.words.map((w, wIdx) => renderWord(w, wIdx))
-            : line.text}
-        </p>
-
-        {line.translatedText && (
-          <p className="lyric-translation mt-1.5 text-sm font-medium tracking-normal text-[#b09cff] opacity-90 md:text-base">
-            {line.translatedText}
-          </p>
-        )}
-      </div>
-    )
   }
 
   return (
@@ -445,7 +496,21 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
           </div>
         ) : lyricsData && lyricsData.lines.length > 0 ? (
           <div className="mx-auto flex max-w-2xl flex-col gap-2 py-8">
-            {lyricsData.lines.map((line, idx) => renderLine(line, idx))}
+            {lyricsData.lines.map((line, idx) => (
+              <LyricLineRow
+                key={idx}
+                line={line}
+                idx={idx}
+                isActive={idx === activeLineIndex}
+                isPast={idx < activeLineIndex}
+                isPlaying={isPlaying}
+                syncOffsetMs={syncOffsetMs}
+                onClick={handleLineClick}
+                setLineRef={(el) => {
+                  lineRefs.current[idx] = el
+                }}
+              />
+            ))}
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-[#918a98]">
