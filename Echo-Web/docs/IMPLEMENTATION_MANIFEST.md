@@ -145,7 +145,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-023 | Echo Brain auto-injection | Completed | 6703a0c0 | Yes (verified on origin/main) |
 | FEATURE-024 | Taste Mix | Completed | dde57c68 | Yes (verified on origin/main) |
 | FEATURE-025 | Spotify recommendation bridge | Completed | 9dbeb56e | Yes (verified on origin/main) |
-| FEATURE-026 | Charts and regional charts | Pending | - | - |
+| FEATURE-026 | Charts and regional charts | Completed | af7badc0 | Yes (verified on origin/main) |
 | FEATURE-027 | Mood and genre browsing | Pending | - | - |
 | FEATURE-028 | Shorts filtering | Pending | - | - |
 | FEATURE-029 | Video-song filtering | Pending | - | - |
