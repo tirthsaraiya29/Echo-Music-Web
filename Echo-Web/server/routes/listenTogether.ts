@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 
 export const listenTogetherRouter = new Hono()
 
-interface RoomMember {
+export interface RoomMember {
   id: string
   name: string
   isHost: boolean
@@ -13,7 +13,7 @@ interface RoomMember {
   token: string
 }
 
-interface RoomState {
+export interface RoomState {
   code: string
   hostId: string
   createdAt: number
@@ -25,7 +25,55 @@ interface RoomState {
   logs: Array<{ id: string; time: number; message: string }>
 }
 
-const activeRooms = new Map<string, RoomState>()
+export interface RoomStore {
+  get(code: string): Promise<RoomState | undefined> | RoomState | undefined
+  set(code: string, room: RoomState): Promise<void> | void
+  delete(code: string): Promise<boolean> | boolean
+  has(code: string): Promise<boolean> | boolean
+  cleanup(staleThresholdMs: number): Promise<number> | number
+}
+
+export class MemoryRoomStore implements RoomStore {
+  private rooms = new Map<string, RoomState>()
+
+  get(code: string): RoomState | undefined {
+    return this.rooms.get(code)
+  }
+
+  set(code: string, room: RoomState): void {
+    this.rooms.set(code, room)
+  }
+
+  delete(code: string): boolean {
+    return this.rooms.delete(code)
+  }
+
+  has(code: string): boolean {
+    return this.rooms.has(code)
+  }
+
+  cleanup(staleThresholdMs: number): number {
+    const now = Date.now()
+    let pruned = 0
+    for (const [code, room] of this.rooms.entries()) {
+      if (now - room.lastUpdatedServerTime > staleThresholdMs) {
+        this.rooms.delete(code)
+        pruned++
+      }
+    }
+    return pruned
+  }
+}
+
+let globalRoomStore: RoomStore = new MemoryRoomStore()
+
+export function getRoomStore(): RoomStore {
+  return globalRoomStore
+}
+
+export function setRoomStore(store: RoomStore): void {
+  globalRoomStore = store
+}
 
 // Simple fixed-window rate limiting per IP to blunt code guessing and sync spam
 const joinAttemptsByIp = new Map<string, { windowStart: number; count: number }>()
@@ -50,13 +98,8 @@ function isJoinRateLimited(ip: string): boolean {
 
 // Cleanup stale rooms every 5 minutes
 const cleanupTimer = setInterval(
-  () => {
-    const now = Date.now()
-    for (const [code, room] of activeRooms.entries()) {
-      if (now - room.lastUpdatedServerTime > 30 * 60 * 1000) {
-        activeRooms.delete(code)
-      }
-    }
+  async () => {
+    await globalRoomStore.cleanup(30 * 60 * 1000)
   },
   5 * 60 * 1000,
 )
@@ -79,7 +122,7 @@ function generateRoomCode(): string {
 }
 
 // Public room view: never exposes hostId or member tokens
-function publicRoomView(room: RoomState, positionSeconds: number) {
+export function publicRoomView(room: RoomState, positionSeconds: number) {
   return {
     code: room.code,
     isPlaying: room.isPlaying,
@@ -105,7 +148,7 @@ listenTogetherRouter.post('/create', async (c) => {
   const hostName = body.hostName || 'Host'
 
   let code = generateRoomCode()
-  while (activeRooms.has(code)) {
+  while (await globalRoomStore.has(code)) {
     code = generateRoomCode()
   }
 
@@ -133,7 +176,7 @@ listenTogetherRouter.post('/create', async (c) => {
     logs: [{ id: `log_${Date.now()}`, time: Date.now(), message: `Room created by ${hostName}` }],
   }
 
-  activeRooms.set(code, room)
+  await globalRoomStore.set(code, room)
 
   return c.json({
     code,
@@ -158,7 +201,7 @@ listenTogetherRouter.post('/join', async (c) => {
     userName?: string
   }
   const code = (body.code || '').trim().toUpperCase()
-  const room = activeRooms.get(code)
+  const room = await globalRoomStore.get(code)
 
   if (!room) {
     return c.json({ error: 'Room not found or expired' }, 404)
@@ -191,6 +234,8 @@ listenTogetherRouter.post('/join', async (c) => {
   const elapsed = room.isPlaying ? (Date.now() - room.lastUpdatedServerTime) / 1000 : 0
   const estimatedPosition = room.playbackPositionSeconds + elapsed
 
+  await globalRoomStore.set(code, room)
+
   return c.json({
     code: room.code,
     userId,
@@ -214,7 +259,7 @@ listenTogetherRouter.post('/sync', async (c) => {
   }
 
   const code = (body.code || '').trim().toUpperCase()
-  const room = activeRooms.get(code)
+  const room = await globalRoomStore.get(code)
 
   if (!room) {
     return c.json({ error: 'Room not found' }, 404)
@@ -240,6 +285,7 @@ listenTogetherRouter.post('/sync', async (c) => {
       time: Date.now(),
       message: `${member.name} left the room`,
     })
+    await globalRoomStore.set(code, room)
     return c.json({ status: 'left' })
   }
 
@@ -268,6 +314,8 @@ listenTogetherRouter.post('/sync', async (c) => {
       room.members.delete(id)
     }
   }
+
+  await globalRoomStore.set(code, room)
 
   return c.json(publicRoomView(room, estimatedPosition))
 })

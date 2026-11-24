@@ -246,7 +246,7 @@ The following capabilities are implemented and operational in Echo Web.
 - Last.fm scrobbling and now-playing status updates.
 - Discord Rich Presence: local desktop IPC activity showing the current song.
 - Google Cast: stream audio to Chromecast and Cast-enabled speakers.
-- Listen Together: real-time synchronized listening rooms over WebSockets.
+- Listen Together: synchronized listening rooms via drift-compensated HTTP sync and local BroadcastChannel tab sharing with pluggable multi-instance room storage.
 - Spotify playlist importer: resolve and match tracks against YouTube Music with abort support.
 - Echo Find: in-browser audio recording with optional upstream provider proxying.
 

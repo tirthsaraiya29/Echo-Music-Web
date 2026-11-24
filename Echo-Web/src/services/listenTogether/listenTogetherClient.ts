@@ -1,4 +1,5 @@
-import type { Track } from '../../types/domain'
+import type { Track } from '../../types/domain.ts'
+import { buildApiUrl } from '../api.ts'
 
 export interface RoomParticipant {
   id: string
@@ -84,7 +85,7 @@ export class ListenTogetherClient {
   public async createRoom(hostName = 'Host'): Promise<SynchronizedRoomState> {
     this.leaveRoom()
 
-    const res = await fetch('/api/listen-together/create', {
+    const res = await fetch(buildApiUrl('/api/listen-together/create'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hostName }),
@@ -131,7 +132,7 @@ export class ListenTogetherClient {
 
     const cleanCode = code.trim().toUpperCase()
 
-    const res = await fetch('/api/listen-together/join', {
+    const res = await fetch(buildApiUrl('/api/listen-together/join'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: cleanCode, userName }),
@@ -183,7 +184,7 @@ export class ListenTogetherClient {
 
     if (this.state) {
       // Fire and forget leave
-      fetch('/api/listen-together/sync', {
+      fetch(buildApiUrl('/api/listen-together/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,7 +253,7 @@ export class ListenTogetherClient {
     if (!this.state) return
 
     try {
-      const res = await fetch('/api/listen-together/sync', {
+      const res = await fetch(buildApiUrl('/api/listen-together/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
