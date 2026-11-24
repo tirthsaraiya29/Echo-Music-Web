@@ -32,6 +32,7 @@ export interface RoomStore {
   set(code: string, room: RoomState): Promise<void> | void
   delete(code: string): Promise<boolean> | boolean
   has(code: string): Promise<boolean> | boolean
+  size(): Promise<number> | number
   cleanup(staleThresholdMs: number): Promise<number> | number
 }
 
@@ -52,6 +53,10 @@ export class MemoryRoomStore implements RoomStore {
 
   has(code: string): boolean {
     return this.rooms.has(code)
+  }
+
+  size(): number {
+    return this.rooms.size
   }
 
   cleanup(staleThresholdMs: number): number {
@@ -104,6 +109,31 @@ export function isJoinRateLimited(ip: string): boolean {
 
 export function resetJoinRateLimits(): void {
   joinAttemptsByIp.clear()
+}
+
+// Fixed-window rate limiting per IP for room creation to prevent resource exhaustion
+const createAttemptsByIp = new Map<string, { windowStart: number; count: number }>()
+const CREATE_LIMIT_PER_WINDOW = 10
+const CREATE_WINDOW_MS = 10 * 60 * 1000
+
+export function isCreateRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = createAttemptsByIp.get(ip)
+  if (!entry || now - entry.windowStart > CREATE_WINDOW_MS) {
+    createAttemptsByIp.set(ip, { windowStart: now, count: 1 })
+    if (createAttemptsByIp.size > 10000) {
+      for (const [key, value] of createAttemptsByIp.entries()) {
+        if (now - value.windowStart > CREATE_WINDOW_MS) createAttemptsByIp.delete(key)
+      }
+    }
+    return false
+  }
+  entry.count++
+  return entry.count > CREATE_LIMIT_PER_WINDOW
+}
+
+export function resetCreateRateLimits(): void {
+  createAttemptsByIp.clear()
 }
 
 /**
@@ -180,6 +210,76 @@ export function generateRoomCode(): string {
 }
 
 // Public room view: never exposes hostId or member tokens
+export const MAX_GLOBAL_ROOMS = 1000
+export const MAX_ROOM_MEMBERS = 50
+export const MAX_ROOM_LOGS = 50
+export const MAX_NAME_LENGTH = 32
+export const MAX_TRACK_STRING_LENGTH = 256
+export const MAX_TRACK_URL_LENGTH = 1024
+export const MAX_PLAYBACK_POSITION_SECONDS = 86400 // 24 hours
+
+export function appendRoomLog(room: RoomState, message: string): void {
+  const cleanMessage = (message || '').trim().slice(0, 120)
+  room.logs.push({
+    id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    time: Date.now(),
+    message: cleanMessage,
+  })
+  if (room.logs.length > MAX_ROOM_LOGS) {
+    room.logs.splice(0, room.logs.length - MAX_ROOM_LOGS)
+  }
+}
+
+export function sanitizeName(raw: unknown, defaultName: string): string {
+  if (typeof raw !== 'string') return defaultName
+  const trimmed = raw.trim()
+  if (!trimmed) return defaultName
+  return trimmed.slice(0, MAX_NAME_LENGTH)
+}
+
+export function sanitizeTrackPayload(raw: unknown): Record<string, unknown> | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  const obj = raw as Record<string, unknown>
+  const id = typeof obj['id'] === 'string' ? obj['id'].trim().slice(0, 128) : ''
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim().slice(0, MAX_TRACK_STRING_LENGTH) : ''
+  const artist = typeof obj['artist'] === 'string' ? obj['artist'].trim().slice(0, MAX_TRACK_STRING_LENGTH) : ''
+  const album = typeof obj['album'] === 'string' ? obj['album'].trim().slice(0, MAX_TRACK_STRING_LENGTH) : undefined
+  const artwork = typeof obj['artwork'] === 'string' ? obj['artwork'].trim().slice(0, MAX_TRACK_URL_LENGTH) : undefined
+  const artworkUrl = typeof obj['artworkUrl'] === 'string' ? obj['artworkUrl'].trim().slice(0, MAX_TRACK_URL_LENGTH) : artwork
+
+  let durationMs: number | undefined
+  if (typeof obj['durationMs'] === 'number' && Number.isFinite(obj['durationMs'])) {
+    durationMs = Math.max(0, Math.min(obj['durationMs'], 86400000))
+  } else if (typeof obj['duration'] === 'number' && Number.isFinite(obj['duration'])) {
+    durationMs = Math.max(0, Math.min(obj['duration'] * 1000, 86400000))
+  }
+
+  // At least id or title must be non-empty for a valid track payload
+  if (!id && !title) return null
+
+  const sanitized: Record<string, unknown> = {
+    id: id || `track_${Date.now()}`,
+    title: title || 'Unknown Title',
+    artist: artist || 'Unknown Artist',
+  }
+  if (album) sanitized['album'] = album
+  if (artworkUrl) {
+    sanitized['artwork'] = artworkUrl
+    sanitized['artworkUrl'] = artworkUrl
+  }
+  if (durationMs !== undefined) {
+    sanitized['durationMs'] = durationMs
+    sanitized['duration'] = Math.round(durationMs / 1000)
+  }
+  if (typeof obj['source'] === 'string') sanitized['source'] = obj['source'].slice(0, 64)
+  if (typeof obj['isExplicit'] === 'boolean') sanitized['isExplicit'] = obj['isExplicit']
+  if (typeof obj['uri'] === 'string') sanitized['uri'] = obj['uri'].slice(0, MAX_TRACK_URL_LENGTH)
+
+  return sanitized
+}
+
+// Public room view: never exposes hostId or member tokens
 export function publicRoomView(room: RoomState, positionSeconds: number) {
   return {
     code: room.code,
@@ -198,16 +298,35 @@ export function publicRoomView(room: RoomState, positionSeconds: number) {
 
 // Create a new listening room
 listenTogetherRouter.post('/create', async (c) => {
+  const ip = getClientIp(c)
+  if (isCreateRateLimited(ip)) {
+    return c.json({ error: 'Too many room creations. Try again later.' }, 429)
+  }
+
+  const currentRooms = await globalRoomStore.size()
+  if (currentRooms >= MAX_GLOBAL_ROOMS) {
+    await globalRoomStore.cleanup(5 * 60 * 1000)
+    const afterCleanup = await globalRoomStore.size()
+    if (afterCleanup >= MAX_GLOBAL_ROOMS) {
+      return c.json({ error: 'Server room capacity reached. Please try again later.' }, 503)
+    }
+  }
+
   const body = (await c.req.json().catch(() => ({}))) as {
     hostName?: string
   }
   const hostId = `host_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   const hostToken = randomUUID()
-  const hostName = body.hostName || 'Host'
+  const hostName = sanitizeName(body.hostName, 'Host')
 
   let code = generateRoomCode()
+  let attempts = 0
   while (await globalRoomStore.has(code)) {
     code = generateRoomCode()
+    attempts++
+    if (attempts > 50) {
+      return c.json({ error: 'Failed to allocate unique room code' }, 503)
+    }
   }
 
   const room: RoomState = {
@@ -232,8 +351,9 @@ listenTogetherRouter.post('/create', async (c) => {
         },
       ],
     ]),
-    logs: [{ id: `log_${Date.now()}`, time: Date.now(), message: `Room created by ${hostName}` }],
+    logs: [],
   }
+  appendRoomLog(room, `Room created by ${hostName}`)
 
   await globalRoomStore.set(code, room)
 
@@ -265,13 +385,13 @@ listenTogetherRouter.post('/join', async (c) => {
   if (!room) {
     return c.json({ error: 'Room not found or expired' }, 404)
   }
-  if (room.members.size >= 50) {
+  if (room.members.size >= MAX_ROOM_MEMBERS) {
     return c.json({ error: 'Room is full' }, 409)
   }
 
   const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   const userToken = randomUUID()
-  const userName = body.userName || 'Guest'
+  const userName = sanitizeName(body.userName, 'Guest')
 
   const member: RoomMember = {
     id: userId,
@@ -284,11 +404,7 @@ listenTogetherRouter.post('/join', async (c) => {
 
   room.members.set(userId, member)
   room.lastActiveServerTime = Date.now()
-  room.logs.push({
-    id: `log_${Date.now()}`,
-    time: Date.now(),
-    message: `${userName} joined the room`,
-  })
+  appendRoomLog(room, `${userName} joined the room`)
 
   // Estimate current position if playing
   const elapsed = room.isPlaying ? (Date.now() - room.lastUpdatedServerTime) / 1000 : 0
@@ -344,11 +460,7 @@ listenTogetherRouter.post('/sync', async (c) => {
 
   if (body.action === 'leave') {
     room.members.delete(userId)
-    room.logs.push({
-      id: `log_${Date.now()}`,
-      time: Date.now(),
-      message: `${member.name} left the room`,
-    })
+    appendRoomLog(room, `${member.name} left the room`)
     await globalRoomStore.set(code, room)
     return c.json({ status: 'left' })
   }
@@ -356,13 +468,13 @@ listenTogetherRouter.post('/sync', async (c) => {
   // Only the authenticated host can push playback state
   if (userId === room.hostId && body.action === 'update_state') {
     if (body.track !== undefined) {
-      room.track = body.track
+      room.track = sanitizeTrackPayload(body.track)
     }
     if (typeof body.isPlaying === 'boolean') {
       room.isPlaying = body.isPlaying
     }
-    if (typeof body.playbackPositionSeconds === 'number') {
-      room.playbackPositionSeconds = body.playbackPositionSeconds
+    if (typeof body.playbackPositionSeconds === 'number' && Number.isFinite(body.playbackPositionSeconds)) {
+      room.playbackPositionSeconds = Math.max(0, Math.min(body.playbackPositionSeconds, MAX_PLAYBACK_POSITION_SECONDS))
     }
     room.lastUpdatedServerTime = Date.now()
   }

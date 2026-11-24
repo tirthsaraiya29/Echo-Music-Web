@@ -9,7 +9,14 @@ import {
   generateRoomCode,
   isValidRoomCode,
   resetJoinRateLimits,
+  resetCreateRateLimits,
   getClientIp,
+  MAX_ROOM_LOGS,
+  MAX_ROOM_MEMBERS,
+  MAX_GLOBAL_ROOMS,
+  appendRoomLog,
+  sanitizeTrackPayload,
+  sanitizeName,
 } from '../server/routes/listenTogether.ts'
 
 describe('Listen Together Room Storage & Endpoints', () => {
@@ -247,5 +254,165 @@ describe('Listen Together Room Storage & Endpoints', () => {
       delete process.env['TRUST_PROXY']
       resetJoinRateLimits()
     }
+  })
+
+  it('enforces room resource limits, log caps, and payload validation [BUG-34]', async () => {
+    // 1. appendRoomLog cap enforcement
+    const testRoom = {
+      code: 'CAPLOG',
+      hostId: 'host_1',
+      createdAt: Date.now(),
+      track: null,
+      isPlaying: false,
+      playbackPositionSeconds: 0,
+      lastUpdatedServerTime: Date.now(),
+      lastActiveServerTime: Date.now(),
+      members: new Map(),
+      logs: [],
+    }
+
+    assert.strictEqual(MAX_ROOM_LOGS, 50)
+    for (let i = 0; i < 75; i++) {
+      appendRoomLog(testRoom, `Log entry #${i}`)
+    }
+    assert.strictEqual(testRoom.logs.length, 50, 'Room logs must be capped at MAX_ROOM_LOGS (50)')
+    assert.strictEqual(testRoom.logs[0]?.message, 'Log entry #25', 'Oldest 25 logs must be pruned')
+    assert.strictEqual(testRoom.logs[49]?.message, 'Log entry #74', 'Latest log must be retained at end')
+
+    // 2. sanitizeName limits length to 32 chars
+    assert.strictEqual(sanitizeName('   Alice   ', 'Guest'), 'Alice')
+    assert.strictEqual(sanitizeName('', 'Guest'), 'Guest')
+    assert.strictEqual(sanitizeName(null, 'Host'), 'Host')
+    const longName = 'A'.repeat(100)
+    assert.strictEqual(sanitizeName(longName, 'Guest').length, 32)
+
+    // 3. sanitizeTrackPayload validation
+    assert.strictEqual(sanitizeTrackPayload(null), null)
+    assert.strictEqual(sanitizeTrackPayload(undefined), null)
+    assert.strictEqual(sanitizeTrackPayload('invalid string'), null)
+    assert.strictEqual(sanitizeTrackPayload({}), null) // No id and no title
+
+    const oversizedTrack = {
+      id: 'song_123',
+      title: 'T'.repeat(500),
+      artist: 'A'.repeat(500),
+      album: 'Alb'.repeat(200),
+      artworkUrl: 'https://example.com/' + 'x'.repeat(2000),
+      durationMs: 999999999, // > 24 hours
+      extraUnknown: 'preserved',
+    }
+    const cleanTrack = sanitizeTrackPayload(oversizedTrack)
+    assert.ok(cleanTrack)
+    assert.strictEqual(cleanTrack['id'], 'song_123')
+    assert.strictEqual((cleanTrack['title'] as string).length, 256)
+    assert.strictEqual((cleanTrack['artist'] as string).length, 256)
+    assert.strictEqual((cleanTrack['album'] as string).length, 256)
+    assert.strictEqual((cleanTrack['artworkUrl'] as string).length, 1024)
+    assert.strictEqual(cleanTrack['durationMs'], 86400000, 'Clamped to 24 hours max')
+
+    // 4. Create rate limiting per IP
+    resetCreateRateLimits()
+    for (let i = 0; i < 10; i++) {
+      const createReq = new Request('http://localhost/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostName: 'RateLimitHost' }),
+      })
+      const res = await listenTogetherRouter.fetch(createReq)
+      assert.strictEqual(res.status, 200, `Create ${i + 1} should succeed`)
+    }
+    const blockedCreateReq = new Request('http://localhost/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostName: 'RateLimitHost' }),
+    })
+    const blockedCreateRes = await listenTogetherRouter.fetch(blockedCreateReq)
+    assert.strictEqual(blockedCreateRes.status, 429, '11th creation attempt from same IP must return 429')
+    resetCreateRateLimits()
+
+    // 5. Global room capacity limit
+    const capacityStore = new MemoryRoomStore()
+    setRoomStore(capacityStore)
+    assert.strictEqual(capacityStore.size(), 0)
+
+    // Fill capacity store up to MAX_GLOBAL_ROOMS
+    for (let i = 0; i < MAX_GLOBAL_ROOMS; i++) {
+      capacityStore.set(`RM${i.toString().padStart(4, '0')}`, {
+        code: `RM${i.toString().padStart(4, '0')}`,
+        hostId: 'host_active',
+        createdAt: Date.now(),
+        track: null,
+        isPlaying: true,
+        playbackPositionSeconds: 10,
+        lastUpdatedServerTime: Date.now(),
+        lastActiveServerTime: Date.now(), // Active, will not be pruned by cleanup
+        members: new Map([['host_active', { id: 'host_active', name: 'Host', isHost: true, lastSeen: Date.now(), isBuffering: false, token: 't' }]]),
+        logs: [],
+      })
+    }
+    assert.strictEqual(capacityStore.size(), MAX_GLOBAL_ROOMS)
+
+    const overCapacityReq = new Request('http://localhost/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostName: 'OverCapacity' }),
+    })
+    const overCapacityRes = await listenTogetherRouter.fetch(overCapacityReq)
+    assert.strictEqual(overCapacityRes.status, 503, 'Must reject with 503 when server reaches MAX_GLOBAL_ROOMS')
+
+    // 6. Max room members cap (409)
+    const singleRoomStore = new MemoryRoomStore()
+    setRoomStore(singleRoomStore)
+    const fullRoomCode = 'FULLRM'
+    const fullRoomMembers = new Map()
+    for (let i = 0; i < MAX_ROOM_MEMBERS; i++) {
+      fullRoomMembers.set(`user_${i}`, {
+        id: `user_${i}`,
+        name: `User ${i}`,
+        isHost: i === 0,
+        lastSeen: Date.now(),
+        isBuffering: false,
+        token: `tok_${i}`,
+      })
+    }
+    singleRoomStore.set(fullRoomCode, {
+      code: fullRoomCode,
+      hostId: 'user_0',
+      createdAt: Date.now(),
+      track: null,
+      isPlaying: false,
+      playbackPositionSeconds: 0,
+      lastUpdatedServerTime: Date.now(),
+      lastActiveServerTime: Date.now(),
+      members: fullRoomMembers,
+      logs: [],
+    })
+
+    const joinFullReq = new Request('http://localhost/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: fullRoomCode, userName: '51stMember' }),
+    })
+    const joinFullRes = await listenTogetherRouter.fetch(joinFullReq)
+    assert.strictEqual(joinFullRes.status, 409, 'Must reject join with 409 when room has 50 members')
+
+    // 7. Sync sanitizes track and clamps position
+    const syncReq = new Request('http://localhost/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: fullRoomCode,
+        userId: 'user_0',
+        token: 'tok_0',
+        action: 'update_state',
+        track: oversizedTrack,
+        playbackPositionSeconds: 999999, // Exceeds 86400
+      }),
+    })
+    const syncRes = await listenTogetherRouter.fetch(syncReq)
+    assert.strictEqual(syncRes.status, 200)
+    const syncData = (await syncRes.json()) as { playbackPositionSeconds: number; track: Record<string, unknown> }
+    assert.strictEqual(syncData.playbackPositionSeconds, 86400, 'Position clamped to 86400s max')
+    assert.strictEqual((syncData.track['title'] as string).length, 256, 'Track title sanitized/capped')
   })
 })
