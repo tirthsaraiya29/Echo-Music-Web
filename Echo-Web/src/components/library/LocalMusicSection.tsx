@@ -3,9 +3,8 @@ import { FolderPlus, HardDrive, Play, Plus, Trash2, Music } from 'lucide-react'
 import {
   getAllLocalTracks,
   importLocalFiles,
-  revokeLocalArtwork,
+  deleteLocalTrack,
 } from '../../services/local/localMusicScanner'
-import { db } from '../../services/db/echoDatabase'
 import { useEchoStore } from '../../stores/useEchoStore'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
 import { formatDuration } from '../../utils/format'
@@ -74,8 +73,7 @@ export function LocalMusicSection() {
   }
 
   const handleDeleteLocalTrack = async (id: string, title: string) => {
-    revokeLocalArtwork(id)
-    await db.localFiles.delete(id)
+    await deleteLocalTrack(id)
     setToast(`Removed "${title}" from local library`)
     await loadTracks()
   }
@@ -137,7 +135,10 @@ export function LocalMusicSection() {
 
       {/* Progress Card during scanning */}
       {scanProgress && (
-        <div className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/4 p-4">
+        <div
+          className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/4 p-4"
+          aria-live="polite"
+        >
           <div className="flex justify-between text-xs text-[#a59fad]">
             <span className="max-w-sm truncate">Scanning: {scanProgress.name}</span>
             <span className="font-mono">
@@ -206,6 +207,7 @@ export function LocalMusicSection() {
                     onClick={() => play(track)}
                     className="hidden h-6 w-6 items-center justify-center rounded-full bg-[#7c5cff] text-black transition-transform group-hover:flex hover:scale-105"
                     title="Play track"
+                    aria-label={`Play ${track.title}`}
                   >
                     <Play size={12} fill="currentColor" className="ml-0.5" />
                   </button>
@@ -229,6 +231,7 @@ export function LocalMusicSection() {
                     onClick={() => addToQueue(track)}
                     className="rounded-lg bg-white/2 p-1.5 text-[#a59fad] transition-colors hover:bg-white/6 hover:text-white"
                     title="Add to Up Next"
+                    aria-label={`Add ${track.title} to up next`}
                   >
                     <Plus size={15} />
                   </button>
@@ -237,6 +240,7 @@ export function LocalMusicSection() {
                     onClick={() => handleDeleteLocalTrack(track.id, track.title)}
                     className="rounded-lg bg-white/2 p-1.5 text-[#a59fad] transition-colors hover:bg-white/6 hover:text-red-400"
                     title="Remove from Local Library"
+                    aria-label={`Remove ${track.title} from local library`}
                   >
                     <Trash2 size={15} />
                   </button>

@@ -1,8 +1,56 @@
+import { z } from 'zod'
 import { db, type LocalFileRecord } from '../db/echoDatabase.ts'
 import type { Track } from '../../types/domain'
 import { getLocalArtworkUrl, revokeLocalArtwork } from './objectUrlRegistry.ts'
 
 export { getLocalArtworkUrl, revokeLocalArtwork }
+
+export const localFileInputSchema = z.object({
+  fileName: z.string().min(1),
+  fileSize: z.number().int().nonnegative().max(1024 * 1024 * 500),
+  mimeType: z.string().optional(),
+})
+
+export const localFileRecordSchema = z.object({
+  id: z.string().min(1),
+  fileName: z.string().min(1),
+  title: z.string().min(1),
+  artist: z.string().min(1),
+  album: z.string().min(1),
+  durationSeconds: z.number().nonnegative(),
+  year: z.string().optional(),
+  genre: z.string().optional(),
+  mimeType: z.string(),
+  addedAt: z.number().positive(),
+  fileSize: z.number().nonnegative(),
+})
+
+export const localMusicMetricsSchema = z.object({
+  filesImported: z.number().nonnegative(),
+  filesRejected: z.number().nonnegative(),
+  filesDeleted: z.number().nonnegative(),
+  lastError: z.string().nullable(),
+})
+
+export type LocalMusicMetrics = z.infer<typeof localMusicMetricsSchema>
+
+const localMusicMetrics: LocalMusicMetrics = {
+  filesImported: 0,
+  filesRejected: 0,
+  filesDeleted: 0,
+  lastError: null,
+}
+
+export function getLocalMusicMetrics(): LocalMusicMetrics {
+  return { ...localMusicMetrics }
+}
+
+export function resetLocalMusicMetrics(): void {
+  localMusicMetrics.filesImported = 0
+  localMusicMetrics.filesRejected = 0
+  localMusicMetrics.filesDeleted = 0
+  localMusicMetrics.lastError = null
+}
 
 export interface ParsedAudioMeta {
   title: string
@@ -497,8 +545,36 @@ export function getAudioDuration(file: File): Promise<number> {
   })
 }
 
-export async function importLocalFile(file: File): Promise<LocalFileRecord> {
+export async function importLocalFile(
+  file: File,
+  options?: { signal?: AbortSignal },
+): Promise<LocalFileRecord> {
+  if (options?.signal?.aborted) {
+    localMusicMetrics.filesRejected++
+    localMusicMetrics.lastError = 'Import cancelled'
+    throw new Error('Import cancelled')
+  }
+
+  const validation = localFileInputSchema.safeParse({
+    fileName: file.name,
+    fileSize: file.size,
+    mimeType: file.type,
+  })
+
+  if (!validation.success) {
+    localMusicMetrics.filesRejected++
+    const msg = validation.error.issues[0]?.message || 'Invalid audio file'
+    localMusicMetrics.lastError = msg
+    throw new Error(msg)
+  }
+
   const meta = await parseAudioMetadata(file)
+  if (options?.signal?.aborted) {
+    localMusicMetrics.filesRejected++
+    localMusicMetrics.lastError = 'Import cancelled'
+    throw new Error('Import cancelled')
+  }
+
   const durationSeconds = await getAudioDuration(file)
   const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
@@ -518,13 +594,18 @@ export async function importLocalFile(file: File): Promise<LocalFileRecord> {
     fileSize: file.size,
   }
 
-  await db.localFiles.put(record)
+  if (typeof indexedDB !== 'undefined') {
+    await db.localFiles.put(record)
+  }
+
+  localMusicMetrics.filesImported++
   return record
 }
 
 export async function importLocalFiles(
   files: FileList | File[],
   onProgress?: (current: number, total: number, fileName: string) => void,
+  options?: { signal?: AbortSignal },
 ): Promise<LocalFileRecord[]> {
   const validFiles = Array.from(files).filter((f) =>
     /\.(mp3|flac|wav|ogg|m4a|aac|webm)$/i.test(f.name),
@@ -532,13 +613,31 @@ export async function importLocalFiles(
 
   const records: LocalFileRecord[] = []
   for (let i = 0; i < validFiles.length; i++) {
+    if (options?.signal?.aborted) {
+      localMusicMetrics.filesRejected += validFiles.length - i
+      localMusicMetrics.lastError = 'Batch import cancelled'
+      throw new Error('Batch import cancelled')
+    }
     const file = validFiles[i]!
     onProgress?.(i + 1, validFiles.length, file.name)
-    const rec = await importLocalFile(file)
-    records.push(rec)
+    try {
+      const rec = await importLocalFile(file, options)
+      records.push(rec)
+    } catch (err) {
+      localMusicMetrics.filesRejected++
+      localMusicMetrics.lastError = err instanceof Error ? err.message : String(err)
+    }
   }
 
   return records
+}
+
+export async function deleteLocalTrack(id: string): Promise<void> {
+  revokeLocalArtwork(id)
+  localMusicMetrics.filesDeleted++
+  if (typeof indexedDB !== 'undefined') {
+    await db.localFiles.delete(id)
+  }
 }
 
 export function localRecordToTrack(record: LocalFileRecord): Track {
@@ -565,6 +664,7 @@ export function localRecordToTrack(record: LocalFileRecord): Track {
 }
 
 export async function getAllLocalTracks(): Promise<Track[]> {
+  if (typeof indexedDB === 'undefined') return []
   const records = await db.localFiles.orderBy('addedAt').reverse().toArray()
   return records.map(localRecordToTrack)
 }
