@@ -58,6 +58,7 @@ export class AudioEngine {
   private lastPodcastSaveMs = 0
   private lastFmScrobbled = false
   private loudnessMeasured = false
+  private crossfadeRollback: (() => void) | null = null
 
   private constructor(config: Partial<AudioEngineConfig> = {}) {
     this.graph = new WebAudioGraph({
@@ -655,17 +656,38 @@ export class AudioEngine {
     }
 
     this.deckController.onCrossfadeStart = (_fromDeck: DeckId, toDeck: DeckId) => {
+      const standbyTrack = this.deckController.getStandbyTrack()
+      const { promoted, rollback } = this.queueManager.promoteStandbyTrack(standbyTrack)
+      this.crossfadeRollback = rollback
       this.queueManager.setActiveDeck(toDeck)
-      const nextTrack = this.deckController.getStandbyTrack()
-      if (nextTrack) {
-        this.mediaSession.updateTrack(nextTrack)
-        this.emit('trackChange', nextTrack)
+      const currentTrack = promoted ?? standbyTrack
+      if (currentTrack) {
+        this.mediaSession.updateTrack(currentTrack)
+        this.emit('trackChange', currentTrack)
       }
       this.emit('deckSwap', toDeck)
+      this.emit('queueChange')
+      this.emitState()
+    }
+
+    this.deckController.onCrossfadeFailed = (fromDeck: DeckId, _toDeck: DeckId, _error: Error) => {
+      if (this.crossfadeRollback) {
+        this.crossfadeRollback()
+        this.crossfadeRollback = null
+      }
+      this.queueManager.setActiveDeck(fromDeck)
+      const restoredTrack = this.queueManager.currentTrack
+      if (restoredTrack) {
+        this.mediaSession.updateTrack(restoredTrack)
+        this.emit('trackChange', restoredTrack)
+      }
+      this.emit('deckSwap', fromDeck)
+      this.emit('queueChange')
       this.emitState()
     }
 
     this.deckController.onCrossfadeComplete = (newActiveDeck: DeckId) => {
+      this.crossfadeRollback = null
       this.queueManager.setActiveDeck(newActiveDeck)
       this.emit('deckSwap', newActiveDeck)
       this.emitState()
@@ -693,6 +715,7 @@ export class AudioEngine {
   }
 
   private async loadAndPlayTrack(track: Track, autoPlay = true): Promise<void> {
+    this.crossfadeRollback = null
     const requestId = ++this.currentLoadRequestId
     this.mediaSession.updateTrack(track)
     this.emit('trackChange', track)

@@ -354,6 +354,57 @@ export class QueueManager {
     return { track: null, shouldStop: true }
   }
 
+  public promoteStandbyTrack(expectedTrack?: Track | null): {
+    promoted: Track | null
+    previousTrack: Track | null
+    rollback: () => void
+  } {
+    const savedHistory = [...this.historyList]
+    const savedActiveTrack = this.activeTrack
+    const savedActiveTrackSource = this.activeTrackSource
+    const savedUpNext = [...this.upNextList]
+    const savedCurrentSourceIndex = this.currentSourceIndex
+    const savedRadio = [...this.radioQueueList]
+    const savedShuffled = [...this.shuffledList]
+
+    const rollback = () => {
+      this.historyList = savedHistory
+      this.activeTrack = savedActiveTrack
+      this.activeTrackSource = savedActiveTrackSource
+      this.upNextList = savedUpNext
+      this.currentSourceIndex = savedCurrentSourceIndex
+      this.radioQueueList = savedRadio
+      this.shuffledList = savedShuffled
+    }
+
+    const previousTrack = this.activeTrack
+
+    // Advance queue cursor atomically
+    const { track } = this.next()
+
+    // If expectedTrack was provided and track does not match (e.g. queue was modified),
+    // ensure activeTrack matches the expected standby track if it was in upNext
+    if (expectedTrack && (!track || track.id !== expectedTrack.id)) {
+      const upNextIdx = this.upNextList.findIndex((t) => t.id === expectedTrack.id)
+      if (upNextIdx !== -1) {
+        const [found] = this.upNextList.splice(upNextIdx, 1)
+        if (found) {
+          if (this.activeTrack && !this.pauseAtEndOfItemsSetting) {
+            this.historyList.push(this.activeTrack)
+          }
+          this.activeTrack = found
+          this.activeTrackSource = 'upNext'
+        }
+      }
+    }
+
+    return {
+      promoted: this.activeTrack ? cloneTrack(this.activeTrack) : null,
+      previousTrack: previousTrack ? cloneTrack(previousTrack) : null,
+      rollback,
+    }
+  }
+
   public previous(currentTimeSeconds: number): { track: Track | null; seekToZero: boolean } {
     if (currentTimeSeconds >= 3.0 || this.historyList.length === 0) {
       return { track: this.activeTrack, seekToZero: true }

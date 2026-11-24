@@ -246,3 +246,47 @@ test('QueueManager: snapshot and restore fidelity', () => {
   assert.strictEqual(detailed.upNext.length, 1)
   assert.strictEqual(detailed.upNext[0]?.id, 'u1')
 })
+
+test('QueueManager: promoteStandbyTrack advances cursor, updates currentTrack and records history [BUG-01]', () => {
+  const qm = new QueueManager()
+  const tracks = [createMockTrack('1', 'T1'), createMockTrack('2', 'T2'), createMockTrack('3', 'T3')]
+  qm.setSourceQueue(tracks, 0)
+
+  const standby = qm.peekNext()
+  assert.strictEqual(standby?.id, '2')
+
+  const { promoted, previousTrack } = qm.promoteStandbyTrack(standby)
+  assert.strictEqual(promoted?.id, '2')
+  assert.strictEqual(previousTrack?.id, '1')
+  assert.strictEqual(qm.currentTrack?.id, '2')
+  assert.strictEqual(qm.history.length, 1)
+  assert.strictEqual(qm.history[0]?.id, '1')
+
+  // When track 2 ends, next() must advance to track 3, never re-playing track 2
+  const nextResult = qm.next()
+  assert.strictEqual(nextResult.track?.id, '3')
+  assert.strictEqual(qm.currentTrack?.id, '3')
+})
+
+test('QueueManager: promoteStandbyTrack rollback restores exact queue state if standby play fails [BUG-01]', () => {
+  const qm = new QueueManager()
+  const tracks = [createMockTrack('1', 'T1'), createMockTrack('2', 'T2')]
+  qm.setSourceQueue(tracks, 0)
+  qm.addToQueue(createMockTrack('u1', 'User Track'))
+
+  const standby = qm.peekNext()
+  assert.strictEqual(standby?.id, 'u1')
+
+  const { promoted, rollback } = qm.promoteStandbyTrack(standby)
+  assert.strictEqual(promoted?.id, 'u1')
+  assert.strictEqual(qm.currentTrack?.id, 'u1')
+  assert.strictEqual(qm.getDetailedQueue().upNext.length, 0)
+
+  // Standby failed to play -> invoke rollback
+  rollback()
+
+  assert.strictEqual(qm.currentTrack?.id, '1')
+  assert.strictEqual(qm.history.length, 0)
+  assert.strictEqual(qm.getDetailedQueue().upNext.length, 1)
+  assert.strictEqual(qm.getDetailedQueue().upNext[0]?.id, 'u1')
+})

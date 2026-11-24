@@ -36,6 +36,7 @@ export class DeckController {
   public onTrackEnded?: (endedDeckId: DeckId) => void
   public onPrebufferNeeded?: (standbyDeckId: DeckId) => void
   public onCrossfadeStart?: (fromDeck: DeckId, toDeck: DeckId) => void
+  public onCrossfadeFailed?: (fromDeck: DeckId, toDeck: DeckId, error: Error) => void
   public onCrossfadeComplete?: (newActiveDeck: DeckId) => void
   public onError?: (error: Error) => void
 
@@ -276,8 +277,10 @@ export class DeckController {
     try {
       await standbyEl.play()
     } catch (err) {
-      this.onError?.(err instanceof Error ? err : new Error(String(err)))
+      const error = err instanceof Error ? err : new Error(String(err))
+      this.onError?.(error)
       this.isCrossfading = false
+      this.onCrossfadeFailed?.(fromDeck, toDeck, error)
       return
     }
 
