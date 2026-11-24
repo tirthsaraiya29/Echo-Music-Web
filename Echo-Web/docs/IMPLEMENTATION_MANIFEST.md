@@ -163,7 +163,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-041 | Live Spotify library | Completed | 26f5cf61 | Yes |
 | FEATURE-042 | Spotify playlist detail pages | Completed | d7d5a5f9 | Yes |
 | FEATURE-043 | YouTube Music account authentication | Completed | 4d2b9a5d | Yes |
-| FEATURE-044 | Playlist cloud synchronization | Pending | - | - |
+| FEATURE-044 | Playlist cloud synchronization | Completed | fc038779 | Yes |
 | FEATURE-045 | Liked albums synchronization | Pending | - | - |
 | FEATURE-046 | Followed artists synchronization | Pending | - | - |
 | FEATURE-047 | Multi-device library sync | Pending | - | - |
