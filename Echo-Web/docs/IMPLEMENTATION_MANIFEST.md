@@ -137,7 +137,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-015 | Queue continuation paging | Completed | 235b4c97 | Yes (verified on origin/main) |
 | FEATURE-016 | Radio retry and recovery | Completed | 3228c67c | Yes (verified on origin/main) |
 | FEATURE-017 | Echo Brain momentum queue | Completed | 6fb4e976 | Yes (verified on origin/main) |
-| FEATURE-018 | Varispeed mode | Pending | - | - |
+| FEATURE-018 | Varispeed mode | Completed | ab81cc61 | Yes (verified on origin/main) |
 | FEATURE-019 | Pause on mute | Pending | - | - |
 | FEATURE-020 | Bluetooth reconnect resume | Pending | - | - |
 | FEATURE-021 | Music Flow vertical reel | Pending | - | - |
