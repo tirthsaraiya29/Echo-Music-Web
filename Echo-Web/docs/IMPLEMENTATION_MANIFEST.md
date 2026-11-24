@@ -110,7 +110,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-45 | Accessibility and keyboard navigation | 10 tasks in backlog | Completed | 58bf99f6 | Yes (verified on origin/main) |
 | SMALL-46 | Theme and design tokens | 10 tasks in backlog | Completed | 1c014ee2 | Yes (verified on origin/main) |
 | SMALL-47 | Artwork/image loading | 10 tasks in backlog | Completed | e4f701e4 | Yes (verified on origin/main) |
-| SMALL-48 | API fetch layer | 10 tasks in backlog | Pending | - | - |
+| SMALL-48 | API fetch layer | 10 tasks in backlog | Completed | 190cc973 | Yes (verified on origin/main) |
 | SMALL-49 | Production deployment | 10 tasks in backlog | Pending | - | - |
 | SMALL-50 | CORS and HTTP headers | 10 tasks in backlog | Pending | - | - |
 | SMALL-51 | Error handling and observability | 10 tasks in backlog | Pending | - | - |
