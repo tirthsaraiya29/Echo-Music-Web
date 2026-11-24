@@ -22,8 +22,22 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [copiedLink, setCopiedLink] = useState(false)
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  )
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(dialogRef, onClose, isOpen)
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
 
   const setToast = useEchoStore((state) => state.setToast)
   const { currentTrack, isPlaying, currentTime, play, pause, seekTo } = useAudioEngine()
@@ -161,8 +175,9 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
+          className="absolute top-4 right-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
           title="Close (Esc)"
+          aria-label="Close"
         >
           <X size={18} />
         </button>
@@ -178,6 +193,12 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
             </p>
           </div>
         </div>
+
+        {!isOnline && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-300">
+            You are currently offline. Synchronized playback will resume once connected.
+          </div>
+        )}
 
         {errorMsg && (
           <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
@@ -202,7 +223,7 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                 <button
                   type="button"
                   onClick={handleCopyInvite}
-                  className="flex items-center gap-1.5 rounded-lg bg-[#7c5cff]/20 px-3 py-1.5 text-xs font-semibold text-[#b09cff] transition-colors hover:bg-[#7c5cff]/30"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-[#7c5cff]/20 px-3 py-1.5 text-xs font-semibold text-[#b09cff] transition-colors hover:bg-[#7c5cff]/30 focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
                 >
                   {copiedLink ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copiedLink ? 'Copied' : 'Share Link'}</span>
@@ -210,7 +231,7 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                 <button
                   type="button"
                   onClick={handleLeaveRoom}
-                  className="flex items-center gap-1 rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25"
+                  className="flex min-h-[44px] items-center gap-1 rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25 focus:outline-none focus:ring-2 focus:ring-red-500"
                   title="Leave Room"
                 >
                   <LogOut size={14} />
@@ -221,7 +242,7 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
 
             {/* Currently Playing in Room */}
             <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/2 p-3">
-              <Disc size={20} className="shrink-0 animate-spin text-[#7c5cff]" />
+              <Disc size={20} className="shrink-0 animate-spin motion-reduce:animate-none text-[#7c5cff]" />
               <div className="min-w-0 flex-1 text-xs">
                 <span className="block text-[#a59fad]">Synchronizing:</span>
                 <span className="block truncate font-medium text-white">
@@ -272,7 +293,10 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                 <span className="mb-1 block font-mono text-[11px] tracking-wider text-[#a59fad] uppercase">
                   Room Activity
                 </span>
-                <div className="custom-scrollbar max-h-24 overflow-y-auto rounded-xl border border-white/4 bg-black/30 p-2.5 font-mono text-[11px] text-[#a59fad]">
+                <div
+                  className="custom-scrollbar max-h-24 overflow-y-auto rounded-xl border border-white/4 bg-black/30 p-2.5 font-mono text-[11px] text-[#a59fad]"
+                  aria-live="polite"
+                >
                   {roomState.logs.slice(-5).map((log) => (
                     <div key={log.id} className="py-0.5">
                       {log.message}
@@ -314,8 +338,8 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                 <button
                   type="button"
                   onClick={handleCreateRoom}
-                  disabled={isLoading}
-                  className="w-full rounded-lg bg-[#7c5cff] px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-[#6c48ff] disabled:opacity-50"
+                  disabled={isLoading || !isOnline}
+                  className="min-h-[44px] w-full rounded-lg bg-[#7c5cff] px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-[#6c48ff] focus:outline-none focus:ring-2 focus:ring-[#7c5cff] disabled:opacity-50"
                 >
                   {isLoading ? 'Creating...' : 'Create Room'}
                 </button>
@@ -343,8 +367,8 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                 <button
                   type="button"
                   onClick={handleJoinRoom}
-                  disabled={isLoading || !joinCodeInput.trim()}
-                  className="w-full rounded-lg bg-white/8 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/12 disabled:opacity-50"
+                  disabled={isLoading || !isOnline || !joinCodeInput.trim()}
+                  className="min-h-[44px] w-full rounded-lg bg-white/8 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[#7c5cff] disabled:opacity-50"
                 >
                   {isLoading ? 'Joining...' : 'Join Room'}
                 </button>

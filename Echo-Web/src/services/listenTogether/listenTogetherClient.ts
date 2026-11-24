@@ -1,19 +1,14 @@
 import type { Track } from '../../types/domain.ts'
 import { buildApiUrl } from '../api.ts'
+import {
+  createRoomInputSchema,
+  joinRoomInputSchema,
+  recordListenTogetherMetric,
+  type RoomParticipant,
+  type RoomEventLog,
+} from './listenTogetherTypes.ts'
 
-export interface RoomParticipant {
-  id: string
-  name: string
-  isHost: boolean
-  isBuffering: boolean
-  lastSeen: number
-}
-
-export interface RoomEventLog {
-  id: string
-  time: number
-  message: string
-}
+export type { RoomParticipant, RoomEventLog }
 
 export interface SynchronizedRoomState {
   code: string
@@ -30,6 +25,11 @@ export interface SynchronizedRoomState {
   revision: number
 }
 
+export interface ListenTogetherRequestOptions {
+  signal?: AbortSignal | undefined
+  timeoutMs?: number | undefined
+}
+
 type RoomListener = (state: SynchronizedRoomState) => void
 
 export class ListenTogetherClient {
@@ -42,7 +42,12 @@ export class ListenTogetherClient {
   private lastHostSyncTime = 0
   private isSyncInProgress = false
   private pendingSyncAction: ('update_state' | 'heartbeat') | null = null
+  private activeSyncController: AbortController | null = null
   private broadcastChannel: BroadcastChannel | null = null
+
+  private lastDispatchedTrackId: string | null = null
+  private lastDispatchedPlaying: boolean | null = null
+  private lastDispatchedPosition = -1
 
   private constructor() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -70,8 +75,8 @@ export class ListenTogetherClient {
     if (!this.state) return null
     return {
       ...this.state,
-      members: [...this.state.members],
-      logs: [...this.state.logs],
+      members: this.state.members.map((m) => ({ ...m })),
+      logs: this.state.logs.map((l) => ({ ...l })),
     }
   }
 
@@ -94,119 +99,186 @@ export class ListenTogetherClient {
     }
   }
 
-  public async createRoom(hostName = 'Host'): Promise<SynchronizedRoomState> {
+  public async createRoom(
+    hostName = 'Host',
+    options: ListenTogetherRequestOptions = {},
+  ): Promise<SynchronizedRoomState> {
+    const parsed = createRoomInputSchema.safeParse({ hostName })
+    if (!parsed.success) {
+      recordListenTogetherMetric('networkErrors')
+      throw new Error(parsed.error.issues[0]?.message || 'Invalid host name')
+    }
+
     this.leaveRoom()
 
-    const res = await fetch(buildApiUrl('/api/listen-together/create'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostName }),
-    })
+    const timeoutMs = options.timeoutMs ?? 6000
+    const timeoutCtrl = new AbortController()
+    const timer = setTimeout(() => timeoutCtrl.abort(), timeoutMs)
+    const combinedSignal = anySignal(
+      [options.signal, timeoutCtrl.signal].filter((s): s is AbortSignal => s !== undefined),
+    )
 
-    if (!res.ok) {
-      throw new Error(`Failed to create listening room (HTTP ${res.status})`)
-    }
+    try {
+      const res = await fetch(buildApiUrl('/api/listen-together/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostName: parsed.data.hostName }),
+        signal: combinedSignal,
+      })
+      clearTimeout(timer)
 
-    const data = (await res.json()) as {
-      code: string
-      userId: string
-      token: string
-      room: {
-        code: string
-        isPlaying: boolean
-        playbackPositionSeconds: number
-        track: Track | null
-        members: RoomParticipant[]
-        logs: RoomEventLog[]
+      if (!res.ok) {
+        recordListenTogetherMetric('networkErrors')
+        throw new Error(`Failed to create listening room (HTTP ${res.status})`)
       }
-    }
 
-    this.state = {
-      code: data.code,
-      isHost: true,
-      userId: data.userId,
-      token: data.token,
-      userName: hostName,
-      track: data.room.track,
-      isPlaying: data.room.isPlaying,
-      playbackPositionSeconds: data.room.playbackPositionSeconds,
-      members: [...data.room.members],
-      logs: [...data.room.logs],
-      revision: 1,
-    }
+      const data = (await res.json()) as {
+        code: string
+        userId: string
+        token: string
+        room: {
+          code: string
+          isPlaying: boolean
+          playbackPositionSeconds: number
+          track: Track | null
+          members: RoomParticipant[]
+          logs: RoomEventLog[]
+        }
+      }
 
-    this.startSyncLoop()
-    this.notify()
-    return this.getState()!
+      this.state = {
+        code: data.code,
+        isHost: true,
+        userId: data.userId,
+        token: data.token,
+        userName: parsed.data.hostName,
+        track: data.room.track,
+        isPlaying: data.room.isPlaying,
+        playbackPositionSeconds: data.room.playbackPositionSeconds,
+        members: data.room.members.map((m) => ({ ...m })),
+        logs: data.room.logs.map((l) => ({ ...l })),
+        revision: 1,
+      }
+
+      this.lastDispatchedTrackId = data.room.track?.id ?? null
+      this.lastDispatchedPlaying = data.room.isPlaying
+      this.lastDispatchedPosition = data.room.playbackPositionSeconds
+
+      recordListenTogetherMetric('roomsCreated')
+      this.startSyncLoop()
+      this.notify()
+      return this.getState()!
+    } catch (err: unknown) {
+      clearTimeout(timer)
+      if (combinedSignal.aborted) {
+        recordListenTogetherMetric('cancellations')
+      } else {
+        recordListenTogetherMetric('networkErrors')
+      }
+      throw err
+    }
   }
 
-  public async joinRoom(code: string, userName = 'Guest'): Promise<SynchronizedRoomState> {
+  public async joinRoom(
+    code: string,
+    userName = 'Guest',
+    options: ListenTogetherRequestOptions = {},
+  ): Promise<SynchronizedRoomState> {
+    const parsed = joinRoomInputSchema.safeParse({ code, userName })
+    if (!parsed.success) {
+      recordListenTogetherMetric('networkErrors')
+      throw new Error(parsed.error.issues[0]?.message || 'Invalid room code or nickname')
+    }
+
     this.leaveRoom()
 
-    const cleanCode = code.trim().toUpperCase()
-    if (!cleanCode || (cleanCode.length !== 6 && cleanCode.length !== 8)) {
-      throw new Error('Please enter a valid 6-character room code')
-    }
+    const timeoutMs = options.timeoutMs ?? 6000
+    const timeoutCtrl = new AbortController()
+    const timer = setTimeout(() => timeoutCtrl.abort(), timeoutMs)
+    const combinedSignal = anySignal(
+      [options.signal, timeoutCtrl.signal].filter((s): s is AbortSignal => s !== undefined),
+    )
 
-    const res = await fetch(buildApiUrl('/api/listen-together/join'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: cleanCode, userName }),
-    })
+    try {
+      const res = await fetch(buildApiUrl('/api/listen-together/join'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: parsed.data.code, userName: parsed.data.userName }),
+        signal: combinedSignal,
+      })
+      clearTimeout(timer)
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `Failed to join room ${cleanCode}`)
-    }
-
-    const data = (await res.json()) as {
-      code: string
-      userId: string
-      isHost: boolean
-      token: string
-      room: {
-        code: string
-        isPlaying: boolean
-        playbackPositionSeconds: number
-        track: Track | null
-        members: RoomParticipant[]
-        logs: RoomEventLog[]
+      if (!res.ok) {
+        recordListenTogetherMetric('networkErrors')
+        const err = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(err.error || `Failed to join room ${parsed.data.code}`)
       }
-    }
 
-    this.state = {
-      code: data.code,
-      isHost: data.isHost,
-      userId: data.userId,
-      token: data.token,
-      userName,
-      track: data.room.track,
-      isPlaying: data.room.isPlaying,
-      playbackPositionSeconds: data.room.playbackPositionSeconds,
-      members: [...data.room.members],
-      logs: [...data.room.logs],
-      revision: 1,
-    }
+      const data = (await res.json()) as {
+        code: string
+        userId: string
+        isHost: boolean
+        token: string
+        room: {
+          code: string
+          isPlaying: boolean
+          playbackPositionSeconds: number
+          track: Track | null
+          members: RoomParticipant[]
+          logs: RoomEventLog[]
+        }
+      }
 
-    this.startSyncLoop()
-    this.notify()
-    return this.getState()!
+      this.state = {
+        code: data.code,
+        isHost: data.isHost,
+        userId: data.userId,
+        token: data.token,
+        userName: parsed.data.userName,
+        track: data.room.track,
+        isPlaying: data.room.isPlaying,
+        playbackPositionSeconds: data.room.playbackPositionSeconds,
+        members: data.room.members.map((m) => ({ ...m })),
+        logs: data.room.logs.map((l) => ({ ...l })),
+        revision: 1,
+      }
+
+      recordListenTogetherMetric('roomsJoined')
+      this.startSyncLoop()
+      this.notify()
+      return this.getState()!
+    } catch (err: unknown) {
+      clearTimeout(timer)
+      if (combinedSignal.aborted) {
+        recordListenTogetherMetric('cancellations')
+      } else {
+        recordListenTogetherMetric('networkErrors')
+      }
+      throw err
+    }
   }
 
   public leaveRoom(): void {
     if (this.syncTimer !== null) {
-      window.clearInterval(this.syncTimer)
+      if (typeof window !== 'undefined') window.clearInterval(this.syncTimer)
+      else clearInterval(this.syncTimer)
       this.syncTimer = null
     }
     if (this.hostThrottleTimer !== null) {
-      window.clearTimeout(this.hostThrottleTimer)
+      if (typeof window !== 'undefined') window.clearTimeout(this.hostThrottleTimer)
+      else clearTimeout(this.hostThrottleTimer)
       this.hostThrottleTimer = null
+    }
+    if (this.activeSyncController) {
+      this.activeSyncController.abort()
+      this.activeSyncController = null
     }
     this.isSyncInProgress = false
     this.pendingSyncAction = null
 
     if (this.state) {
-      // Fire and forget leave
+      recordListenTogetherMetric('roomsLeft')
+      // Fire and forget leave notification
       fetch(buildApiUrl('/api/listen-together/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,6 +292,10 @@ export class ListenTogetherClient {
     }
 
     this.state = null
+    this.lastDispatchedTrackId = null
+    this.lastDispatchedPlaying = null
+    this.lastDispatchedPosition = -1
+
     const emptyState: SynchronizedRoomState = {
       code: '',
       isHost: false,
@@ -246,6 +322,18 @@ export class ListenTogetherClient {
   ): void {
     if (!this.state || !this.state.isHost) return
 
+    // Deduplication check: if track, playing status, and position within 1.5s haven't changed, skip
+    const trackId = track?.id ?? null
+    if (
+      !immediate &&
+      this.lastDispatchedTrackId === trackId &&
+      this.lastDispatchedPlaying === isPlaying &&
+      Math.abs(this.lastDispatchedPosition - positionSeconds) < 1.5
+    ) {
+      recordListenTogetherMetric('deduplications')
+      return
+    }
+
     this.state = {
       ...this.state,
       track,
@@ -253,6 +341,10 @@ export class ListenTogetherClient {
       playbackPositionSeconds: positionSeconds,
       revision: this.state.revision + 1,
     }
+
+    this.lastDispatchedTrackId = trackId
+    this.lastDispatchedPlaying = isPlaying
+    this.lastDispatchedPosition = positionSeconds
 
     // Push local broadcast
     this.broadcastChannel?.postMessage({
@@ -268,29 +360,33 @@ export class ListenTogetherClient {
     const now = Date.now()
     if (immediate || now - this.lastHostSyncTime >= 1000) {
       if (this.hostThrottleTimer !== null) {
-        window.clearTimeout(this.hostThrottleTimer)
+        if (typeof window !== 'undefined') window.clearTimeout(this.hostThrottleTimer)
+        else clearTimeout(this.hostThrottleTimer)
         this.hostThrottleTimer = null
       }
       this.lastHostSyncTime = now
       this.performSync('update_state')
     } else if (this.hostThrottleTimer === null) {
       const delay = Math.max(0, 1000 - (now - this.lastHostSyncTime))
-      this.hostThrottleTimer = window.setTimeout(() => {
+      const scheduleFn = typeof window !== 'undefined' ? window.setTimeout : setTimeout
+      this.hostThrottleTimer = scheduleFn(() => {
         this.hostThrottleTimer = null
         this.lastHostSyncTime = Date.now()
         this.performSync('update_state')
-      }, delay)
+      }, delay) as unknown as number
     }
   }
 
   private startSyncLoop() {
     if (this.syncTimer !== null) {
-      window.clearInterval(this.syncTimer)
+      if (typeof window !== 'undefined') window.clearInterval(this.syncTimer)
+      else clearInterval(this.syncTimer)
     }
 
-    this.syncTimer = window.setInterval(() => {
+    const intervalFn = typeof window !== 'undefined' ? window.setInterval : setInterval
+    this.syncTimer = intervalFn(() => {
       this.performSync('heartbeat')
-    }, 1500)
+    }, 1500) as unknown as number
   }
 
   private async performSync(action: 'update_state' | 'heartbeat') {
@@ -298,6 +394,7 @@ export class ListenTogetherClient {
 
     // Serialize and coalesce in-flight requests to eliminate backend flooding
     if (this.isSyncInProgress) {
+      recordListenTogetherMetric('coalescedActions')
       if (action === 'update_state') {
         this.pendingSyncAction = 'update_state'
       } else if (!this.pendingSyncAction) {
@@ -307,6 +404,15 @@ export class ListenTogetherClient {
     }
 
     this.isSyncInProgress = true
+    this.activeSyncController = new AbortController()
+    const syncCtrl = this.activeSyncController
+
+    if (action === 'update_state') {
+      recordListenTogetherMetric('syncStateUpdates')
+    } else {
+      recordListenTogetherMetric('syncHeartbeats')
+    }
+
     try {
       const res = await fetch(buildApiUrl('/api/listen-together/sync'), {
         method: 'POST',
@@ -320,9 +426,13 @@ export class ListenTogetherClient {
           isPlaying: this.state.isPlaying,
           playbackPositionSeconds: this.state.playbackPositionSeconds,
         }),
+        signal: syncCtrl.signal,
       })
 
-      if (!res.ok) return
+      if (!res.ok) {
+        recordListenTogetherMetric('networkErrors')
+        return
+      }
 
       const data = (await res.json()) as {
         isPlaying: boolean
@@ -331,6 +441,8 @@ export class ListenTogetherClient {
         members: RoomParticipant[]
         logs: RoomEventLog[]
       }
+
+      if (!this.state) return
 
       this.state = {
         ...this.state,
@@ -341,14 +453,21 @@ export class ListenTogetherClient {
               track: data.track,
             }
           : {}),
-        members: data.members ? [...data.members] : [],
-        logs: data.logs ? [...data.logs] : [],
+        members: data.members ? data.members.map((m) => ({ ...m })) : [],
+        logs: data.logs ? data.logs.map((l) => ({ ...l })) : [],
         revision: this.state.revision + 1,
       }
       this.notify()
-    } catch {
-      // Ignore transient network errors
+    } catch (err: unknown) {
+      if (syncCtrl.signal.aborted) {
+        recordListenTogetherMetric('cancellations')
+      } else {
+        recordListenTogetherMetric('networkErrors')
+      }
     } finally {
+      if (this.activeSyncController === syncCtrl) {
+        this.activeSyncController = null
+      }
       this.isSyncInProgress = false
       if (this.pendingSyncAction && this.state) {
         const nextAction = this.pendingSyncAction
@@ -375,6 +494,18 @@ export class ListenTogetherClient {
     }
     this.notify()
   }
+}
+
+function anySignal(signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController()
+  for (const s of signals) {
+    if (s.aborted) {
+      controller.abort()
+      return controller.signal
+    }
+    s.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+  return controller.signal
 }
 
 export const listenTogether = ListenTogetherClient.getInstance()
