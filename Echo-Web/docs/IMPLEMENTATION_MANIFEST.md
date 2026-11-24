@@ -92,7 +92,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-27 | AI lyrics translation | 10 tasks in backlog | Completed | 9d745787 | Yes (verified on origin/main) |
 | SMALL-28 | Canvas resolution | 10 tasks in backlog | Completed | a6163299 | Yes (verified on origin/main) |
 | SMALL-29 | Canvas video rendering | 10 tasks in backlog | Completed | 65c7d1f6 | Yes (verified on origin/main) |
-| SMALL-30 | Music DNA drawer | 10 tasks in backlog | Pending | - | - |
+| SMALL-30 | Music DNA drawer | 10 tasks in backlog | Completed | db6431f4 | Yes (verified on origin/main) |
 | SMALL-31 | Echo Find recording | 10 tasks in backlog | Pending | - | - |
 | SMALL-32 | Spotify URL resolution | 10 tasks in backlog | Pending | - | - |
 | SMALL-33 | Spotify track matching | 10 tasks in backlog | Pending | - | - |
