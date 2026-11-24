@@ -122,7 +122,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 |---|---|---|---|---|
 | FEATURE-001 | Custom extension registry | Completed | 0ad8c86a | Yes (verified on origin/main) |
 | FEATURE-002 | Extension-first playback | Completed | 94612eff | Yes (verified on origin/main) |
-| FEATURE-003 | 320 kbps source support | Pending | - | - |
+| FEATURE-003 | 320 kbps source support | Completed | 473bf8ad | Yes (verified on origin/main) |
 | FEATURE-004 | FLAC/ALAC lossless playback | Pending | - | - |
 | FEATURE-005 | Extension fallback chain | Pending | - | - |
 | FEATURE-006 | Extension matching confidence | Pending | - | - |
