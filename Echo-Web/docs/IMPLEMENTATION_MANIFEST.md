@@ -25,7 +25,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-11 | P1 | Backup and restore use a second playlist store | `src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts, src/components/modals/SpotifyImportModal.tsx, src/pages/SettingsPage.tsx` | Completed | db1887f3b890a9435b5a76c66cf64cf3bf5b61fa | Yes (verified on origin/main) |
 | BUG-12 | P1 | Clear History leaves persisted recent items intact | `src/pages/SettingsPage.tsx, src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts` | Completed | cb0eb1bed5b0cf5d3a54b679469248ae3ce2860d | Yes (verified on origin/main) |
 | BUG-13 | P1 | Cast is not wired into playback | `src/services/cast/castService.ts, src/components/player/AudioOutputPicker.tsx` | Completed | 1e525ee82ea574eeea22ea794dc2cb927aa8fa2e | Yes (verified on origin/main) |
-| BUG-14 | P1 | Cast media type is hardcoded | `src/services/cast/castService.ts` | Pending | - | - |
+| BUG-14 | P1 | Cast media type is hardcoded | `src/services/cast/castService.ts, src/engine/AudioEngine.ts` | Completed | 3f8d4c6b | Yes (verified on origin/main) |
 | BUG-15 | P1 | Local Taste skip penalties are unreachable | `src/services/recommendations/localTasteEngine.ts, src/engine/AudioEngine.ts` | Pending | - | - |
 | BUG-16 | P1 | Lyrics provider preference is ignored | `src/pages/SettingsPage.tsx, src/services/lyrics/LyricsOrchestrator.ts` | Pending | - | - |
 | BUG-17 | P1 | Several settings are inert or only partially implemented | `src/types/domain.ts, src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts` | Pending | - | - |
