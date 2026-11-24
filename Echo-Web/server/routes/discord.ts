@@ -6,19 +6,28 @@ export const discordRouter = new Hono()
 
 const DEFAULT_CLIENT_ID = process.env['DISCORD_CLIENT_ID'] || '123456789012345678' // Application ID
 
-interface PresencePayload {
+export interface PresencePayload {
   track?: string
   artist?: string
   album?: string
   durationMs?: number
   positionMs?: number
   isPlaying?: boolean
+  companionUrl?: string
 }
 
 let activeSocket: net.Socket | null = null
 let isConnected = false
 
-function getIpcPath(id = 0): string {
+export function isLocalDeployment(): boolean {
+  if (process.env['FORCE_REMOTE_DEPLOYMENT'] === 'true') return false
+  if (process.env['VERCEL'] || process.env['FLY_ALLOC_ID'] || process.env['KUBERNETES_SERVICE_HOST']) {
+    return false
+  }
+  return true
+}
+
+export function getIpcPath(id = 0): string {
   if (process.platform === 'win32') {
     return `\\\\?\\pipe\\discord-ipc-${id}`
   }
@@ -27,7 +36,7 @@ function getIpcPath(id = 0): string {
   return `${prefix.replace(/\/$/, '')}/discord-ipc-${id}`
 }
 
-function encodeFrame(op: number, data: unknown): Buffer {
+export function encodeFrame(op: number, data: unknown): Buffer {
   const json = JSON.stringify(data)
   const len = Buffer.byteLength(json)
   const packet = Buffer.alloc(8 + len)
@@ -37,7 +46,7 @@ function encodeFrame(op: number, data: unknown): Buffer {
   return packet
 }
 
-async function connectDiscordIpc(): Promise<net.Socket | null> {
+export async function connectDiscordIpc(): Promise<net.Socket | null> {
   if (activeSocket && isConnected) return activeSocket
 
   return new Promise((resolve) => {
@@ -66,10 +75,43 @@ async function connectDiscordIpc(): Promise<net.Socket | null> {
   })
 }
 
+discordRouter.get('/status', async (c) => {
+  const isLocal = isLocalDeployment()
+  let socketConnected = false
+  if (isLocal) {
+    try {
+      const sock = await connectDiscordIpc()
+      socketConnected = Boolean(sock && isConnected)
+    } catch {
+      socketConnected = false
+    }
+  }
+
+  return c.json({
+    ok: true,
+    isLocalDeployment: isLocal,
+    socketConnected,
+    platform: process.platform,
+    hint: isLocal
+      ? 'Local Discord IPC pipe available'
+      : 'Remote deployment: Use client companion bridge at http://127.0.0.1:6463',
+  })
+})
+
 discordRouter.post('/presence', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as PresencePayload
   if (!body.track || !body.artist) {
     return c.json({ ok: false, error: 'track and artist required' }, 400)
+  }
+
+  // If server is deployed remotely in cloud/container, local IPC cannot reach user desktop
+  if (!isLocalDeployment()) {
+    return c.json({
+      ok: true,
+      active: false,
+      remoteDeployment: true,
+      message: 'Server is deployed remotely; desktop IPC unavailable. Forward to client companion bridge.',
+    })
   }
 
   try {
@@ -78,6 +120,7 @@ discordRouter.post('/presence', async (c) => {
       return c.json({
         ok: true,
         active: false,
+        remoteDeployment: false,
         message: 'Discord desktop app is not running locally',
       })
     }
@@ -125,17 +168,19 @@ discordRouter.post('/presence', async (c) => {
 
 discordRouter.post('/clear', async (c) => {
   try {
-    const socket = await connectDiscordIpc()
-    if (socket && isConnected) {
-      const clearActivity = {
-        cmd: 'SET_ACTIVITY',
-        args: {
-          pid: process.pid,
-          activity: null,
-        },
-        nonce: Math.random().toString(36).slice(2),
+    if (isLocalDeployment()) {
+      const socket = await connectDiscordIpc()
+      if (socket && isConnected) {
+        const clearActivity = {
+          cmd: 'SET_ACTIVITY',
+          args: {
+            pid: process.pid,
+            activity: null,
+          },
+          nonce: Math.random().toString(36).slice(2),
+        }
+        socket.write(encodeFrame(1, clearActivity))
       }
-      socket.write(encodeFrame(1, clearActivity))
     }
     return c.json({ ok: true })
   } catch {

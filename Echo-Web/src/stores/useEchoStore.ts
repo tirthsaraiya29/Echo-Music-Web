@@ -38,6 +38,9 @@ const defaultPreferences: UserPreferences = {
   crossfadeDuration: 3,
   preferredLyricsProvider: 'LRCLIB',
   dataSaver: false,
+  discordRpc: false,
+  discordBridgeUrl: 'http://127.0.0.1:6463',
+  discordMode: 'auto',
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID

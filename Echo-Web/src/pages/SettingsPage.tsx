@@ -893,6 +893,44 @@ export function SettingsPage() {
               onChange={save}
             />
 
+            {preferences.discordRpc && (
+              <div className="space-y-3 rounded-xl border border-white/6 bg-white/2 p-3 text-xs">
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">
+                    Discord Connection Mode
+                  </label>
+                  <select
+                    className="settings-select w-full"
+                    value={preferences.discordMode || 'auto'}
+                    onChange={(e) =>
+                      save('discordMode', e.target.value as UserPreferences['discordMode'])
+                    }
+                  >
+                    <option value="auto">Auto (Backend IPC with Desktop Companion fallback)</option>
+                    <option value="companion">Desktop Companion Bridge (Remote web client)</option>
+                    <option value="backend">Backend IPC Socket (Local server only)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">
+                    Desktop Companion Bridge URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="http://127.0.0.1:6463"
+                    value={preferences.discordBridgeUrl || 'http://127.0.0.1:6463'}
+                    onChange={(e) => save('discordBridgeUrl', e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                  <small className="mt-1 block text-[#a59fad]">
+                    Enables Rich Presence when running Echo Web in a remote browser or hosted cloud
+                    deployment.
+                  </small>
+                </div>
+              </div>
+            )}
+
             <PreferenceToggle
               label="Google Cast"
               description="Enables streaming directly to Google Cast-compatible hardware and speakers."

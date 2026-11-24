@@ -138,6 +138,8 @@ export interface UserPreferences {
   lastfmSession?: { sessionKey: string; username: string } | undefined
   lastfmScrobbling?: boolean | undefined
   discordRpc?: boolean | undefined
+  discordBridgeUrl?: string | undefined
+  discordMode?: 'auto' | 'companion' | 'backend' | undefined
   skipSilence?: boolean | undefined
   googleCast?: boolean | undefined
 }
