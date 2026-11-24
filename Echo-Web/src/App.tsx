@@ -4,6 +4,7 @@ import { MobileApkLanding } from './components/MobileApkLanding'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/Layout'
 import { bridgeAudioEngineWithStore } from './hooks/useAudioEngine'
+import { startMultiDeviceSync } from './services/sync/multiDeviceLibrarySyncService'
 import { useEchoStore } from './stores/useEchoStore'
 import { RouteAnnouncer } from './app/router/RouteAnnouncer.tsx'
 import { NotFoundPage } from './app/router/NotFoundPage.tsx'
@@ -107,9 +108,11 @@ export default function App() {
 
   useEffect(() => {
     document.title = 'Echo Music'
-    const cleanup = bridgeAudioEngineWithStore()
+    const cleanupEngine = bridgeAudioEngineWithStore()
+    const cleanupSync = startMultiDeviceSync()
     return () => {
-      cleanup()
+      cleanupEngine()
+      cleanupSync()
     }
   }, [])
 

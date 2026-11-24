@@ -25,7 +25,12 @@ import {
   Puzzle,
   RefreshCw,
   Wifi,
+  Send,
 } from 'lucide-react'
+import {
+  broadcastLibrarySnapshot,
+  requestSyncFromPeers,
+} from '../services/sync/multiDeviceLibrarySyncService.ts'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
 import type { AccentColor, AudioQuality, CrossfadeProfile, UserPreferences } from '../types/domain.ts'
@@ -2080,6 +2085,46 @@ export function SettingsPage() {
                 <Trash2 size={15} />
                 <span>Clear History</span>
               </button>
+            </div>
+
+            {/* Multi-Device & Cross-Tab Sync */}
+            <div className="mb-4 rounded-xl border border-white/6 bg-white/3 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={16} className="text-[#b09cff]" />
+                  <h3 className="text-sm font-semibold text-white">Multi-Device & Cross-Tab Sync</h3>
+                </div>
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                  Active
+                </span>
+              </div>
+              <p className="mb-3 text-xs text-[#a59fad]">
+                Synchronizes likes, playlists, and settings in real-time across browser tabs and devices via BroadcastChannel.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    broadcastLibrarySnapshot()
+                    notify('Broadcasted library snapshot to all connected tabs')
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/10"
+                >
+                  <Send size={13} />
+                  <span>Broadcast to Peers</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestSyncFromPeers()
+                    notify('Requested latest library snapshot from peers')
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg bg-white/6 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/10"
+                >
+                  <RefreshCw size={13} />
+                  <span>Request Sync</span>
+                </button>
+              </div>
             </div>
 
             <button
