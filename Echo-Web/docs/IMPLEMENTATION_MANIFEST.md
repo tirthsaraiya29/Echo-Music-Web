@@ -176,7 +176,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-054 | Multiple lyric animations | Completed | 76b1cadd | Yes |
 | FEATURE-055 | Romanization-aware cache | Completed | 3257a25c | Yes |
 | FEATURE-056 | AI translation chunking | Completed | 0a4d71e0 | Yes |
-| FEATURE-057 | Translation provider testing | Pending | - | - |
+| FEATURE-057 | Translation provider testing | Completed | 082c25d6 | Yes |
 | FEATURE-058 | Lyrics export with metadata | Pending | - | - |
 | FEATURE-059 | Lyrics download | Pending | - | - |
 | FEATURE-060 | Lyrics sync profiles | Pending | - | - |
