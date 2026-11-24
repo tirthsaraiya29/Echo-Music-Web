@@ -109,6 +109,10 @@ export interface Playlist {
   trackIds: string[]
   curated: boolean
   createdAt: number
+  browseId?: string | undefined
+  isAutoSync?: boolean | undefined
+  lastSyncedAt?: number | undefined
+  syncError?: string | undefined
 }
 
 export interface RecentlyPlayedItem {

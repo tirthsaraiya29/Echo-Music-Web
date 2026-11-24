@@ -16,6 +16,7 @@ import {
   Disc3,
   UserX,
   Radio,
+  RefreshCw,
 } from 'lucide-react'
 import type { Playlist, Track } from '../types/domain.ts'
 import { useAlbum } from '../hooks/useAlbum.ts'
@@ -36,6 +37,7 @@ import {
 } from '../services/podcast/podcastOrderingService.ts'
 import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
 import { SpotifyPlaylistDetailPage } from './SpotifyPlaylistDetailPage.tsx'
+import { syncPlaylistWithCloud } from '../services/sync/playlistCloudSyncService.ts'
 
 function getRandomIndex(length: number): number {
   return length > 0 ? Math.floor(Math.random() * length) : 0
@@ -363,6 +365,22 @@ export function PlaylistPage() {
                 onClick={handleExportM3U}
               >
                 <FileDown size={18} />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Sync playlist with cloud"
+                title="Sync with cloud"
+                onClick={async () => {
+                  try {
+                    const res = await syncPlaylistWithCloud(userPlaylist.id)
+                    setToast(res.message)
+                  } catch (e) {
+                    setToast(e instanceof Error ? e.message : 'Sync failed')
+                  }
+                }}
+              >
+                <RefreshCw size={18} />
               </button>
               <button
                 className="icon-button"
