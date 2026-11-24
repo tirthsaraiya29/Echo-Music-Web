@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import { z } from 'zod'
 import type { Track } from '../../types/domain'
 import type { SynchronizedLyrics } from '../../types/lyrics'
 import { getLocalArtworkUrl } from '../local/objectUrlRegistry.ts'
@@ -161,6 +162,78 @@ export async function clearListeningHistory(): Promise<void> {
 /**
  * Full Library Backup & Restore
  */
+export const backupPlaylistSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  coverUrl: z.string().optional(),
+  trackIds: z.array(z.string()),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+})
+
+export const backupHistorySchema = z.object({
+  trackId: z.string().min(1),
+  trackTitle: z.string().min(1),
+  artistName: z.string().min(1),
+  artistId: z.string().optional(),
+  albumTitle: z.string().optional(),
+  artwork: z.string().optional(),
+  playedAt: z.number().optional(),
+  durationPlayedMs: z.number().optional(),
+  trackDurationMs: z.number().optional(),
+  completed: z.boolean().optional(),
+  skipped: z.boolean().optional(),
+  timeOfDay: z.enum(['morning', 'afternoon', 'evening', 'night']).optional(),
+})
+
+export const backupExclusionSchema = z.object({
+  trackId: z.string().min(1),
+  trackTitle: z.string().min(1),
+  artistName: z.string().min(1),
+  excludedAt: z.number().optional(),
+  reason: z.string().optional(),
+})
+
+export const backupPayloadSchema = z.object({
+  version: z.literal(1),
+  exportedAt: z.number().positive().optional(),
+  preferences: z.record(z.string(), z.unknown()).optional(),
+  playlists: z.array(backupPlaylistSchema).optional(),
+  likedTrackIds: z.array(z.string()).optional(),
+  history: z.array(backupHistorySchema).optional(),
+  exclusions: z.array(backupExclusionSchema).optional(),
+})
+
+export type BackupPayload = z.infer<typeof backupPayloadSchema>
+
+export const backupMetricsSchema = z.object({
+  exportsCount: z.number().nonnegative(),
+  importsCount: z.number().nonnegative(),
+  importFailuresCount: z.number().nonnegative(),
+  lastError: z.string().nullable(),
+})
+
+export type BackupMetrics = z.infer<typeof backupMetricsSchema>
+
+const backupMetrics: BackupMetrics = {
+  exportsCount: 0,
+  importsCount: 0,
+  importFailuresCount: 0,
+  lastError: null,
+}
+
+export function getBackupMetrics(): BackupMetrics {
+  return { ...backupMetrics }
+}
+
+export function resetBackupMetrics(): void {
+  backupMetrics.exportsCount = 0
+  backupMetrics.importsCount = 0
+  backupMetrics.importFailuresCount = 0
+  backupMetrics.lastError = null
+}
+
 export interface FullEchoBackup {
   version: 1
   exportedAt: number
@@ -183,7 +256,12 @@ export async function exportFullBackup(
     trackIds: string[]
     createdAt?: number
   }>,
+  options?: { signal?: AbortSignal },
 ): Promise<string> {
+  if (options?.signal?.aborted) {
+    throw new Error('Export operation cancelled')
+  }
+  backupMetrics.exportsCount++
   let playlists: StoredPlaylistRecord[] = []
   let history: ListeningHistoryRecord[] = []
   let exclusions: RecommendationExclusionRecord[] = []
@@ -193,6 +271,7 @@ export async function exportFullBackup(
   // Sync activePlaylists into Dexie table before exporting if DB is available
   if (isIndexedDbAvailable && activePlaylists && activePlaylists.length > 0) {
     for (const p of activePlaylists) {
+      if (options?.signal?.aborted) throw new Error('Export operation cancelled')
       await db.playlists
         .put({
           id: p.id,
@@ -251,6 +330,7 @@ export async function exportFullBackup(
 export async function importFullBackup(
   jsonString: string,
   mode: 'merge' | 'replace' = 'merge',
+  options?: { signal?: AbortSignal },
 ): Promise<{
   playlistsRestored: number
   restoredPlaylists: StoredPlaylistRecord[]
@@ -259,10 +339,32 @@ export async function importFullBackup(
   likedTrackIds: string[]
   preferences?: Record<string, unknown> | undefined
 }> {
-  const data = JSON.parse(jsonString) as Partial<FullEchoBackup>
-  if (!data || data.version !== 1) {
-    throw new Error('Invalid Echo backup format')
+  if (options?.signal?.aborted) {
+    backupMetrics.importFailuresCount++
+    backupMetrics.lastError = 'Import operation cancelled'
+    throw new Error('Import operation cancelled')
   }
+
+  let rawData: unknown
+  try {
+    rawData = JSON.parse(jsonString)
+  } catch (err) {
+    backupMetrics.importFailuresCount++
+    const msg = 'Invalid JSON: ' + (err instanceof Error ? err.message : String(err))
+    backupMetrics.lastError = msg
+    throw new Error('Invalid JSON format in backup file')
+  }
+
+  const validation = backupPayloadSchema.safeParse(rawData)
+  if (!validation.success) {
+    const issueMsg = validation.error.issues[0]?.message || 'Invalid Echo backup format'
+    backupMetrics.importFailuresCount++
+    backupMetrics.lastError = issueMsg
+    throw new Error(`Invalid Echo backup format: ${issueMsg}`)
+  }
+
+  const data = validation.data
+  backupMetrics.importsCount++
 
   const isIndexedDbAvailable = typeof indexedDB !== 'undefined'
 
@@ -280,10 +382,11 @@ export async function importFullBackup(
   let playlistsRestored = 0
   if (Array.isArray(data.playlists)) {
     for (const p of data.playlists) {
+      if (options?.signal?.aborted) throw new Error('Import operation cancelled')
       if (isIndexedDbAvailable) {
-        await db.playlists.put(p).catch(() => {})
+        await db.playlists.put(p as StoredPlaylistRecord).catch(() => {})
       }
-      restoredPlaylists.push(p)
+      restoredPlaylists.push(p as StoredPlaylistRecord)
       playlistsRestored++
     }
   }
@@ -291,9 +394,11 @@ export async function importFullBackup(
   let historyRestored = 0
   if (Array.isArray(data.history)) {
     for (const h of data.history) {
-      delete h.id
+      if (options?.signal?.aborted) throw new Error('Import operation cancelled')
+      const record = { ...h } as Partial<ListeningHistoryRecord>
+      delete record.id
       if (isIndexedDbAvailable) {
-        await db.history.add(h).catch(() => {})
+        await db.history.add(record as ListeningHistoryRecord).catch(() => {})
       }
       historyRestored++
     }
@@ -302,8 +407,9 @@ export async function importFullBackup(
   let exclusionsRestored = 0
   if (Array.isArray(data.exclusions)) {
     for (const e of data.exclusions) {
+      if (options?.signal?.aborted) throw new Error('Import operation cancelled')
       if (isIndexedDbAvailable) {
-        await db.recommendationExclusions.put(e).catch(() => {})
+        await db.recommendationExclusions.put(e as RecommendationExclusionRecord).catch(() => {})
       }
       exclusionsRestored++
     }

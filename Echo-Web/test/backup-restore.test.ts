@@ -13,7 +13,14 @@ if (typeof globalThis.localStorage === 'undefined') {
   } as unknown as Storage
 }
 
-import { exportFullBackup, importFullBackup } from '../src/services/db/echoDatabase.ts'
+import {
+  exportFullBackup,
+  importFullBackup,
+  backupPayloadSchema,
+  backupMetricsSchema,
+  getBackupMetrics,
+  resetBackupMetrics,
+} from '../src/services/db/echoDatabase.ts'
 
 test('Backup & Restore: exportFullBackup incorporates canonical playlists and importFullBackup returns restoredPlaylists [BUG-11]', async () => {
   const dummyPlaylists = [
@@ -90,4 +97,98 @@ test('History clearing: clearRecentHistory and QueueManager.clearHistory clear a
   assert.deepStrictEqual(useEchoStore.getState().recentlyPlayedIds, [])
   assert.deepStrictEqual(useEchoStore.getState().recentItems, [])
   assert.deepStrictEqual(qm.history, [])
+})
+
+test('Backup & Restore: backupPayloadSchema validates structure and rejects malformed payloads [SMALL-20]', () => {
+  const valid = {
+    version: 1,
+    exportedAt: Date.now(),
+    preferences: { themeMode: 'dark' },
+    playlists: [
+      { id: 'p1', title: 'My Favorites', trackIds: ['t1', 't2'] },
+    ],
+    likedTrackIds: ['t1'],
+    history: [
+      { trackId: 't1', trackTitle: 'Track 1', artistName: 'Artist 1' },
+    ],
+    exclusions: [
+      { trackId: 't2', trackTitle: 'Track 2', artistName: 'Artist 2', reason: 'Disliked' },
+    ],
+  }
+  assert.strictEqual(backupPayloadSchema.safeParse(valid).success, true)
+
+  // Rejects invalid version
+  assert.strictEqual(backupPayloadSchema.safeParse({ ...valid, version: 2 }).success, false)
+
+  // Rejects playlist missing title
+  const invalidPlaylist = {
+    ...valid,
+    playlists: [{ id: 'p1', trackIds: [] }],
+  }
+  assert.strictEqual(backupPayloadSchema.safeParse(invalidPlaylist).success, false)
+
+  // Rejects history missing trackTitle
+  const invalidHistory = {
+    ...valid,
+    history: [{ trackId: 't1', artistName: 'Artist' }],
+  }
+  assert.strictEqual(backupPayloadSchema.safeParse(invalidHistory).success, false)
+})
+
+test('Backup & Restore: telemetry metrics, error tracking, and cancellation [SMALL-20]', async () => {
+  resetBackupMetrics()
+  const initial = getBackupMetrics()
+  assert.strictEqual(initial.exportsCount, 0)
+  assert.strictEqual(initial.importsCount, 0)
+  assert.strictEqual(initial.importFailuresCount, 0)
+  assert.strictEqual(backupMetricsSchema.safeParse(initial).success, true)
+
+  // 1. Export tracks metric
+  await exportFullBackup({}, [])
+  assert.strictEqual(getBackupMetrics().exportsCount, 1)
+
+  // 2. Cancellation on export
+  const abortCtrl = new AbortController()
+  abortCtrl.abort()
+  await assert.rejects(
+    async () => {
+      await exportFullBackup({}, [], undefined, { signal: abortCtrl.signal })
+    },
+    { message: 'Export operation cancelled' },
+  )
+
+  // 3. Import malformed JSON tracks failure
+  await assert.rejects(
+    async () => {
+      await importFullBackup('not valid json')
+    },
+    { message: 'Invalid JSON format in backup file' },
+  )
+  assert.strictEqual(getBackupMetrics().importFailuresCount, 1)
+  assert.ok(getBackupMetrics().lastError?.includes('JSON'))
+
+  // 4. Import invalid schema tracks failure
+  await assert.rejects(
+    async () => {
+      await importFullBackup(JSON.stringify({ version: 99 }))
+    },
+    { message: /Invalid Echo backup format/ },
+  )
+  assert.strictEqual(getBackupMetrics().importFailuresCount, 2)
+
+  // 5. Successful import increments count
+  const validBackup = JSON.stringify({
+    version: 1,
+    playlists: [{ id: 'p1', title: 'Restored', trackIds: [] }],
+  })
+  const res = await importFullBackup(validBackup)
+  assert.strictEqual(res.playlistsRestored, 1)
+  assert.strictEqual(getBackupMetrics().importsCount, 1)
+
+  // 6. Reset metrics
+  resetBackupMetrics()
+  assert.strictEqual(getBackupMetrics().exportsCount, 0)
+  assert.strictEqual(getBackupMetrics().importsCount, 0)
+  assert.strictEqual(getBackupMetrics().importFailuresCount, 0)
+  assert.strictEqual(getBackupMetrics().lastError, null)
 })

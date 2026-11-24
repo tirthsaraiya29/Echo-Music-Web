@@ -151,6 +151,8 @@ export function SettingsPage() {
   )
 
   const restoreInputRef = useRef<HTMLInputElement>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(false)
   const telemetry = getAudioTelemetry()
 
   const sections = [
@@ -362,6 +364,8 @@ export function SettingsPage() {
   }
 
   const handleExportBackup = async () => {
+    if (isExporting) return
+    setIsExporting(true)
     try {
       const playlists = useEchoStore.getState().playlists
       const json = await exportFullBackup(
@@ -375,8 +379,10 @@ export function SettingsPage() {
         'application/json',
       )
       notify('Exported full database backup')
-    } catch {
-      notify('Failed to export backup')
+    } catch (err) {
+      notify('Failed to export backup: ' + (err instanceof Error ? err.message : 'Unknown error'))
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -393,7 +399,8 @@ export function SettingsPage() {
 
   const handleRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || isRestoring) return
+    setIsRestoring(true)
     try {
       const content = await file.text()
       const res = await importFullBackup(content, 'merge')
@@ -431,6 +438,7 @@ export function SettingsPage() {
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Invalid backup file')
     } finally {
+      setIsRestoring(false)
       if (e.target) e.target.value = ''
     }
   }
@@ -1322,19 +1330,25 @@ export function SettingsPage() {
               <button
                 type="button"
                 onClick={handleExportBackup}
-                className="flex items-center gap-1.5 rounded-xl bg-[#7c5cff] px-4 py-2 text-xs font-semibold text-black shadow-md transition-colors hover:bg-[#6c48ff]"
+                disabled={isExporting}
+                aria-busy={isExporting}
+                aria-label="Export backup JSON"
+                className="flex items-center gap-1.5 rounded-xl bg-[#7c5cff] px-4 py-2 text-xs font-semibold text-black shadow-md transition-colors hover:bg-[#6c48ff] disabled:opacity-50"
               >
                 <DownloadCloud size={15} />
-                <span>Export Backup (JSON)</span>
+                <span>{isExporting ? 'Exporting...' : 'Export Backup (JSON)'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => restoreInputRef.current?.click()}
-                className="flex items-center gap-1.5 rounded-xl bg-white/6 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/10"
+                disabled={isRestoring}
+                aria-busy={isRestoring}
+                aria-label="Restore backup JSON"
+                className="flex items-center gap-1.5 rounded-xl bg-white/6 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-50"
               >
                 <FileUp size={15} />
-                <span>Restore Backup</span>
+                <span>{isRestoring ? 'Restoring...' : 'Restore Backup'}</span>
               </button>
 
               <button
