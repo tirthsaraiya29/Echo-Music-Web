@@ -96,7 +96,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-31 | Echo Find recording | 10 tasks in backlog | Completed | 5dbae9e2 | Yes (verified on origin/main) |
 | SMALL-32 | Spotify URL resolution | 10 tasks in backlog | Completed | 6a42744f | Yes (verified on origin/main) |
 | SMALL-33 | Spotify track matching | 10 tasks in backlog | Completed | 383b033f | Yes (verified on origin/main) |
-| SMALL-34 | Last.fm scrobbling | 10 tasks in backlog | Pending | - | - |
+| SMALL-34 | Last.fm scrobbling | 10 tasks in backlog | Completed | b0648340 | Yes (verified on origin/main) |
 | SMALL-35 | Discord Rich Presence | 10 tasks in backlog | Pending | - | - |
 | SMALL-36 | Listen Together client | 10 tasks in backlog | Pending | - | - |
 | SMALL-37 | Listen Together server | 10 tasks in backlog | Pending | - | - |
