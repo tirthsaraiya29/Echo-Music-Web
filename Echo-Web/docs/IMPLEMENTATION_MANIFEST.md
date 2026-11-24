@@ -37,7 +37,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-23 | P2 | Spotify matching accepts the first search result | `src/services/spotify/spotifyImporter.ts` | Completed | 7cd0beac | Yes (verified on origin/main) |
 | BUG-24 | P2 | Spotify importer has no robust pagination or live-library flow | `server/routes/spotify.ts, src/services/spotify/spotifyImporter.ts` | Completed | f1bf5730 | Yes (verified on origin/main) |
 | BUG-25 | P2 | Lyrics loading state is never activated | `src/components/player/LyricsView.tsx` | Completed | 913ca8df | Yes (verified on origin/main) |
-| BUG-26 | P2 | Lyrics animation re-renders the full view every frame | `src/components/player/LyricsView.tsx` | Pending | - | - |
+| BUG-26 | P2 | Lyrics animation re-renders the full view every frame | `src/components/player/LyricsView.tsx` | Completed | b6106009 | Yes (verified on origin/main) |
 | BUG-27 | P2 | Local artwork object URLs are not revoked | `src/services/local/localMusicScanner.ts, src/services/db/echoDatabase.ts` | Pending | - | - |
 | BUG-28 | P2 | Local metadata parser does not implement its ID3v1 claim | `src/services/local/localMusicScanner.ts` | Pending | - | - |
 | BUG-29 | P2 | Audio output selection ignores failure | `src/components/player/AudioOutputPicker.tsx` | Pending | - | - |
