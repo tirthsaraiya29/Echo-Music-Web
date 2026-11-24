@@ -167,7 +167,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-045 | Liked albums synchronization | Completed | 3be08ac0 | Yes |
 | FEATURE-046 | Followed artists synchronization | Completed | 1bd3d214 | Yes |
 | FEATURE-047 | Multi-device library sync | Completed | 78ce2eb1 | Yes |
-| FEATURE-048 | Library conflict resolution | Pending | - | - |
+| FEATURE-048 | Library conflict resolution | Completed | 1297ecca | Yes |
 | FEATURE-049 | Listening history controls | Pending | - | - |
 | FEATURE-050 | Vibe Summary | Pending | - | - |
 | FEATURE-051 | Lyrics+ provider integration | Pending | - | - |
