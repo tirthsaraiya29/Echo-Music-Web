@@ -1,20 +1,16 @@
 import { Hono } from 'hono'
 import net from 'node:net'
 import process from 'node:process'
+import {
+  discordPresencePayloadSchema,
+  type DiscordPresencePayload,
+} from '../../src/services/discord/discordTypes.ts'
 
 export const discordRouter = new Hono()
 
 const DEFAULT_CLIENT_ID = process.env['DISCORD_CLIENT_ID'] || '123456789012345678' // Application ID
 
-export interface PresencePayload {
-  track?: string
-  artist?: string
-  album?: string
-  durationMs?: number
-  positionMs?: number
-  isPlaying?: boolean
-  companionUrl?: string
-}
+export type { DiscordPresencePayload as PresencePayload }
 
 let activeSocket: net.Socket | null = null
 let isConnected = false
@@ -99,10 +95,12 @@ discordRouter.get('/status', async (c) => {
 })
 
 discordRouter.post('/presence', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as PresencePayload
-  if (!body.track || !body.artist) {
-    return c.json({ ok: false, error: 'track and artist required' }, 400)
+  const rawBody = await c.req.json().catch(() => ({}))
+  const parsed = discordPresencePayloadSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    return c.json({ ok: false, error: 'track and artist required: invalid payload' }, 400)
   }
+  const body = parsed.data
 
   // If server is deployed remotely in cloud/container, local IPC cannot reach user desktop
   if (!isLocalDeployment()) {

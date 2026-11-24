@@ -31,6 +31,7 @@ import { useEchoStore } from '../stores/useEchoStore.ts'
 import { classNames } from '../utils/classNames.ts'
 import { useAudioEngine } from '../hooks/useAudioEngine.ts'
 import { getLastFmAuthUrl, fetchLastFmSession } from '../services/lastfm/lastfmService.ts'
+import { checkDiscordStatus } from '../services/discord/discordService.ts'
 import { castService } from '../services/cast/castService.ts'
 import {
   getStorageUsage,
@@ -140,6 +141,45 @@ export function SettingsPage() {
   const [cloudPassword, setCloudPassword] = useState('')
   const [cloudConnecting, setCloudConnecting] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
+
+  const [discordCheckStatus, setDiscordCheckStatus] = useState<
+    'idle' | 'checking' | 'connected' | 'disconnected'
+  >('idle')
+  const [discordStatusMessage, setDiscordStatusMessage] = useState<string>('')
+
+  const handleTestDiscord = async () => {
+    setDiscordCheckStatus('checking')
+    setDiscordStatusMessage('')
+    try {
+      const status = await checkDiscordStatus({ timeoutMs: 3000 })
+      if (status && (status.socketConnected || status.isLocalDeployment)) {
+        setDiscordCheckStatus('connected')
+        setDiscordStatusMessage(status.hint || 'Discord service reachable.')
+      } else {
+        const bridgeUrl = (preferences.discordBridgeUrl || 'http://127.0.0.1:6463').replace(/\/+$/, '')
+        let companionOk = false
+        try {
+          const compRes = await fetch(`${bridgeUrl}/status`, { signal: AbortSignal.timeout(1500) })
+          companionOk = compRes.ok
+        } catch {
+          companionOk = false
+        }
+        if (companionOk) {
+          setDiscordCheckStatus('connected')
+          setDiscordStatusMessage('Connected via Desktop Companion Bridge.')
+        } else {
+          setDiscordCheckStatus('disconnected')
+          setDiscordStatusMessage(
+            status?.hint ||
+              'Discord desktop app or companion bridge not detected. Launch Discord locally or start the companion app.',
+          )
+        }
+      }
+    } catch {
+      setDiscordCheckStatus('disconnected')
+      setDiscordStatusMessage('Unable to reach Discord status endpoint.')
+    }
+  }
 
   const [addons, setAddons] = useState<AddonEndpoint[]>(() => extensionManager.getAddons())
   const [addonUrl, setAddonUrl] = useState('')
@@ -937,6 +977,43 @@ export function SettingsPage() {
                     Enables Rich Presence when running Echo Web in a remote browser or hosted cloud
                     deployment.
                   </small>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1 border-t border-white/6">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestDiscord}
+                      disabled={discordCheckStatus === 'checking'}
+                      className="min-h-[44px] rounded-lg bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-[#7c5cff] disabled:opacity-50"
+                      aria-label="Test Discord connection"
+                    >
+                      {discordCheckStatus === 'checking'
+                        ? 'Testing Connection...'
+                        : 'Test Discord Connection'}
+                    </button>
+                    {discordCheckStatus === 'connected' && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-emerald-500/20 px-2 py-1 text-[11px] font-medium text-emerald-400"
+                        role="status"
+                      >
+                        Connected
+                      </span>
+                    )}
+                    {discordCheckStatus === 'disconnected' && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-1 text-[11px] font-medium text-amber-400"
+                        role="status"
+                      >
+                        Not Detected
+                      </span>
+                    )}
+                  </div>
+                  {discordStatusMessage && (
+                    <p className="text-[11px] text-[#a59fad]" aria-live="polite">
+                      {discordStatusMessage}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
