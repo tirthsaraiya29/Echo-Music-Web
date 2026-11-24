@@ -22,6 +22,10 @@ import {
   searchPodcasts,
   getTrendingPodcastShows,
 } from '../services/podcast/podcastDiscoveryService.ts'
+import {
+  sortPodcastEpisodes,
+  type EpisodeSortOrder,
+} from '../services/podcast/podcastOrderingService.ts'
 import { useEchoStore } from '../stores/useEchoStore.ts'
 import { formatDuration } from '../utils/format.ts'
 import { artwork } from '../utils/artwork.ts'
@@ -40,6 +44,7 @@ export function PodcastsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all')
+  const [sortOrder, setSortOrder] = useState<EpisodeSortOrder>('newest')
   const [isLoading, setIsLoading] = useState(false)
 
   const currentTrack = useEchoStore((state) => state.currentTrack)
@@ -404,37 +409,54 @@ export function PodcastsPage() {
             <span>{activeSearch ? `Results for "${activeSearch}"` : 'Discover Episodes & Shows'}</span>
           </h2>
 
-          <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 text-xs font-medium">
-            <button
-              type="button"
-              onClick={() => setViewFilter('all')}
-              className={classNames(
-                'rounded-lg px-3 py-1 transition-all',
-                viewFilter === 'all' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
-              )}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewFilter('episodes')}
-              className={classNames(
-                'rounded-lg px-3 py-1 transition-all',
-                viewFilter === 'episodes' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
-              )}
-            >
-              Episodes
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewFilter('shows')}
-              className={classNames(
-                'rounded-lg px-3 py-1 transition-all',
-                viewFilter === 'shows' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
-              )}
-            >
-              Shows
-            </button>
+          <div className="flex items-center gap-2">
+            {viewFilter !== 'shows' && (
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as EpisodeSortOrder)}
+                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white focus:outline-none"
+                aria-label="Sort episodes"
+              >
+                <option value="newest" className="bg-[#18181b] text-white">Newest First</option>
+                <option value="oldest" className="bg-[#18181b] text-white">Oldest First</option>
+                <option value="shortest" className="bg-[#18181b] text-white">Shortest</option>
+                <option value="longest" className="bg-[#18181b] text-white">Longest</option>
+                <option value="title" className="bg-[#18181b] text-white">Title</option>
+              </select>
+            )}
+
+            <div className="flex items-center gap-1 rounded-xl bg-white/5 p-1 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setViewFilter('all')}
+                className={classNames(
+                  'rounded-lg px-3 py-1 transition-all',
+                  viewFilter === 'all' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
+                )}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewFilter('episodes')}
+                className={classNames(
+                  'rounded-lg px-3 py-1 transition-all',
+                  viewFilter === 'episodes' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
+                )}
+              >
+                Episodes
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewFilter('shows')}
+                className={classNames(
+                  'rounded-lg px-3 py-1 transition-all',
+                  viewFilter === 'shows' ? 'bg-[#7c5cff] text-white font-semibold' : 'text-[#a59fad] hover:text-white',
+                )}
+              >
+                Shows
+              </button>
+            </div>
           </div>
         </div>
 
@@ -504,7 +526,7 @@ export function PodcastsPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {categoryEpisodes.map((episode) => {
+                  {sortPodcastEpisodes(categoryEpisodes, sortOrder).map((episode) => {
                     const isCurrent =
                       currentTrack?.id === episode.id ||
                       (episode.videoId && currentTrack?.videoId === episode.videoId)

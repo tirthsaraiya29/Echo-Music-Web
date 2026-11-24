@@ -30,6 +30,10 @@ import {
   exportPlaylistToM3U,
   triggerFileDownload,
 } from '../services/sharing/playlistPortability.ts'
+import {
+  sortPodcastEpisodes,
+  type EpisodeSortOrder,
+} from '../services/podcast/podcastOrderingService.ts'
 import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
 
 function getRandomIndex(length: number): number {
@@ -244,6 +248,7 @@ export function PlaylistPage() {
 
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [episodeOrder, setEpisodeOrder] = useState<EpisodeSortOrder>('newest')
 
   // Resolve any custom playlist tracks missing from memory/cache
   useEffect(() => {
@@ -458,7 +463,10 @@ export function PlaylistPage() {
       playlistTracks.some((t) => t.isPodcast),
     )
     const showFollowed = isPodcastFollowed(playlistId)
-    const totalDuration = playlistTracks.reduce(
+    const orderedTracks = isShow
+      ? sortPodcastEpisodes(playlistTracks, episodeOrder)
+      : playlistTracks
+    const totalDuration = orderedTracks.reduce(
       (sum, track) => sum + (track.durationMs || (track.durationSeconds || 0) * 1000),
       0,
     )
@@ -547,12 +555,29 @@ export function PlaylistPage() {
             </div>
           </div>
         </div>
-        <div className="playlist-toolbar">
+        <div className="playlist-toolbar flex items-center justify-between">
           <span>
-            {playlistTracks.length} songs · {formatDurationLong(totalDuration)}
+            {orderedTracks.length} {isShow ? 'episodes' : 'songs'} · {formatDurationLong(totalDuration)}
           </span>
+          {isShow && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-[#a59fad]">Order:</span>
+              <select
+                value={episodeOrder}
+                onChange={(e) => setEpisodeOrder(e.target.value as EpisodeSortOrder)}
+                className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-white focus:outline-none"
+                aria-label="Episode order"
+              >
+                <option value="newest" className="bg-[#18181b] text-white">Newest First</option>
+                <option value="oldest" className="bg-[#18181b] text-white">Oldest First (Chronological)</option>
+                <option value="longest" className="bg-[#18181b] text-white">Longest First</option>
+                <option value="shortest" className="bg-[#18181b] text-white">Shortest First</option>
+                <option value="title" className="bg-[#18181b] text-white">Title (A-Z)</option>
+              </select>
+            </div>
+          )}
         </div>
-        {playlistTracks.length === 0 ? (
+        {orderedTracks.length === 0 ? (
           <div
             className="empty-state"
             role="status"
@@ -564,7 +589,7 @@ export function PlaylistPage() {
             <p style={{ fontSize: '0.9rem' }}>This playlist currently contains no tracks.</p>
           </div>
         ) : (
-          <TrackList items={playlistTracks} />
+          <TrackList items={orderedTracks} />
         )}
       </div>
     )
