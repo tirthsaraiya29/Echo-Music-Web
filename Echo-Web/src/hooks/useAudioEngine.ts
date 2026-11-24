@@ -66,6 +66,8 @@ export const audioEngineActions = {
   revokeQueueOwnership: (reason?: string) =>
     AudioEngine.getInstance().revokeQueueOwnership(reason),
   getQueueOwnership: () => AudioEngine.getInstance().getQueueOwnership(),
+  isQueueOwnershipValid: (token?: string | null) =>
+    AudioEngine.getInstance().isQueueOwnershipValid(token),
   setPauseAtEndOfItems: (enable: boolean) => AudioEngine.getInstance().setPauseAtEndOfItems(enable),
   getVisualizerData: () => AudioEngine.getInstance().getVisualizerData(),
   getFrequencyData: (outputArray?: Uint8Array<ArrayBuffer>) =>

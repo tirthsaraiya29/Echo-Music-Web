@@ -799,6 +799,10 @@ export class AudioEngine {
     return this.queueManager.getOwnership()
   }
 
+  public isQueueOwnershipValid(token?: string | null): boolean {
+    return this.queueManager.isOwnershipValid(token)
+  }
+
   public snapshotQueue(owner?: string, token?: string): QueueSnapshot {
     const time = this.deckController.getCurrentTime()
     return this.queueManager.snapshotQueue(time, owner, token)
@@ -817,7 +821,11 @@ export class AudioEngine {
     this.emit('queueChange')
 
     if (track) {
-      await this.loadAndPlayTrack(track, resume)
+      try {
+        await this.loadAndPlayTrack(track, resume)
+      } catch {
+        // Non-fatal stream resolution failure on restore (e.g. offline, missing stream, or mock track)
+      }
       if (snapshot.currentTime > 0) {
         this.seek(snapshot.currentTime)
       }

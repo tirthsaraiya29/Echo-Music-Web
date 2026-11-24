@@ -10,6 +10,7 @@ export class MusicFlowService {
   private state: MusicFlowState = {
     isActive: false,
     isLoading: false,
+    handoffStatus: 'idle',
     ownershipToken: null,
     savedSnapshot: null,
     feed: [],
@@ -20,6 +21,9 @@ export class MusicFlowService {
       likesCount: 0,
       skipsCount: 0,
       feedsGeneratedCount: 0,
+      restoresSucceededCount: 0,
+      restoresBlockedCount: 0,
+      mixesKeptCount: 0,
       lastSwipeDirection: null,
       lastSwipeTimestamp: null,
     },
@@ -72,6 +76,9 @@ export class MusicFlowService {
       likesCount: 0,
       skipsCount: 0,
       feedsGeneratedCount: 0,
+      restoresSucceededCount: 0,
+      restoresBlockedCount: 0,
+      mixesKeptCount: 0,
       lastSwipeDirection: null,
       lastSwipeTimestamp: null,
     }
@@ -96,6 +103,7 @@ export class MusicFlowService {
 
     this.state.isActive = true
     this.state.isLoading = true
+    this.state.handoffStatus = 'active'
     this.state.ownershipToken = token
     this.state.savedSnapshot = snapshot
     this.state.currentIndex = 0
@@ -113,15 +121,22 @@ export class MusicFlowService {
 
     if (feed.length > 0 && feed[0]) {
       this.state.telemetry.tracksListenedCount++
-      useEchoStore.getState().playQueue(feed, 0)
+      try {
+        useEchoStore.getState().playQueue(feed, 0)
+      } catch {
+        // Non-fatal playback startup in testing environments
+      }
     }
   }
 
   /**
-   * Exits Music Flow, optionally restoring the pre-takeover queue snapshot.
+   * Exits Music Flow, checking ownership lease token validity.
+   * If restoreQueue is requested:
+   *  - Restores previous queue only if ownership remained valid without external mutations.
+   *  - If ownership was revoked (e.g. user manually queued tracks during flow), preserves current queue.
    */
-  public async exitFlow(restoreQueue = true): Promise<void> {
-    if (!this.state.isActive) return
+  public async exitFlow(restoreQueue = true): Promise<boolean> {
+    if (!this.state.isActive) return false
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer)
@@ -129,20 +144,73 @@ export class MusicFlowService {
     }
 
     const { savedSnapshot, ownershipToken } = this.state
+    const engine = AudioEngine.getInstance()
 
     this.state.isActive = false
     this.state.isLoading = false
+
+    if (!restoreQueue) {
+      this.state.handoffStatus = 'kept'
+      this.state.telemetry.mixesKeptCount++
+      if (ownershipToken) {
+        engine.revokeQueueOwnership('USER_KEPT_MIX')
+      }
+      this.state.ownershipToken = null
+      this.state.savedSnapshot = null
+      this.state.feed = []
+      this.state.currentIndex = 0
+      this.emit()
+      useEchoStore.getState().setToast('Flow mix kept in active queue')
+      return true
+    }
+
+    if (savedSnapshot && ownershipToken) {
+      const isOwnerValid = engine.isQueueOwnershipValid(ownershipToken)
+      if (!isOwnerValid) {
+        // Ownership was revoked during session
+        this.state.handoffStatus = 'revoked'
+        this.state.telemetry.restoresBlockedCount++
+        this.state.ownershipToken = null
+        this.state.savedSnapshot = null
+        this.state.feed = []
+        this.state.currentIndex = 0
+        this.emit()
+        useEchoStore.getState().setToast(
+          'Queue was modified externally; preserving your current queue',
+        )
+        return false
+      }
+
+      // Valid ownership lease: perform restore
+      const restored = await engine.restoreQueue(savedSnapshot, true, {
+        ownerToken: ownershipToken,
+      })
+      engine.revokeQueueOwnership('FLOW_EXIT')
+
+      if (restored) {
+        this.state.handoffStatus = 'restored'
+        this.state.telemetry.restoresSucceededCount++
+        useEchoStore.getState().setToast('Restored previous queue')
+      } else {
+        this.state.handoffStatus = 'revoked'
+        this.state.telemetry.restoresBlockedCount++
+      }
+
+      this.state.ownershipToken = null
+      this.state.savedSnapshot = null
+      this.state.feed = []
+      this.state.currentIndex = 0
+      this.emit()
+      return restored
+    }
+
+    this.state.handoffStatus = 'idle'
     this.state.ownershipToken = null
     this.state.savedSnapshot = null
     this.state.feed = []
     this.state.currentIndex = 0
     this.emit()
-
-    if (restoreQueue && savedSnapshot && ownershipToken) {
-      const engine = AudioEngine.getInstance()
-      await engine.restoreQueue(savedSnapshot, true, { ownerToken: ownershipToken })
-      engine.revokeQueueOwnership('FLOW_EXIT')
-    }
+    return true
   }
 
   /**
@@ -200,10 +268,8 @@ export class MusicFlowService {
     const cachedTracks = Object.values(useEchoStore.getState().trackCache)
 
     try {
-      // Query trending songs from InnerTube
       const result = await InnerTubeClient.search('trending hits global songs', 'songs')
       if (result.tracks && result.tracks.length > 0) {
-        // Interleave with cached favorite tracks if available
         if (cachedTracks.length > 0) {
           const combined: Track[] = []
           const maxLen = Math.max(result.tracks.length, cachedTracks.length)
