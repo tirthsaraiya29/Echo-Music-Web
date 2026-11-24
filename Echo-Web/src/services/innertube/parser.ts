@@ -499,6 +499,11 @@ function parseResponsiveListItemRenderer(
   }
 
   const isShort = Boolean(isShortItem || (durationSeconds <= 60 && title.includes('#')))
+  const isPodcast = Boolean(
+    musicVideoType === 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE' ||
+    albumId.startsWith('MPSP') ||
+    col1Runs.some((r) => r.text?.trim().toLowerCase().includes('episode'))
+  )
   const isVideo = Boolean(
     (musicVideoType &&
       musicVideoType !== 'MUSIC_VIDEO_TYPE_ATV' &&
@@ -518,6 +523,9 @@ function parseResponsiveListItemRenderer(
     isShort,
     isVideo,
     isVideoSong: isVideo,
+    isPodcast,
+    podcastShowId: albumId.startsWith('MPSP') ? albumId : undefined,
+    showTitle: isPodcast ? albumTitle : undefined,
     musicVideoType,
 
     // Phase 1 AudioEngine & UI contracts compatibility
@@ -612,15 +620,22 @@ function parseTwoRowItemRenderer(
     return album
   }
 
-  // Check Playlist
+  // Check Playlist & Podcast Show
   if (
     pageType === 'MUSIC_PAGE_TYPE_PLAYLIST' ||
+    pageType === 'MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE' ||
     (browseId &&
       (browseId.startsWith('VL') ||
         browseId.startsWith('PL') ||
         browseId.startsWith('RD') ||
-        browseId.startsWith('SS')))
+        browseId.startsWith('SS') ||
+        browseId.startsWith('MPSP')))
   ) {
+    const isPodcast = Boolean(
+      browseId?.startsWith('MPSP') ||
+      pageType === 'MUSIC_PAGE_TYPE_PODCAST_SHOW_DETAIL_PAGE' ||
+      subtitleRuns.some((r) => r.text?.trim().toLowerCase().includes('podcast'))
+    )
     const playlist: PlaylistSummary = {
       id: browseId || '',
       title,
@@ -629,6 +644,7 @@ function parseTwoRowItemRenderer(
       author: subtitleRuns[0]?.text?.trim(),
       description: subtitleRuns.map((r) => r.text).join(''),
       isShorts: Boolean(browseId?.startsWith('SS') || /^#?shorts$/i.test(title)),
+      isPodcast,
     }
     return playlist
   }
@@ -674,6 +690,12 @@ function parseTwoRowItemRenderer(
         (/\b(official video|music video|lyric video)\b/i.test(title) && !albumId.startsWith('MPREb_')),
     )
 
+    const isPodcast = Boolean(
+      musicVideoType === 'MUSIC_VIDEO_TYPE_PODCAST_EPISODE' ||
+      albumId.startsWith('MPSP') ||
+      subtitleRuns.some((r) => r.text?.trim().toLowerCase().includes('podcast'))
+    )
+
     const track: Track = {
       id: videoId,
       title,
@@ -685,6 +707,9 @@ function parseTwoRowItemRenderer(
       isShort,
       isVideo,
       isVideoSong: isVideo,
+      isPodcast,
+      podcastShowId: albumId.startsWith('MPSP') ? albumId : undefined,
+      showTitle: isPodcast ? albumTitle : undefined,
       musicVideoType,
 
       artistId,

@@ -35,6 +35,7 @@ export interface PlaylistSummary {
   author?: string | undefined
   description?: string | undefined
   isShorts?: boolean | undefined
+  isPodcast?: boolean | undefined
 }
 
 export interface Track {
@@ -65,6 +66,7 @@ export interface Track {
   unresolved?: boolean | undefined
   isPodcast?: boolean | undefined
   podcastShowId?: string | undefined
+  showTitle?: string | undefined
   episodeNumber?: number | undefined
   publishedAt?: string | undefined
   isShort?: boolean | undefined
@@ -88,6 +90,7 @@ export interface PodcastShow {
   artworkUrl: string
   episodeCount?: number | undefined
   isFollowed?: boolean | undefined
+  browseId?: string | undefined
 }
 
 export interface HomeShelf {
