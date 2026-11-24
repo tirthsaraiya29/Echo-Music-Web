@@ -7,6 +7,7 @@ import type {
   RecentlyPlayedItem,
   Track,
   UserPreferences,
+  PodcastShow,
 } from '../types/domain.ts'
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
@@ -23,6 +24,7 @@ import {
   isTrackBlocked,
   filterBlockedArtistsFromQueue,
 } from '../services/innertube/blockedArtistsService.ts'
+import { recordPodcastLibraryMetric } from '../services/podcast/podcastLibraryService.ts'
 
 export const playlistTitleSchema = z
   .string()
@@ -156,6 +158,10 @@ type EchoState = {
   toast: string
   trackCache: Record<string, Track>
   blockedArtists: string[]
+  followedPodcasts: PodcastShow[]
+  followPodcast: (show: PodcastShow) => void
+  unfollowPodcast: (showId: string) => void
+  isPodcastFollowed: (showId: string) => boolean
   blockArtist: (artist: { id: string; name: string } | string) => void
   unblockArtist: (artistIdOrName: string) => void
   isArtistBlocked: (artistId: string, artistName?: string) => boolean
@@ -222,6 +228,7 @@ export const useEchoStore = create<EchoState>()(
       toast: '',
       trackCache: {},
       blockedArtists: [],
+      followedPodcasts: [],
 
       cacheTrack: (track: Track) => {
         cacheTrack(track)
@@ -712,6 +719,44 @@ export const useEchoStore = create<EchoState>()(
         return checkArtistBlocked(artistId, artistName, get().blockedArtists)
       },
 
+      followPodcast: (show) => {
+        set((state) => {
+          if (
+            state.followedPodcasts.some(
+              (p) => p.id === show.id || (show.browseId && p.browseId === show.browseId),
+            )
+          ) {
+            return state
+          }
+          const updated = [...state.followedPodcasts, { ...show, isFollowed: true }]
+          recordPodcastLibraryMetric('follow', updated.length)
+          return {
+            followedPodcasts: updated,
+            toast: `Followed "${show.title}"`,
+          }
+        })
+      },
+
+      unfollowPodcast: (showId) => {
+        set((state) => {
+          const show = state.followedPodcasts.find(
+            (p) => p.id === showId || p.browseId === showId,
+          )
+          const updated = state.followedPodcasts.filter(
+            (p) => p.id !== showId && p.browseId !== showId,
+          )
+          recordPodcastLibraryMetric('unfollow', updated.length)
+          return {
+            followedPodcasts: updated,
+            toast: show ? `Unfollowed "${show.title}"` : 'Unfollowed podcast show',
+          }
+        })
+      },
+
+      isPodcastFollowed: (showId) => {
+        return get().followedPodcasts.some((p) => p.id === showId || p.browseId === showId)
+      },
+
       setToast: (message) => set({ toast: message }),
       clearToast: () => set({ toast: '' }),
     }),
@@ -783,6 +828,7 @@ export const useEchoStore = create<EchoState>()(
           preferences: state.preferences,
           trackCache: prunedCache,
           blockedArtists: state.blockedArtists,
+          followedPodcasts: state.followedPodcasts,
         }
       },
       merge: (persisted, current) => {
@@ -800,6 +846,7 @@ export const useEchoStore = create<EchoState>()(
           ...saved,
           trackCache: restoredCache,
           blockedArtists: saved.blockedArtists ?? [],
+          followedPodcasts: saved.followedPodcasts ?? [],
           playlists: saved.playlists ?? [],
           savedPlaylistIds: saved.savedPlaylistIds ?? [],
           likedTrackIds: saved.likedTrackIds ?? [],

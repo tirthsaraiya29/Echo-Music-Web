@@ -10,7 +10,7 @@ import {
   Search,
   Tv,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   getAllPodcastProgress,
   dismissPodcastProgress,
@@ -46,6 +46,8 @@ export function PodcastsPage() {
   const isPlaying = useEchoStore((state) => state.isPlaying)
   const playTrack = useEchoStore((state) => state.playTrack)
   const togglePlayback = useEchoStore((state) => state.togglePlayback)
+  const followedPodcasts = useEchoStore((state) => state.followedPodcasts)
+  const unfollowPodcast = useEchoStore((state) => state.unfollowPodcast)
 
   // Load in-progress podcast episodes from IndexedDB
   useEffect(() => {
@@ -283,6 +285,65 @@ export function PodcastsPage() {
                 </div>
               )
             })}
+          </div>
+        </section>
+      )}
+
+      {/* Followed Podcasts Shelf */}
+      {followedPodcasts.length > 0 && !activeSearch && (
+        <section className="shelf mb-8" aria-labelledby="followed-podcasts-heading">
+          <div className="shelf__header flex items-center justify-between">
+            <h2 id="followed-podcasts-heading" className="shelf__title flex items-center gap-2">
+              <Radio size={18} className="text-[#7c5cff]" />
+              <span>Your Followed Shows</span>
+            </h2>
+            <Link to="/library?tab=podcasts" className="text-xs font-semibold text-[#b09cff] hover:text-white">
+              View all ({followedPodcasts.length})
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {followedPodcasts.map((show) => (
+              <div
+                key={show.id}
+                onClick={() => handleOpenShow(show)}
+                className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-3 transition-all hover:border-white/12 hover:bg-white/[0.06] hover:shadow-lg"
+              >
+                <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-white/5">
+                  <img
+                    src={artwork(show.artworkUrl, 256)}
+                    alt={show.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="rounded-full bg-[#7c5cff] px-3 py-1 text-xs font-semibold text-white shadow-md">
+                      View Show
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2.5 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="truncate text-xs font-semibold text-white/90 group-hover:text-white">
+                      {show.title}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        unfollowPodcast(show.id)
+                      }}
+                      className="text-white/40 hover:text-white"
+                      title="Unfollow show"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <p className="truncate text-[11px] text-[#a59fad]">
+                    {show.author}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}

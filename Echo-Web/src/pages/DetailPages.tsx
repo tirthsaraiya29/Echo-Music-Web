@@ -15,6 +15,7 @@ import {
   FileDown,
   Disc3,
   UserX,
+  Radio,
 } from 'lucide-react'
 import type { Playlist, Track } from '../types/domain.ts'
 import { useAlbum } from '../hooks/useAlbum.ts'
@@ -226,6 +227,9 @@ export function PlaylistPage() {
   )
   const saved = useEchoStore((state) => state.savedPlaylistIds.includes(playlistId))
   const toggleSaved = useEchoStore((state) => state.togglePlaylistLike)
+  const followPodcast = useEchoStore((state) => state.followPodcast)
+  const unfollowPodcast = useEchoStore((state) => state.unfollowPodcast)
+  const isPodcastFollowed = useEchoStore((state) => state.isPodcastFollowed)
   const removeTrack = useEchoStore((state) => state.removeTrackFromPlaylist)
   const reorderTrack = useEchoStore((state) => state.reorderPlaylistTrack)
   const trackCache = useEchoStore((state) => state.trackCache)
@@ -448,6 +452,12 @@ export function PlaylistPage() {
   if (remoteData?.album) {
     const playlist = remoteData.album
     const playlistTracks = remoteData.tracks || []
+    const isShow = Boolean(
+      playlistId.startsWith('MPSP') ||
+      (playlist as unknown as { isPodcast?: boolean }).isPodcast ||
+      playlistTracks.some((t) => t.isPodcast),
+    )
+    const showFollowed = isPodcastFollowed(playlistId)
     const totalDuration = playlistTracks.reduce(
       (sum, track) => sum + (track.durationMs || (track.durationSeconds || 0) * 1000),
       0,
@@ -485,8 +495,8 @@ export function PlaylistPage() {
             <h1>{playlist.title}</h1>
             <p>{playlist.artistName || 'Curated Playlist'}</p>
             <div className="detail-meta">
-              <span>Playlist</span>
-              <span>{playlistTracks.length} tracks</span>
+              <span>{isShow ? 'Podcast Show' : 'Playlist'}</span>
+              <span>{playlistTracks.length} {isShow ? 'episodes' : 'tracks'}</span>
               <span>{formatDurationLong(totalDuration)}</span>
             </div>
             <div className="detail-actions">
@@ -501,6 +511,30 @@ export function PlaylistPage() {
               <button className="button button--quiet" type="button" onClick={shuffle}>
                 <Shuffle size={16} /> Shuffle
               </button>
+              {isShow && (
+                <button
+                  className={classNames('button', showFollowed ? 'button--quiet' : 'button--primary')}
+                  type="button"
+                  onClick={() => {
+                    if (showFollowed) {
+                      unfollowPodcast(playlistId)
+                    } else {
+                      followPodcast({
+                        id: playlistId,
+                        title: playlist.title,
+                        author: playlist.artistName || 'Podcast Host',
+                        artworkUrl: playlist.image || playlist.thumbnailUrl || '',
+                        episodeCount: playlistTracks.length,
+                        browseId: playlistId,
+                        isFollowed: true,
+                      })
+                    }
+                  }}
+                >
+                  <Radio size={16} />
+                  <span>{showFollowed ? 'Following' : 'Follow Show'}</span>
+                </button>
+              )}
               <button
                 className={classNames('icon-button', 'detail-like', saved && 'is-liked')}
                 type="button"

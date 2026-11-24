@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight,
   Clock3,
@@ -8,6 +8,7 @@ import {
   Heart,
   Pause,
   Play,
+  Radio,
   RotateCcw,
   Search as SearchIcon,
   X,
@@ -1455,10 +1456,11 @@ export function SearchPage() {
   )
 }
 
-const libraryTabs = ['All', 'Playlists', 'Liked', 'Local Music'] as const
+const libraryTabs = ['All', 'Playlists', 'Liked', 'Local Music', 'Podcasts'] as const
 type LibraryTab = (typeof libraryTabs)[number]
 
 export function LibraryPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')?.toLowerCase()
   const tab = libraryTabs.find((item) => item.toLowerCase() === requestedTab) ?? 'All'
@@ -1477,6 +1479,8 @@ export function LibraryPage() {
   const createPlaylist = useEchoStore((state) => state.createPlaylist)
   const addTrackToPlaylist = useEchoStore((state) => state.addTrackToPlaylist)
   const setToast = useEchoStore((state) => state.setToast)
+  const followedPodcasts = useEchoStore((state) => state.followedPodcasts)
+  const unfollowPodcast = useEchoStore((state) => state.unfollowPodcast)
 
   // Resolve any liked tracks missing from memory/cache
   useEffect(() => {
@@ -1508,6 +1512,11 @@ export function LibraryPage() {
 
   const filteredPlaylists = playlists.filter((p) =>
     p.title.toLowerCase().includes(filter.toLowerCase()),
+  )
+  const filteredPodcasts = followedPodcasts.filter(
+    (p) =>
+      p.title.toLowerCase().includes(filter.toLowerCase()) ||
+      p.author.toLowerCase().includes(filter.toLowerCase()),
   )
 
   const likedTracks: Track[] = likedTrackIds
@@ -1728,6 +1737,78 @@ export function LibraryPage() {
           <Headphones size={27} />
           <h3>No playlists yet</h3>
           <p>Create your first playlist to begin organizing your music.</p>
+        </div>
+      )}
+
+      {/* Tab: Followed Podcasts */}
+      {(tab === 'All' || tab === 'Podcasts') && filteredPodcasts.length > 0 && (
+        <section className="page-section">
+          {tab === 'All' && <SectionHeading title="Followed podcasts" to="/library?tab=podcasts" />}
+          <div
+            className={classNames(
+              'library-collections',
+              layout === 'list' && 'library-collections--list',
+            )}
+          >
+            {filteredPodcasts.map((show) => (
+              <div
+                key={show.id}
+                onClick={() => navigate(`/playlist/${show.browseId || show.id}`)}
+                className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-3 transition-all hover:border-white/12 hover:bg-white/[0.06] hover:shadow-lg"
+              >
+                <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-white/5">
+                  <img
+                    src={artwork(show.artworkUrl, 256)}
+                    alt={show.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="rounded-full bg-[#7c5cff] px-3 py-1 text-xs font-semibold text-white shadow-md">
+                      View Show
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2.5 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="truncate text-xs font-semibold text-white/90 group-hover:text-white">
+                      {show.title}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        unfollowPodcast(show.id)
+                      }}
+                      className="text-white/40 hover:text-white"
+                      title="Unfollow show"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <p className="truncate text-[11px] text-[#a59fad]">
+                    {show.author}
+                  </p>
+                  {show.episodeCount && (
+                    <span className="mt-1 inline-block text-[10px] text-white/40">
+                      {show.episodeCount} episodes
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {tab === 'Podcasts' && filteredPodcasts.length === 0 && (
+        <div className="empty-state">
+          <Radio size={27} />
+          <h3>No followed podcasts yet</h3>
+          <p>Discover shows and follow them to keep your favorite episodes in one place.</p>
+          <Link to="/podcasts" className="button button--primary mt-3">
+            Discover Podcasts
+          </Link>
         </div>
       )}
 
