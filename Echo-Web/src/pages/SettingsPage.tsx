@@ -23,6 +23,7 @@ import {
   Cloud,
   Server,
   Puzzle,
+  RefreshCw,
 } from 'lucide-react'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
@@ -390,6 +391,34 @@ export function SettingsPage() {
   const handleRemoveAddon = (id: string, name: string) => {
     extensionManager.removeAddon(id)
     notify(`Removed extension ${name}`)
+  }
+
+  const [pingingId, setPingingId] = useState<string | null>(null)
+
+  const handleTestEndpoint = async (id: string) => {
+    setPingingId(id)
+    try {
+      const res = await extensionManager.testEndpointHealth(id)
+      if (res.status === 'online') {
+        notify(`Endpoint is online (${res.latencyMs ?? 0}ms)`)
+      } else {
+        notify(`Endpoint check: ${res.status}${res.error ? ` - ${res.error}` : ''}`)
+      }
+    } catch {
+      notify('Health check failed')
+    } finally {
+      setPingingId(null)
+    }
+  }
+
+  const handleTestAllEndpoints = async () => {
+    setPingingId('all')
+    try {
+      await extensionManager.testAllEndpoints()
+      notify('Checked health for all endpoints')
+    } finally {
+      setPingingId(null)
+    }
   }
 
   const save = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
@@ -1308,9 +1337,22 @@ export function SettingsPage() {
 
             {/* Installed Extensions List */}
             <div className="mt-4 space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a59fad]">
-                Configured Extensions ({addons.length})
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a59fad]">
+                  Configured Extensions ({addons.length})
+                </h3>
+                {addons.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleTestAllEndpoints}
+                    disabled={pingingId !== null}
+                    className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-[#cfc8d8] transition-colors hover:bg-white/10 disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={pingingId === 'all' ? 'animate-spin' : ''} />
+                    Ping All
+                  </button>
+                )}
+              </div>
               {addons.length === 0 ? (
                 <p className="rounded-xl border border-white/5 bg-white/2 p-4 text-xs text-[#a59fad]">
                   No audio extensions configured. Add an extension URL above to enable upstream
@@ -1332,11 +1374,57 @@ export function SettingsPage() {
                           <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-[#a59fad]">
                             Priority {addon.priority}
                           </span>
+                          {addon.healthStatus === 'online' && (
+                            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                              Online{addon.latencyMs !== undefined ? ` • ${addon.latencyMs}ms` : ''}
+                            </span>
+                          )}
+                          {(addon.healthStatus === 'error' || addon.healthStatus === 'offline') && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded border border-rose-500/20 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-400"
+                              title={addon.lastError}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                              {addon.healthStatus === 'error' ? 'Error' : 'Offline'}
+                            </span>
+                          )}
+                          {addon.healthStatus === 'unknown' && (
+                            <span className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-[#a59fad]">
+                              Unchecked
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[#a59fad]">{addon.url}</span>
+                        <div className="flex items-center gap-2 text-[#a59fad]">
+                          <span>{addon.url}</span>
+                          {addon.lastSuccessAt && (
+                            <>
+                              <span>•</span>
+                              <span className="text-[10px]">
+                                Active:{' '}
+                                {new Date(addon.lastSuccessAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleTestEndpoint(addon.id)}
+                        disabled={pingingId !== null}
+                        className="rounded-lg p-2 text-[#a59fad] transition-colors hover:bg-white/5 hover:text-[#b09cff] disabled:opacity-50"
+                        title="Test endpoint health"
+                      >
+                        <RefreshCw
+                          size={15}
+                          className={pingingId === addon.id || pingingId === 'all' ? 'animate-spin' : ''}
+                        />
+                      </button>
                       <label className="flex cursor-pointer items-center gap-2">
                         <span className="text-[11px] text-[#a59fad]">
                           {addon.enabled ? 'Enabled' : 'Disabled'}

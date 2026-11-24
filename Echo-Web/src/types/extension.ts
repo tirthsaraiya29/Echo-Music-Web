@@ -18,6 +18,11 @@ export const addonEndpointSchema = z.object({
   ),
   enabled: z.boolean().default(true),
   priority: z.number().int().positive().default(1),
+  healthStatus: z.enum(['online', 'offline', 'error', 'unknown']).default('unknown'),
+  latencyMs: z.number().nonnegative().optional(),
+  lastCheckAt: z.number().positive().optional(),
+  lastSuccessAt: z.number().positive().optional(),
+  lastError: z.string().optional(),
 })
 
 export type AddonEndpoint = z.infer<typeof addonEndpointSchema>
@@ -57,7 +62,7 @@ export const addonStreamResponseSchema = z.object({
 export type AddonStreamResponse = z.infer<typeof addonStreamResponseSchema>
 
 export const extensionHealthStatusSchema = z.object({
-  status: z.enum(['online', 'offline', 'error']),
+  status: z.enum(['online', 'offline', 'error', 'unknown']),
   latencyMs: z.number().nonnegative().optional(),
   manifest: addonManifestSchema.optional(),
   error: z.string().optional(),

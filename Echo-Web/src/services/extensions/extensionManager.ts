@@ -166,8 +166,10 @@ export class ExtensionManager {
     }
 
     let resolvedName = (validated.name || '').trim()
+    let initialHealth: ExtensionHealthStatus = { status: 'unknown' }
+    const health = await this.checkHealth(normalizedUrl)
+    initialHealth = health
     if (!resolvedName) {
-      const health = await this.checkHealth(normalizedUrl)
       resolvedName = health.manifest?.name || 'Custom Extension'
     }
 
@@ -178,12 +180,39 @@ export class ExtensionManager {
       url: normalizedUrl,
       enabled: validated.enabled ?? true,
       priority: this.addons.length + 1,
+      healthStatus: initialHealth.status,
+      latencyMs: initialHealth.latencyMs,
+      lastCheckAt: Date.now(),
+      lastError: initialHealth.error,
     })
 
     this.addons.push(newEndpoint)
     this.save()
     recordExtensionRegistryMetric('registrations')
     return newEndpoint
+  }
+
+  public async testEndpointHealth(addonId: string): Promise<ExtensionHealthStatus> {
+    const addon = this.addons.find((a) => a.id === addonId)
+    if (!addon) {
+      throw new Error(`Endpoint ${addonId} not found`)
+    }
+
+    const status = await this.checkHealth(addon.url)
+    addon.healthStatus = status.status
+    addon.latencyMs = status.latencyMs
+    addon.lastCheckAt = Date.now()
+    addon.lastError = status.error
+    if (status.status === 'online') {
+      addon.lastSuccessAt = Date.now()
+    }
+    this.save()
+    return status
+  }
+
+  public async testAllEndpoints(): Promise<void> {
+    const promises = this.addons.map((a) => this.testEndpointHealth(a.id).catch(() => {}))
+    await Promise.allSettled(promises)
   }
 
   public toggleAddon(id: string, enabled: boolean): void {
@@ -370,6 +399,9 @@ export class ExtensionManager {
         if (resolveData.success && resolveData.stream?.url) {
           this.telemetry.resolutionSuccesses++
           this.telemetry.activeExtensionSource = addon.name
+          addon.lastSuccessAt = Date.now()
+          addon.healthStatus = 'online'
+          this.save()
 
           return {
             streamUrl: resolveData.stream.url,
