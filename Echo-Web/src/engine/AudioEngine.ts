@@ -60,6 +60,7 @@ export class AudioEngine {
   private lastFmScrobbled = false
   private loudnessMeasured = false
   private crossfadeRollback: (() => void) | null = null
+  private currentTrackRecorded = false
 
   private constructor(config: Partial<AudioEngineConfig> = {}) {
     this.graph = new WebAudioGraph({
@@ -159,6 +160,9 @@ export class AudioEngine {
   public async play(track?: Track): Promise<void> {
     if (castService.getIsConnected()) {
       if (track) {
+        if (track.id !== this.queueManager.currentTrack?.id) {
+          this.recordCurrentTrackTransition(false)
+        }
         this.queueManager.playTrackDirectly(track)
         await this.loadAndPlayTrack(track)
         return
@@ -170,6 +174,9 @@ export class AudioEngine {
     }
 
     if (track) {
+      if (track.id !== this.queueManager.currentTrack?.id) {
+        this.recordCurrentTrackTransition(false)
+      }
       this.queueManager.playTrackDirectly(track)
       await this.loadAndPlayTrack(track)
       return
@@ -206,6 +213,7 @@ export class AudioEngine {
   }
 
   public async next(): Promise<void> {
+    this.recordCurrentTrackTransition(false)
     const { track, shouldStop } = this.queueManager.next()
     this.emit('queueChange')
 
@@ -230,6 +238,7 @@ export class AudioEngine {
     }
 
     if (track) {
+      this.recordCurrentTrackTransition(false)
       await this.loadAndPlayTrack(track)
     }
   }
@@ -316,6 +325,7 @@ export class AudioEngine {
   }
 
   public setQueue(tracks: Track[], startIndex = 0): void {
+    this.recordCurrentTrackTransition(false)
     const track = this.queueManager.setSourceQueue(tracks, startIndex)
     this.emit('queueChange')
     if (track) {
@@ -660,28 +670,7 @@ export class AudioEngine {
 
     this.deckController.onTrackEnded = () => {
       this.consecutiveErrorCount = 0
-      const current = this.queueManager.currentTrack
-      if (current) {
-        void recordListeningEvent({
-          track: current,
-          durationPlayedMs: Math.round(this.deckController.getCurrentTime() * 1000),
-          trackDurationMs:
-            Math.round(this.deckController.getDuration() * 1000) ||
-            (current.durationSeconds ? current.durationSeconds * 1000 : 180000),
-          completed: true,
-          skipped: false,
-        })
-
-        const episodeId = current.videoId || current.id
-        if (episodeId) {
-          void db.podcastProgress
-            .update(episodeId, {
-              completed: true,
-              updatedAt: Date.now(),
-            })
-            .catch(() => {})
-        }
-      }
+      this.recordCurrentTrackTransition(true)
 
       const prefs = useEchoStore.getState().preferences
       if (prefs.discordRpc) {
@@ -760,8 +749,55 @@ export class AudioEngine {
     }
   }
 
+  public recordCurrentTrackTransition(isAutoEnd = false): void {
+    if (this.currentTrackRecorded) return
+    const current = this.queueManager.currentTrack
+    if (!current) return
+
+    const durationSeconds = this.deckController.getDuration() || (current.durationSeconds ?? 0)
+    const durationPlayedMs = Math.round(this.deckController.getCurrentTime() * 1000)
+    const trackDurationMs = Math.round(durationSeconds * 1000) || 180000
+
+    // Only record if at least 1000ms was played or it is an auto-end
+    if (!isAutoEnd && durationPlayedMs < 1000) {
+      return
+    }
+
+    const completionRatio = trackDurationMs > 0 ? durationPlayedMs / trackDurationMs : 0
+    const isCompleted = isAutoEnd || completionRatio >= 0.85
+    const isSkipped = !isCompleted
+
+    this.currentTrackRecorded = true
+
+    void recordListeningEvent({
+      track: current,
+      durationPlayedMs,
+      trackDurationMs,
+      completed: isCompleted,
+      skipped: isSkipped,
+    })
+
+    if (isCompleted) {
+      const episodeId = current.videoId || current.id
+      if (episodeId && typeof indexedDB !== 'undefined') {
+        void db.podcastProgress
+          .update(episodeId, {
+            completed: true,
+            updatedAt: Date.now(),
+          })
+          .catch(() => {})
+      }
+    }
+  }
+
   private async loadAndPlayTrack(track: Track, autoPlay = true): Promise<void> {
     this.crossfadeRollback = null
+    const current = this.queueManager.currentTrack
+    if (!this.currentTrackRecorded && current && current.id !== track.id) {
+      this.recordCurrentTrackTransition(false)
+    }
+    this.currentTrackRecorded = false
+
     const requestId = ++this.currentLoadRequestId
     this.mediaSession.updateTrack(track)
     this.emit('trackChange', track)

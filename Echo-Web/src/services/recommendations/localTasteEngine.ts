@@ -36,6 +36,7 @@ export async function recordListeningEvent(params: {
   completed: boolean
   skipped: boolean
 }): Promise<void> {
+  if (typeof indexedDB === 'undefined') return
   const timeOfDay = getCurrentTimeOfDay()
   const record: ListeningHistoryRecord = {
     trackId: params.track.id,
@@ -62,6 +63,7 @@ export async function excludeTrackFromRecommendations(
   track: Track,
   reason = 'User excluded',
 ): Promise<void> {
+  if (typeof indexedDB === 'undefined') return
   const record: RecommendationExclusionRecord = {
     trackId: track.id,
     trackTitle: track.title,
@@ -76,6 +78,7 @@ export async function excludeTrackFromRecommendations(
  * Restore an excluded track back into recommendations
  */
 export async function restoreExcludedTrack(trackId: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') return
   await db.recommendationExclusions.delete(trackId)
 }
 
@@ -83,20 +86,21 @@ export async function restoreExcludedTrack(trackId: string): Promise<void> {
  * Get all excluded tracks
  */
 export async function getExcludedTracks(): Promise<RecommendationExclusionRecord[]> {
+  if (typeof indexedDB === 'undefined') return []
   return await db.recommendationExclusions.toArray()
 }
 
 /**
- * Compute Taste Scores for all tracks in local history
+ * Pure taste score calculation for a given history snapshot and exclusions
  */
-export async function computeTasteScores(likedTrackIds: Set<string>): Promise<ScoredTrack[]> {
-  const exclusions = await db.recommendationExclusions.toArray()
-  const excludedSet = new Set(exclusions.map((e) => e.trackId))
-
-  const history = await db.history.toArray()
-  const now = Date.now()
+export function calculateTasteScore(
+  history: ListeningHistoryRecord[],
+  exclusions: Set<string>,
+  likedTrackIds: Set<string>,
+  now: number = Date.now(),
+  currentTimeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' = getCurrentTimeOfDay(),
+): ScoredTrack[] {
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
-  const currentTimeOfDay = getCurrentTimeOfDay()
 
   const trackMap = new Map<
     string,
@@ -109,7 +113,7 @@ export async function computeTasteScores(likedTrackIds: Set<string>): Promise<Sc
   >()
 
   for (const item of history) {
-    if (excludedSet.has(item.trackId)) continue
+    if (exclusions.has(item.trackId)) continue
 
     let entry = trackMap.get(item.trackId)
     if (!entry) {
@@ -135,8 +139,9 @@ export async function computeTasteScores(likedTrackIds: Set<string>): Promise<Sc
       entry.score += 2.0
     }
 
-    if (item.skipped && item.durationPlayedMs < 30000) {
-      entry.score -= 1.5
+    // Explicit skip penalties: strong negative penalty for quick skips (<30s), moderate for later skips
+    if (item.skipped) {
+      entry.score -= item.durationPlayedMs < 30000 ? 1.5 : 0.75
     }
 
     if (now - item.playedAt < sevenDaysMs) {
@@ -172,6 +177,17 @@ export async function computeTasteScores(likedTrackIds: Set<string>): Promise<Sc
   }
 
   return results.sort((a, b) => b.score - a.score)
+}
+
+/**
+ * Compute Taste Scores for all tracks in local history
+ */
+export async function computeTasteScores(likedTrackIds: Set<string>): Promise<ScoredTrack[]> {
+  if (typeof indexedDB === 'undefined') return []
+  const exclusions = await db.recommendationExclusions.toArray()
+  const excludedSet = new Set(exclusions.map((e) => e.trackId))
+  const history = await db.history.toArray()
+  return calculateTasteScore(history, excludedSet, likedTrackIds)
 }
 
 function scoredToTrack(st: ScoredTrack): Track {
@@ -279,6 +295,7 @@ export async function getHeavyRotation(likedTrackIds: string[], limit = 8): Prom
 export async function getTopArtists(
   limit = 6,
 ): Promise<Array<{ id: string; name: string; count: number; artwork?: string | undefined }>> {
+  if (typeof indexedDB === 'undefined') return []
   const history = await db.history.toArray()
   const artistMap = new Map<
     string,
