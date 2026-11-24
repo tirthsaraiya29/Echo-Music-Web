@@ -103,6 +103,7 @@ export class AudioEngine {
       crossfadeDuration: config.crossfadeDuration ?? 3.0,
       prebufferWindowMs: config.prebufferWindowMs ?? 15000,
     })
+    this.deckController.setGaplessPlayback(useEchoStore.getState().preferences.gaplessPlayback ?? true)
 
     this.queueManager = new QueueManager()
 
@@ -176,6 +177,7 @@ export class AudioEngine {
       stereoWidth: this.graph.stereoWidener.getWidth(),
       volumeNormalization: this.graph.getVolumeNormalization(),
       crossfadeDuration: this.deckController.crossfadeDuration,
+      gaplessPlayback: this.deckController.getGaplessPlayback(),
       playbackRate: this.playbackRate,
       sleepTimerRemaining: this.getSleepTimerRemaining(),
       sleepTimerEndOfTrack: this.sleepTimerEndOfTrack,
@@ -437,6 +439,11 @@ export class AudioEngine {
 
   public setCrossfadeDuration(seconds: number): void {
     this.deckController.setCrossfadeDuration(seconds)
+    this.emitState()
+  }
+
+  public setGaplessPlayback(enabled: boolean): void {
+    this.deckController.setGaplessPlayback(enabled)
     this.emitState()
   }
 
@@ -964,6 +971,21 @@ export class AudioEngine {
       }
       this.emit('deckSwap', newActiveDeck)
       this.emitState()
+    }
+
+    this.deckController.onGaplessTransition = (_fromDeck: DeckId, toDeck: DeckId) => {
+      const standbyTrack = this.deckController.getActiveTrack()
+      this.queueManager.promoteStandbyTrack(standbyTrack)
+      this.queueManager.commitPromotion()
+      this.queueManager.setActiveDeck(toDeck)
+      if (standbyTrack) {
+        this.mediaSession.updateTrack(standbyTrack)
+        this.emit('trackChange', standbyTrack)
+      }
+      this.emit('deckSwap', toDeck)
+      this.emit('queueChange')
+      this.emitState()
+      void this.handlePrebuffer()
     }
 
     this.deckController.onError = (error) => {

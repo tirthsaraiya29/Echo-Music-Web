@@ -23,6 +23,7 @@ export const userPreferencesSchema = z.object({
   repeat: repeatModeSchema.default('off'),
   showExplicit: z.boolean().default(true),
   volumeNormalization: z.boolean().default(false),
+  gaplessPlayback: z.boolean().optional().default(true),
   audioQuality: audioQualitySchema.default('high'),
   audioQualityWifi: audioQualitySchema.optional().default('lossless'),
   audioQualityCellular: audioQualitySchema.optional().default('medium'),

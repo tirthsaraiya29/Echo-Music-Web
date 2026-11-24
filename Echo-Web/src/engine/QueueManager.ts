@@ -172,6 +172,10 @@ export class QueueManager {
     return this.activeTrack
   }
 
+  public get currentIndex(): number {
+    return this.currentSourceIndex
+  }
+
   public get upNext(): Track[] {
     return this.upNextList.map(cloneTrack)
   }

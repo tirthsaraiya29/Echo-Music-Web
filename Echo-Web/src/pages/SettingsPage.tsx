@@ -131,7 +131,7 @@ export function SettingsPage() {
   const resetPreferences = useEchoStore((state) => state.resetPreferences)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const notify = useEchoStore((state) => state.setToast)
-  const { setCrossfadeDuration, setVolumeNormalization, getAudioTelemetry, clearHistory } = useAudioEngine()
+  const { setCrossfadeDuration, setVolumeNormalization, setGaplessPlayback, getAudioTelemetry, clearHistory } = useAudioEngine()
 
   const [activeSection, setActiveSection] = useState('all')
   const [settingsFilter, setSettingsFilter] = useState('')
@@ -439,6 +439,9 @@ export function SettingsPage() {
     }
     if (key === 'volumeNormalization' && typeof value === 'boolean') {
       setVolumeNormalization(value)
+    }
+    if (key === 'gaplessPlayback' && typeof value === 'boolean') {
+      setGaplessPlayback(value)
     }
     notify('Preference saved')
   }
@@ -752,6 +755,14 @@ export function SettingsPage() {
               description="DynamicsCompressorNode evens out perceived loudness across diverse master recordings."
               preference="volumeNormalization"
               value={preferences.volumeNormalization}
+              onChange={save}
+            />
+
+            <PreferenceToggle
+              label="Gapless playback"
+              description="Continuous playback without silence or reloading between consecutive tracks using dual-deck prebuffering."
+              preference="gaplessPlayback"
+              value={preferences.gaplessPlayback ?? true}
               onChange={save}
             />
 

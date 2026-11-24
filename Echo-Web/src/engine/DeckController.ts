@@ -12,6 +12,7 @@ export interface CrossfadeMetrics {
   crossfadeSuccesses: number
   crossfadeFailures: number
   crossfadesCancelled: number
+  gaplessTransitions: number
   lastCrossfadeDurationMs: number
 }
 
@@ -50,9 +51,11 @@ export class DeckController {
     crossfadeSuccesses: 0,
     crossfadeFailures: 0,
     crossfadesCancelled: 0,
+    gaplessTransitions: 0,
     lastCrossfadeDurationMs: 0,
   }
 
+  private gaplessPlaybackEnabled = true
   private playbackState: PlaybackState = 'IDLE'
   private currentPlayOperationId = 0
   private currentLoadOperationId = 0
@@ -66,6 +69,7 @@ export class DeckController {
   public onCrossfadeFailed?: (fromDeck: DeckId, toDeck: DeckId, error: Error) => void
   public onCrossfadeCancelled?: (fromDeck: DeckId, toDeck: DeckId) => void
   public onCrossfadeComplete?: (newActiveDeck: DeckId) => void
+  public onGaplessTransition?: (fromDeck: DeckId, toDeck: DeckId) => void
   public onError?: (error: Error) => void
 
   constructor(graph: WebAudioGraph, options: DeckControllerOptions = {}) {
@@ -100,6 +104,14 @@ export class DeckController {
 
   public setCrossfadeDuration(seconds: number): void {
     this.crossfadeDurationSeconds = Math.max(0, Math.min(12, Number.isFinite(seconds) ? seconds : 3))
+  }
+
+  public setGaplessPlayback(enabled: boolean): void {
+    this.gaplessPlaybackEnabled = Boolean(enabled)
+  }
+
+  public getGaplessPlayback(): boolean {
+    return this.gaplessPlaybackEnabled
   }
 
   public setPrebufferWindowMs(ms: number): void {
@@ -650,9 +662,62 @@ export class DeckController {
     }
   }
 
-  private handleTrackEnded(deckId: DeckId): void {
-    if (!this.isCrossfading) {
-      this.onTrackEnded?.(deckId)
+  public async transitionGapless(): Promise<boolean> {
+    if (this.isCrossfading) return false
+    const standbyEl = this.getStandbyElement()
+    const standbyTrack = this.getStandbyTrack()
+    if (!standbyTrack || !standbyEl.src) return false
+
+    const fromDeck = this.activeDeckId
+    const toDeck = this.standbyDeck
+
+    try {
+      standbyEl.currentTime = 0
+      await standbyEl.play()
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      this.onError?.(error)
+      return false
     }
+
+    const now = this.graph.context.currentTime
+    const fromGain = fromDeck === 'A' ? this.graph.deckAGain : this.graph.deckBGain
+    const toGain = toDeck === 'A' ? this.graph.deckAGain : this.graph.deckBGain
+
+    // 5ms micro-ramp to eliminate DC offset click
+    fromGain.gain.cancelScheduledValues(now)
+    toGain.gain.cancelScheduledValues(now)
+    fromGain.gain.setValueAtTime(1.0, now)
+    fromGain.gain.linearRampToValueAtTime(0.0, now + 0.005)
+    toGain.gain.setValueAtTime(0.0, now)
+    toGain.gain.linearRampToValueAtTime(1.0, now + 0.005)
+
+    const oldActiveEl = this.getActiveElement()
+    this.releaseMediaElement(oldActiveEl)
+    if (fromDeck === 'A') {
+      this.activeTrackDeckA = null
+    } else {
+      this.activeTrackDeckB = null
+    }
+
+    this.activeDeckId = toDeck
+    this.isPrebufferingTriggered = false
+    this.metrics.gaplessTransitions++
+
+    this.onGaplessTransition?.(fromDeck, toDeck)
+    return true
+  }
+
+  private handleTrackEnded(deckId: DeckId): void {
+    if (this.isCrossfading) return
+
+    const standbyEl = this.getStandbyElement()
+    const standbyTrack = this.getStandbyTrack()
+    if (this.gaplessPlaybackEnabled && standbyTrack && standbyEl.src && standbyEl.readyState >= 2) {
+      void this.transitionGapless()
+      return
+    }
+
+    this.onTrackEnded?.(deckId)
   }
 }

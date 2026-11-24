@@ -74,6 +74,7 @@ export const audioEngineActions = {
   setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
+  setGaplessPlayback: (enabled: boolean) => AudioEngine.getInstance().setGaplessPlayback(enabled),
 }
 
 export function useAudioEngine() {
@@ -111,6 +112,7 @@ export function useAudioEngine() {
     stereoWidth: state.stereoWidth,
     volumeNormalization: state.volumeNormalization,
     crossfadeDuration: state.crossfadeDuration,
+    gaplessPlayback: state.gaplessPlayback ?? true,
     equalizerGains: state.equalizerGains,
     playbackRate: state.playbackRate ?? 1.0,
     sleepTimerRemaining: state.sleepTimerRemaining,
@@ -161,6 +163,9 @@ export function bridgeAudioEngineWithStore(): () => void {
   engine.setVolumeNormalization(echoStore.preferences.volumeNormalization)
   if (typeof echoStore.preferences.crossfadeDuration === 'number') {
     engine.setCrossfadeDuration(echoStore.preferences.crossfadeDuration)
+  }
+  if (typeof echoStore.preferences.gaplessPlayback === 'boolean') {
+    engine.setGaplessPlayback(echoStore.preferences.gaplessPlayback)
   }
 
   const startingTrack = echoStore.currentTrack || getCachedTrack(echoStore.currentTrackId)
@@ -251,6 +256,13 @@ export function bridgeAudioEngineWithStore(): () => void {
         typeof currPrefs.crossfadeDuration === 'number'
       ) {
         engine.setCrossfadeDuration(currPrefs.crossfadeDuration)
+        changed = true
+      }
+      if (
+        currPrefs.gaplessPlayback !== prevPrefs.gaplessPlayback &&
+        typeof currPrefs.gaplessPlayback === 'boolean'
+      ) {
+        engine.setGaplessPlayback(currPrefs.gaplessPlayback)
         changed = true
       }
 

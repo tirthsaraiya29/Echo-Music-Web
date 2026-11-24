@@ -94,6 +94,7 @@ export interface AudioEngineState {
   stereoWidth: number
   volumeNormalization: boolean
   crossfadeDuration: number
+  gaplessPlayback?: boolean | undefined
   playbackRate?: number
   sleepTimerRemaining?: number | null
   sleepTimerEndOfTrack?: boolean

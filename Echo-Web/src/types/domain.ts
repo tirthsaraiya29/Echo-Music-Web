@@ -125,6 +125,7 @@ export interface UserPreferences {
   repeat: 'off' | 'all' | 'one'
   showExplicit: boolean
   volumeNormalization: boolean
+  gaplessPlayback?: boolean | undefined
   audioQuality: AudioQuality
   audioQualityWifi?: AudioQuality | undefined
   audioQualityCellular?: AudioQuality | undefined
