@@ -1,4 +1,56 @@
+import { z } from 'zod'
 import type { DeckId, QueueSnapshot, RepeatMode, Track } from '../types/audio.ts'
+
+export const TrackSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    artistName: z.string().optional(),
+    artistId: z.string().optional(),
+    albumTitle: z.string().optional(),
+    albumId: z.string().optional(),
+    albumImage: z.string().optional(),
+    artwork: z.string().optional(),
+    durationMs: z.number().nonnegative().optional(),
+    durationSeconds: z.number().nonnegative().optional(),
+    playCount: z.number().optional(),
+  })
+  .passthrough()
+
+export const QueueSnapshotSchema = z.object({
+  id: z.string().min(1),
+  timestamp: z.number(),
+  history: z.array(z.record(z.string(), z.unknown())),
+  currentTrack: z.record(z.string(), z.unknown()).nullable(),
+  upNext: z.array(z.record(z.string(), z.unknown())),
+  sourceQueue: z.array(z.record(z.string(), z.unknown())),
+  radioQueue: z.array(z.record(z.string(), z.unknown())),
+  shuffledSourceQueue: z.array(z.record(z.string(), z.unknown())),
+  currentTime: z.number(),
+  activeDeck: z.enum(['A', 'B']),
+  repeatMode: z.enum(['OFF', 'ALL', 'ONE']),
+  isShuffle: z.boolean(),
+  pauseAtEndOfItems: z.boolean(),
+  currentSourceIndex: z.number().optional(),
+  activeTrackSource: z.enum(['upNext', 'sourceQueue', 'radio', 'direct']).optional(),
+})
+
+export function isValidTrack(track: unknown): track is Track {
+  if (!track || typeof track !== 'object') return false
+  const t = track as Record<string, unknown>
+  const id = t['id']
+  const title = t['title']
+  return typeof id === 'string' && id.trim().length > 0 && typeof title === 'string'
+}
+
+export interface QueueMetrics {
+  mutationsCount: number
+  invalidDropsCount: number
+  snapshotsCreated: number
+  snapshotsRestored: number
+  restoreFailures: number
+  lastMutationDurationMs: number
+}
 
 function cloneTrack(track: Track): Track {
   return {
@@ -27,6 +79,8 @@ export interface DetailedQueueState {
   history: Track[]
   radioQueue: Track[]
   totalUpcomingCount: number
+  isEmpty: boolean
+  hasUpcoming: boolean
 }
 
 export class QueueManager {
@@ -44,10 +98,70 @@ export class QueueManager {
   private pauseAtEndOfItemsSetting = false
   private currentActiveDeck: DeckId = 'A'
 
+  private metrics: QueueMetrics = {
+    mutationsCount: 0,
+    invalidDropsCount: 0,
+    snapshotsCreated: 0,
+    snapshotsRestored: 0,
+    restoreFailures: 0,
+    lastMutationDurationMs: 0,
+  }
+
   constructor(initialTracks: Track[] = [], startIndex = 0) {
     if (initialTracks.length > 0) {
       this.setSourceQueue(initialTracks, startIndex)
     }
+  }
+
+  public getMetrics(): Readonly<QueueMetrics> {
+    return { ...this.metrics }
+  }
+
+  public reset(): void {
+    this.historyList = []
+    this.activeTrack = null
+    this.activeTrackSource = 'direct'
+    this.upNextList = []
+    this.sourceQueueList = []
+    this.shuffledList = []
+    this.radioQueueList = []
+    this.currentSourceIndex = -1
+    this.repeatModeSetting = 'OFF'
+    this.shuffleEnabled = false
+    this.pauseAtEndOfItemsSetting = false
+    this.currentActiveDeck = 'A'
+    this.metrics.mutationsCount++
+  }
+
+  public validateInvariants(): { valid: boolean; errors: string[] } {
+    const errors: string[] = []
+    const effectiveSource = this.shuffleEnabled ? this.shuffledList : this.sourceQueueList
+    if (
+      this.currentSourceIndex < -1 ||
+      (effectiveSource.length > 0 && this.currentSourceIndex >= effectiveSource.length)
+    ) {
+      errors.push(
+        `currentSourceIndex ${this.currentSourceIndex} out of bounds for source length ${effectiveSource.length}`,
+      )
+    }
+    if (
+      this.activeTrackSource === 'sourceQueue' &&
+      this.currentSourceIndex >= 0 &&
+      effectiveSource[this.currentSourceIndex]
+    ) {
+      if (this.activeTrack && effectiveSource[this.currentSourceIndex]?.id !== this.activeTrack.id) {
+        errors.push(
+          `activeTrack ${this.activeTrack.id} does not match effective source track at index ${this.currentSourceIndex}`,
+        )
+      }
+    }
+    if (this.upNextList.some((t) => !isValidTrack(t))) {
+      errors.push('upNext contains invalid track items')
+    }
+    if (this.sourceQueueList.some((t) => !isValidTrack(t))) {
+      errors.push('sourceQueue contains invalid track items')
+    }
+    return { valid: errors.length === 0, errors }
   }
 
   public get history(): Track[] {
@@ -97,21 +211,31 @@ export class QueueManager {
         ? effectiveSource.slice(this.currentSourceIndex + 1).map(cloneTrack)
         : []
 
+    const totalUpcoming = this.upNextList.length + sourceUpcoming.length
     return {
       currentTrack: this.currentTrack,
       upNext: this.upNext,
       sourceUpcoming,
       history: this.history,
       radioQueue: this.radioQueue,
-      totalUpcomingCount: this.upNextList.length + sourceUpcoming.length,
+      totalUpcomingCount: totalUpcoming,
+      isEmpty: !this.activeTrack && totalUpcoming === 0 && this.radioQueueList.length === 0,
+      hasUpcoming: totalUpcoming > 0 || this.radioQueueList.length > 0,
     }
   }
 
   public setSourceQueue(tracks: Track[], startIndex = 0): Track | null {
-    this.sourceQueueList = tracks.map(cloneTrack)
-    const clampedIndex = Math.max(0, Math.min(startIndex, Math.max(0, tracks.length - 1)))
-    this.currentSourceIndex = tracks.length > 0 ? clampedIndex : -1
-    this.activeTrack = tracks[clampedIndex] ? cloneTrack(tracks[clampedIndex]) : null
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    const validTracks = tracks.filter((t) => {
+      const ok = isValidTrack(t)
+      if (!ok) this.metrics.invalidDropsCount++
+      return ok
+    })
+
+    this.sourceQueueList = validTracks.map(cloneTrack)
+    const clampedIndex = Math.max(0, Math.min(startIndex, Math.max(0, validTracks.length - 1)))
+    this.currentSourceIndex = validTracks.length > 0 ? clampedIndex : -1
+    this.activeTrack = validTracks[clampedIndex] ? cloneTrack(validTracks[clampedIndex]) : null
     this.activeTrackSource = 'sourceQueue'
 
     if (this.shuffleEnabled && this.activeTrack) {
@@ -120,10 +244,18 @@ export class QueueManager {
       this.shuffledList = []
     }
 
+    this.metrics.mutationsCount++
+    this.metrics.lastMutationDurationMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start
     return this.activeTrack
   }
 
   public playTrackDirectly(track: Track): void {
+    if (!isValidTrack(track)) {
+      this.metrics.invalidDropsCount++
+      return
+    }
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
     if (this.activeTrack && this.activeTrack.id !== track.id) {
       if (!this.pauseAtEndOfItemsSetting) {
         this.historyList.push(this.activeTrack)
@@ -145,18 +277,31 @@ export class QueueManager {
       this.currentSourceIndex = 0
       this.shuffledList = []
     }
+    this.metrics.mutationsCount++
+    this.metrics.lastMutationDurationMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start
   }
 
   public playNext(track: Track): void {
+    if (!isValidTrack(track)) {
+      this.metrics.invalidDropsCount++
+      return
+    }
     const cloned = cloneTrack(track)
     this.upNextList = this.upNextList.filter((item) => item.id !== cloned.id)
     this.upNextList.unshift(cloned)
+    this.metrics.mutationsCount++
   }
 
   public addToQueue(track: Track): void {
+    if (!isValidTrack(track)) {
+      this.metrics.invalidDropsCount++
+      return
+    }
     const cloned = cloneTrack(track)
     this.upNextList = this.upNextList.filter((item) => item.id !== cloned.id)
     this.upNextList.push(cloned)
+    this.metrics.mutationsCount++
   }
 
   public removeUpNext(index: number): Track | null {
@@ -232,7 +377,13 @@ export class QueueManager {
   }
 
   public addRadioTracks(tracks: Track[]): void {
-    this.radioQueueList.push(...tracks.map(cloneTrack))
+    const valid = tracks.filter((t) => {
+      const ok = isValidTrack(t)
+      if (!ok) this.metrics.invalidDropsCount++
+      return ok
+    })
+    this.radioQueueList.push(...valid.map(cloneTrack))
+    this.metrics.mutationsCount++
   }
 
   public clearRadioQueue(): void {
@@ -436,6 +587,7 @@ export class QueueManager {
   }
 
   public snapshotQueue(currentTimeSeconds = 0): QueueSnapshot {
+    this.metrics.snapshotsCreated++
     return {
       id: `snapshot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       timestamp: Date.now(),
@@ -456,12 +608,23 @@ export class QueueManager {
   }
 
   public restoreQueue(snapshot: QueueSnapshot): Track | null {
-    this.historyList = snapshot.history.map(cloneTrack)
-    this.activeTrack = snapshot.currentTrack ? cloneTrack(snapshot.currentTrack) : null
-    this.upNextList = snapshot.upNext.map(cloneTrack)
-    this.sourceQueueList = snapshot.sourceQueue.map(cloneTrack)
-    this.radioQueueList = snapshot.radioQueue.map(cloneTrack)
-    this.shuffledList = snapshot.shuffledSourceQueue.map(cloneTrack)
+    if (!snapshot || typeof snapshot !== 'object') {
+      this.metrics.restoreFailures++
+      return this.activeTrack
+    }
+    const parsed = QueueSnapshotSchema.safeParse(snapshot)
+    if (!parsed.success) {
+      this.metrics.restoreFailures++
+      return this.activeTrack
+    }
+
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    this.historyList = snapshot.history.map((t) => cloneTrack(t as Track))
+    this.activeTrack = snapshot.currentTrack ? cloneTrack(snapshot.currentTrack as Track) : null
+    this.upNextList = snapshot.upNext.map((t) => cloneTrack(t as Track))
+    this.sourceQueueList = snapshot.sourceQueue.map((t) => cloneTrack(t as Track))
+    this.radioQueueList = snapshot.radioQueue.map((t) => cloneTrack(t as Track))
+    this.shuffledList = snapshot.shuffledSourceQueue.map((t) => cloneTrack(t as Track))
     this.currentActiveDeck = snapshot.activeDeck
     this.repeatModeSetting = snapshot.repeatMode
     this.shuffleEnabled = snapshot.isShuffle
@@ -481,6 +644,10 @@ export class QueueManager {
       this.activeTrackSource = 'direct'
     }
 
+    this.metrics.snapshotsRestored++
+    this.metrics.mutationsCount++
+    this.metrics.lastMutationDurationMs =
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) - start
     return this.activeTrack
   }
 

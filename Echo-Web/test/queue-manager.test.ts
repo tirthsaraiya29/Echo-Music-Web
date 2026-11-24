@@ -343,3 +343,74 @@ test('QueueManager: snapshot restoration preserves source queue cursor when Up N
   assert.strictEqual(afterUpNext.track?.id, '3')
   assert.strictEqual(restored.currentTrack?.id, '3')
 })
+
+test('QueueManager invariants: schema validation rejects malformed tracks and tracks metrics [SMALL-01]', () => {
+  const qm = new QueueManager()
+  const valid = createMockTrack('v1', 'Valid Track')
+  // @ts-expect-error testing runtime rejection of malformed object
+  const invalidEmptyId: Track = { id: '', title: 'No ID' }
+  // @ts-expect-error testing runtime rejection of null
+  const nullTrack: Track = null
+
+  // setSourceQueue filters out invalid entries
+  // @ts-expect-error passing invalid array
+  qm.setSourceQueue([valid, invalidEmptyId, nullTrack], 0)
+  assert.strictEqual(qm.currentTrack?.id, 'v1')
+  assert.strictEqual(qm.sourceQueue.length, 1)
+
+  const metricsBefore = qm.getMetrics()
+  assert.strictEqual(metricsBefore.invalidDropsCount, 2)
+  assert.ok(metricsBefore.mutationsCount > 0)
+
+  // addToQueue and playNext reject malformed tracks
+  // @ts-expect-error passing invalid track
+  qm.addToQueue(invalidEmptyId)
+  assert.strictEqual(qm.upNext.length, 0)
+  assert.strictEqual(qm.getMetrics().invalidDropsCount, 3)
+
+  // @ts-expect-error passing null
+  qm.playNext(nullTrack)
+  assert.strictEqual(qm.upNext.length, 0)
+  assert.strictEqual(qm.getMetrics().invalidDropsCount, 4)
+})
+
+test('QueueManager invariants: corrupted snapshot is rejected during restore without state corruption [SMALL-01]', () => {
+  const qm = new QueueManager()
+  qm.setSourceQueue([createMockTrack('1', 'T1'), createMockTrack('2', 'T2')], 0)
+  assert.strictEqual(qm.currentTrack?.id, '1')
+
+  // Corrupted snapshot missing required properties
+  // @ts-expect-error malformed snapshot
+  const corruptedSnapshot = { id: 'snap-bad', timestamp: 'not-a-number' }
+  // @ts-expect-error passing malformed snapshot
+  const result = qm.restoreQueue(corruptedSnapshot)
+
+  assert.strictEqual(result?.id, '1', 'Retains existing active track on restore rejection')
+  assert.strictEqual(qm.currentTrack?.id, '1')
+  assert.strictEqual(qm.getMetrics().restoreFailures, 1)
+})
+
+test('QueueManager invariants: reset and invariant validation enforce consistency [SMALL-01]', () => {
+  const qm = new QueueManager()
+  qm.setSourceQueue([createMockTrack('1', 'T1'), createMockTrack('2', 'T2')], 0)
+  qm.addToQueue(createMockTrack('u1', 'Up Next'))
+
+  const inv1 = qm.validateInvariants()
+  assert.strictEqual(inv1.valid, true)
+  assert.strictEqual(inv1.errors.length, 0)
+
+  const detailed = qm.getDetailedQueue()
+  assert.strictEqual(detailed.isEmpty, false)
+  assert.strictEqual(detailed.hasUpcoming, true)
+
+  qm.reset()
+  const detailedAfterReset = qm.getDetailedQueue()
+  assert.strictEqual(detailedAfterReset.isEmpty, true)
+  assert.strictEqual(detailedAfterReset.hasUpcoming, false)
+  assert.strictEqual(qm.currentTrack, null)
+  assert.strictEqual(qm.upNext.length, 0)
+  assert.strictEqual(qm.sourceQueue.length, 0)
+
+  const inv2 = qm.validateInvariants()
+  assert.strictEqual(inv2.valid, true)
+})
