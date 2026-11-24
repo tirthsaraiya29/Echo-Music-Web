@@ -173,7 +173,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-051 | Lyrics+ provider integration | Completed | 0c31b639 | Yes |
 | FEATURE-052 | Provider priority settings | Completed | 76975127 | Yes |
 | FEATURE-053 | Word-by-word timing | Completed | 8fc43d3d | Yes |
-| FEATURE-054 | Multiple lyric animations | Pending | - | - |
+| FEATURE-054 | Multiple lyric animations | Completed | 76b1cadd | Yes |
 | FEATURE-055 | Romanization-aware cache | Pending | - | - |
 | FEATURE-056 | AI translation chunking | Pending | - | - |
 | FEATURE-057 | Translation provider testing | Pending | - | - |
