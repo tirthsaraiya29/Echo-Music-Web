@@ -22,7 +22,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-08 | P1 | Listen Together state is mutated in place | `src/services/listenTogether/listenTogetherClient.ts, src/components/modals/ListenTogetherModal.tsx` | Completed | 6ef1c2409748fae08f5d054593457a44f8ae7483 | Yes (verified on origin/main) |
 | BUG-09 | P1 | Streaming proxy redirect validation is missing | `server/routes/stream.ts, server/routes/canvas.ts` | Completed | d3c624578fe664aa8a960fb58ea0b7593c6665e8 | Yes (verified on origin/main) |
 | BUG-10 | P1 | Queue snapshot restoration loses source cursor context | `src/engine/QueueManager.ts` | Completed | 2bdc15264b3c4f74d47d48dc70a5cbb7eb8f4203 | Yes (verified on origin/main) |
-| BUG-11 | P1 | Backup and restore use a second playlist store | `src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts, src/components/modals/SpotifyImportModal.tsx, src/pages/SettingsPage.tsx` | Pending | - | - |
+| BUG-11 | P1 | Backup and restore use a second playlist store | `src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts, src/components/modals/SpotifyImportModal.tsx, src/pages/SettingsPage.tsx` | Completed | db1887f3b890a9435b5a76c66cf64cf3bf5b61fa | Yes (verified on origin/main) |
 | BUG-12 | P1 | Clear History leaves persisted recent items intact | `src/pages/SettingsPage.tsx, src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts` | Pending | - | - |
 | BUG-13 | P1 | Cast is not wired into playback | `src/services/cast/castService.ts, src/components/player/AudioOutputPicker.tsx` | Pending | - | - |
 | BUG-14 | P1 | Cast media type is hardcoded | `src/services/cast/castService.ts` | Pending | - | - |
