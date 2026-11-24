@@ -71,6 +71,10 @@ import {
   type ChartGroup,
   type ChartCategory,
 } from '../services/charts/chartService.ts'
+import {
+  MOOD_DEFINITIONS,
+  GENRE_DEFINITIONS,
+} from '../services/recommendations/moodGenreService.ts'
 
 export function HomePage() {
   const release = useLatestRelease()
@@ -798,6 +802,60 @@ export function DiscoverPage() {
       ) : (
         /* Curated, Moods, Trending Shelves */
         <>
+          {activeTab === 'moods' && (
+            <div className="space-y-6 mb-8" aria-label="Moods and Genres Catalog">
+              <div>
+                <h2 className="text-base font-bold text-white mb-3">Moods & Moments</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {MOOD_DEFINITIONS.map((mood) => (
+                    <Link
+                      key={mood.id}
+                      to={`/moods/${mood.id}`}
+                      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${mood.gradient} p-4 transition-all hover:scale-[1.02] hover:shadow-lg hover:border-white/20 min-h-[110px]`}
+                      aria-label={`Browse ${mood.title} mood`}
+                    >
+                      <span className="text-3xl select-none" aria-hidden="true">
+                        {mood.icon}
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-bold text-white group-hover:text-white/90">
+                          {mood.title}
+                        </h3>
+                        <p className="text-[11px] text-white/70 line-clamp-1">{mood.description}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-base font-bold text-white mb-3">Genres</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {GENRE_DEFINITIONS.map((genre) => (
+                    <Link
+                      key={genre.id}
+                      to={`/genre/${genre.id}`}
+                      className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${genre.gradient} p-4 transition-all hover:scale-[1.02] hover:shadow-lg hover:border-white/20 min-h-[110px]`}
+                      aria-label={`Browse ${genre.title} genre`}
+                    >
+                      <span className="text-3xl select-none" aria-hidden="true">
+                        {genre.icon}
+                      </span>
+                      <div>
+                        <h3 className="text-sm font-bold text-white group-hover:text-white/90">
+                          {genre.title}
+                        </h3>
+                        <p className="text-[11px] text-white/70 line-clamp-1">
+                          {genre.description}
+                        </p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {isLoading && (
             <div className="skeleton-grid" aria-busy="true" aria-label={`Loading ${activeTab}`}>
               {Array.from({ length: 8 }).map((_, i) => (
