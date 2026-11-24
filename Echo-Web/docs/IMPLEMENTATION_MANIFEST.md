@@ -143,7 +143,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-021 | Music Flow vertical reel | Completed | a59f1e6d | Yes (verified on origin/main) |
 | FEATURE-022 | Music Flow queue handoff | Completed | 456c0a7e | Yes (verified on origin/main) |
 | FEATURE-023 | Echo Brain auto-injection | Completed | 6703a0c0 | Yes (verified on origin/main) |
-| FEATURE-024 | Taste Mix | Pending | - | - |
+| FEATURE-024 | Taste Mix | Completed | dde57c68 | Yes (verified on origin/main) |
 | FEATURE-025 | Spotify recommendation bridge | Pending | - | - |
 | FEATURE-026 | Charts and regional charts | Pending | - | - |
 | FEATURE-027 | Mood and genre browsing | Pending | - | - |
