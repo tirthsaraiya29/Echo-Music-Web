@@ -99,7 +99,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-34 | Last.fm scrobbling | 10 tasks in backlog | Completed | b0648340 | Yes (verified on origin/main) |
 | SMALL-35 | Discord Rich Presence | 10 tasks in backlog | Completed | 09afe3b5 | Yes (verified on origin/main) |
 | SMALL-36 | Listen Together client | 10 tasks in backlog | Completed | 99a09f44 | Yes (verified on origin/main) |
-| SMALL-37 | Listen Together server | 10 tasks in backlog | Pending | - | - |
+| SMALL-37 | Listen Together server | 10 tasks in backlog | Completed | d118d275 | Yes (verified on origin/main) |
 | SMALL-38 | Room security and limits | 10 tasks in backlog | Pending | - | - |
 | SMALL-39 | SponsorBlock integration | 10 tasks in backlog | Pending | - | - |
 | SMALL-40 | PWA/service worker | 10 tasks in backlog | Pending | - | - |
