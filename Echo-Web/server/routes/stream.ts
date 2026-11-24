@@ -9,7 +9,7 @@ const ytdl = new Ytdl()
 
 type VideoFormat = ReturnType<typeof chooseFormat>
 
-interface CachedVideoInfo {
+export interface CachedVideoInfo {
   format: VideoFormat
   totalBytes: number
   title?: string
@@ -22,6 +22,20 @@ interface CachedVideoInfo {
 // oldest entry the eviction candidate.
 const INFO_CACHE_MAX = 500
 const infoCache = new Map<string, CachedVideoInfo>()
+const inFlightInfo = new Map<string, Promise<CachedVideoInfo>>()
+const inFlightYtdl = new Map<string, Promise<any>>()
+
+export function clearInfoCache(): void {
+  infoCache.clear()
+  inFlightInfo.clear()
+  inFlightYtdl.clear()
+}
+
+let customYtdlGetInfo: ((videoId: string) => Promise<any>) | null = null
+
+export function setCustomYtdlGetInfo(fn: ((videoId: string) => Promise<any>) | null): void {
+  customYtdlGetInfo = fn
+}
 
 function cacheInfo(key: string, value: CachedVideoInfo): void {
   infoCache.set(key, value)
@@ -176,7 +190,7 @@ function selectBestAudioFormat(
   throw new Error('No compatible audio format found for track')
 }
 
-async function getOrFetchVideoInfo(
+export async function getOrFetchVideoInfo(
   videoId: string,
   quality: StreamQuality = 'high',
 ): Promise<CachedVideoInfo> {
@@ -187,23 +201,54 @@ async function getOrFetchVideoInfo(
     return cached
   }
 
-  const info = await ytdl.getInfo(videoId)
-  const format = selectBestAudioFormat(info.formats, quality)
-
-  const totalBytes = Number.parseInt(String(format.contentLength ?? '0'), 10)
-  const durationSeconds = Number.parseInt(String(info.videoDetails?.lengthSeconds ?? '0'), 10)
-
-  const cachedInfo: CachedVideoInfo = {
-    format,
-    totalBytes,
-    title: info.videoDetails?.title,
-    author: info.videoDetails?.author?.name,
-    durationSeconds,
-    cachedAt: Date.now(),
+  // Deduplicate in-flight requests for the exact same cacheKey
+  const existingInFlight = inFlightInfo.get(cacheKey)
+  if (existingInFlight) {
+    return existingInFlight
   }
 
-  cacheInfo(cacheKey, cachedInfo)
-  return cachedInfo
+  const fetchPromise = (async () => {
+    try {
+      // Deduplicate underlying ytdl.getInfo calls across concurrent requests for the same videoId
+      let ytdlPromise = inFlightYtdl.get(videoId)
+      if (!ytdlPromise) {
+        ytdlPromise = (async () => {
+          try {
+            if (customYtdlGetInfo) {
+              return await customYtdlGetInfo(videoId)
+            }
+            return await ytdl.getInfo(videoId)
+          } finally {
+            inFlightYtdl.delete(videoId)
+          }
+        })()
+        inFlightYtdl.set(videoId, ytdlPromise)
+      }
+
+      const info = await ytdlPromise
+      const format = selectBestAudioFormat(info.formats, quality)
+
+      const totalBytes = Number.parseInt(String(format.contentLength ?? '0'), 10)
+      const durationSeconds = Number.parseInt(String(info.videoDetails?.lengthSeconds ?? '0'), 10)
+
+      const cachedInfo: CachedVideoInfo = {
+        format,
+        totalBytes,
+        title: info.videoDetails?.title,
+        author: info.videoDetails?.author?.name,
+        durationSeconds,
+        cachedAt: Date.now(),
+      }
+
+      cacheInfo(cacheKey, cachedInfo)
+      return cachedInfo
+    } finally {
+      inFlightInfo.delete(cacheKey)
+    }
+  })()
+
+  inFlightInfo.set(cacheKey, fetchPromise)
+  return fetchPromise
 }
 
 streamRouter.get('/resolve', async (c) => {
