@@ -1,10 +1,51 @@
 import { useEffect, useState } from 'react'
+import { z } from 'zod'
 import { useQuery } from '@tanstack/react-query'
 import {
   InnerTubeClient,
   type SearchFilterKey,
   type SearchResultCatalog,
 } from '../services/innertube/client.ts'
+
+export const searchFilterSchema = z.enum([
+  'all',
+  'songs',
+  'videos',
+  'albums',
+  'artists',
+  'playlists',
+])
+
+export const searchQueryInputSchema = z.string().trim().max(500)
+
+export const recentSearchSchema = z.array(z.string().trim().min(1).max(500)).max(20)
+
+export const searchMetricsSchema = z.object({
+  searchesCount: z.number().nonnegative(),
+  suggestionsCount: z.number().nonnegative(),
+  failuresCount: z.number().nonnegative(),
+  lastError: z.string().nullable(),
+})
+
+export type SearchMetrics = z.infer<typeof searchMetricsSchema>
+
+const searchMetrics: SearchMetrics = {
+  searchesCount: 0,
+  suggestionsCount: 0,
+  failuresCount: 0,
+  lastError: null,
+}
+
+export function getSearchMetrics(): SearchMetrics {
+  return { ...searchMetrics }
+}
+
+export function resetSearchMetrics(): void {
+  searchMetrics.searchesCount = 0
+  searchMetrics.suggestionsCount = 0
+  searchMetrics.failuresCount = 0
+  searchMetrics.lastError = null
+}
 
 export function useDebounce<T>(value: T, delayMs = 250): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value)
@@ -28,7 +69,16 @@ export function useSearch(query: string, filter: SearchFilterKey = 'all') {
 
   return useQuery<SearchResultCatalog, Error>({
     queryKey: ['search', debounced, filter],
-    queryFn: () => InnerTubeClient.search(debounced, filter),
+    queryFn: async ({ signal }) => {
+      searchMetrics.searchesCount++
+      try {
+        return await InnerTubeClient.search(debounced, filter, { signal })
+      } catch (err) {
+        searchMetrics.failuresCount++
+        searchMetrics.lastError = err instanceof Error ? err.message : String(err)
+        throw err
+      }
+    },
     enabled: debounced.length > 0,
     staleTime: 5 * 60 * 1000,
   })
@@ -40,7 +90,16 @@ export function useSearchSuggestions(query: string) {
 
   return useQuery<string[], Error>({
     queryKey: ['search', 'suggestions', debounced],
-    queryFn: () => InnerTubeClient.fetchSuggestions(debounced),
+    queryFn: async ({ signal }) => {
+      searchMetrics.suggestionsCount++
+      try {
+        return await InnerTubeClient.fetchSuggestions(debounced, { signal })
+      } catch (err) {
+        searchMetrics.failuresCount++
+        searchMetrics.lastError = err instanceof Error ? err.message : String(err)
+        throw err
+      }
+    },
     enabled: debounced.length > 0,
     staleTime: 60 * 1000, // 1 minute
     gcTime: 5 * 60 * 1000, // 5 minutes
@@ -48,30 +107,44 @@ export function useSearchSuggestions(query: string) {
 }
 
 const RECENT_SEARCHES_KEY = 'echo_recent_searches_v1'
+const inMemoryRecentSearches: string[] = []
 
 export function getStoredRecentSearches(): string[] {
   try {
-    const raw = localStorage.getItem(RECENT_SEARCHES_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(RECENT_SEARCHES_KEY)
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw)
+        const valid = recentSearchSchema.safeParse(parsed)
+        if (valid.success) {
+          return valid.data
+        }
       }
     }
   } catch {
     // Non-fatal
   }
-  return []
+  return [...inMemoryRecentSearches]
 }
 
 export function saveRecentSearch(query: string): string[] {
-  const trimmed = query.trim()
-  if (!trimmed) return getStoredRecentSearches()
+  const validated = searchQueryInputSchema.safeParse(query)
+  if (!validated.success || !validated.data) {
+    return getStoredRecentSearches()
+  }
+  const trimmed = validated.data
 
-  const existing = getStoredRecentSearches().filter((q) => q.toLowerCase() !== trimmed.toLowerCase())
+  const existing = getStoredRecentSearches().filter(
+    (q) => q.toLowerCase() !== trimmed.toLowerCase(),
+  )
   const updated = [trimmed, ...existing].slice(0, 10)
+  inMemoryRecentSearches.length = 0
+  inMemoryRecentSearches.push(...updated)
+
   try {
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated))
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated))
+    }
   } catch {
     // Non-fatal
   }
@@ -79,9 +152,16 @@ export function saveRecentSearch(query: string): string[] {
 }
 
 export function removeRecentSearch(queryToRemove: string): string[] {
-  const existing = getStoredRecentSearches().filter((q) => q.toLowerCase() !== queryToRemove.toLowerCase())
+  const existing = getStoredRecentSearches().filter(
+    (q) => q.toLowerCase() !== queryToRemove.trim().toLowerCase(),
+  )
+  inMemoryRecentSearches.length = 0
+  inMemoryRecentSearches.push(...existing)
+
   try {
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(existing))
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(existing))
+    }
   } catch {
     // Non-fatal
   }
@@ -89,8 +169,11 @@ export function removeRecentSearch(queryToRemove: string): string[] {
 }
 
 export function clearAllRecentSearches(): void {
+  inMemoryRecentSearches.length = 0
   try {
-    localStorage.removeItem(RECENT_SEARCHES_KEY)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(RECENT_SEARCHES_KEY)
+    }
   } catch {
     // Non-fatal
   }
