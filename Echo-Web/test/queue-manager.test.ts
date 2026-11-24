@@ -290,3 +290,16 @@ test('QueueManager: promoteStandbyTrack rollback restores exact queue state if s
   assert.strictEqual(qm.getDetailedQueue().upNext.length, 1)
   assert.strictEqual(qm.getDetailedQueue().upNext[0]?.id, 'u1')
 })
+
+test('QueueManager: currentTrack maintains stable object reference across consecutive reads [BUG-03]', () => {
+  const qm = new QueueManager()
+  const track = createMockTrack('stable-1', 'Stable Track')
+  qm.setSourceQueue([track], 0)
+
+  const firstRead = qm.currentTrack
+  const secondRead = qm.currentTrack
+  const thirdReadFromDetailed = qm.getDetailedQueue().currentTrack
+
+  assert.strictEqual(firstRead, secondRead, 'currentTrack reference must be stable across reads')
+  assert.strictEqual(firstRead, thirdReadFromDetailed, 'getDetailedQueue().currentTrack must share the stable reference')
+})

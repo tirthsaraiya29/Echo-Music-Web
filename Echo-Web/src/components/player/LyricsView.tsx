@@ -44,7 +44,8 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     void db.syncOffsets.get(trackId).then((record) => {
       setSyncOffsetMs(record?.offsetMs ?? 0)
     })
-  }, [track])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.id, track?.videoId])
 
   const adjustSyncOffset = (deltaMs: number) => {
     const next = syncOffsetMs + deltaMs
@@ -84,7 +85,8 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     return () => {
       abortController.abort()
     }
-  }, [track])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.id, track?.videoId])
 
   // Microsecond Synchronization: RAF Loop polling audioEngine.getCurrentTime()
   useEffect(() => {

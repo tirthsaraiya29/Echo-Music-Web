@@ -55,7 +55,7 @@ export class QueueManager {
   }
 
   public get currentTrack(): Track | null {
-    return this.activeTrack ? cloneTrack(this.activeTrack) : null
+    return this.activeTrack
   }
 
   public get upNext(): Track[] {

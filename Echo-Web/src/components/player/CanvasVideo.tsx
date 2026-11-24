@@ -58,7 +58,8 @@ export function CanvasVideo({ track, className = '' }: CanvasVideoProps) {
         video.load()
       }
     }
-  }, [track])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.id, track?.videoId])
 
   useEffect(() => {
     const video = videoRef.current
