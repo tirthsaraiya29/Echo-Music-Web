@@ -75,7 +75,51 @@ export const ID3V1_GENRES: readonly string[] = [
   'Polka', 'Retro', 'Musical', 'Rock & Roll', 'Hard Rock',
 ]
 
-function normalizeGenre(genreStr: string): string {
+export const parsedAudioMetaSchema = z.object({
+  title: z.string().trim().min(1),
+  artist: z.string().trim().min(1),
+  album: z.string().trim().min(1),
+  year: z.string().optional(),
+  genre: z.string().optional(),
+})
+
+export const metadataParserMetricsSchema = z.object({
+  filesParsed: z.number().nonnegative(),
+  id3v2Parsed: z.number().nonnegative(),
+  flacParsed: z.number().nonnegative(),
+  oggParsed: z.number().nonnegative(),
+  id3v1Parsed: z.number().nonnegative(),
+  parseErrors: z.number().nonnegative(),
+  lastError: z.string().nullable(),
+})
+
+export type MetadataParserMetrics = z.infer<typeof metadataParserMetricsSchema>
+
+const metadataParserMetrics: MetadataParserMetrics = {
+  filesParsed: 0,
+  id3v2Parsed: 0,
+  flacParsed: 0,
+  oggParsed: 0,
+  id3v1Parsed: 0,
+  parseErrors: 0,
+  lastError: null,
+}
+
+export function getMetadataParserMetrics(): MetadataParserMetrics {
+  return { ...metadataParserMetrics }
+}
+
+export function resetMetadataParserMetrics(): void {
+  metadataParserMetrics.filesParsed = 0
+  metadataParserMetrics.id3v2Parsed = 0
+  metadataParserMetrics.flacParsed = 0
+  metadataParserMetrics.oggParsed = 0
+  metadataParserMetrics.id3v1Parsed = 0
+  metadataParserMetrics.parseErrors = 0
+  metadataParserMetrics.lastError = null
+}
+
+export function normalizeGenre(genreStr: string): string {
   const match = genreStr.match(/^\(?(\d+)\)?$/)
   if (match && match[1]) {
     const idx = parseInt(match[1], 10)
@@ -427,6 +471,7 @@ async function parseId3v1(
       view.getUint8(1) === 0x41 &&
       view.getUint8(2) === 0x47
     ) {
+      metadataParserMetrics.id3v1Parsed++
       const latin1 = new TextDecoder('latin1')
       const decodeField = (start: number, len: number): string => {
         const bytes = new Uint8Array(trailingBuffer, start, len)
@@ -467,7 +512,10 @@ async function parseId3v1(
  * Lightweight, format-aware metadata parser supporting ID3v1, ID3v2.2, ID3v2.3, ID3v2.4,
  * and FLAC/Vorbis comments and pictures.
  */
-export async function parseAudioMetadata(file: File): Promise<ParsedAudioMeta> {
+export async function parseAudioMetadata(
+  file: File,
+  options?: { signal?: AbortSignal },
+): Promise<ParsedAudioMeta> {
   const fallbackTitle = file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ')
   const meta: ParsedAudioMeta = {
     title: fallbackTitle,
@@ -475,10 +523,17 @@ export async function parseAudioMetadata(file: File): Promise<ParsedAudioMeta> {
     album: 'Local Music',
   }
 
+  if (options?.signal?.aborted) {
+    return meta
+  }
+
+  metadataParserMetrics.filesParsed++
+
   try {
     const readSize = Math.min(262144, file.size)
     if (readSize >= 4) {
       const headerBuffer = await file.slice(0, readSize).arrayBuffer()
+      if (options?.signal?.aborted) return meta
       const view = new DataView(headerBuffer)
 
       if (
@@ -486,6 +541,7 @@ export async function parseAudioMetadata(file: File): Promise<ParsedAudioMeta> {
         view.getUint8(1) === 0x44 &&
         view.getUint8(2) === 0x33
       ) {
+        metadataParserMetrics.id3v2Parsed++
         parseId3v2(view, headerBuffer, meta)
       } else if (
         view.getUint8(0) === 0x66 &&
@@ -493,6 +549,7 @@ export async function parseAudioMetadata(file: File): Promise<ParsedAudioMeta> {
         view.getUint8(2) === 0x61 &&
         view.getUint8(3) === 0x43
       ) {
+        metadataParserMetrics.flacParsed++
         parseFlacMetadata(view, headerBuffer, meta)
       } else if (
         view.getUint8(0) === 0x4f &&
@@ -500,21 +557,24 @@ export async function parseAudioMetadata(file: File): Promise<ParsedAudioMeta> {
         view.getUint8(2) === 0x67 &&
         view.getUint8(3) === 0x53
       ) {
+        metadataParserMetrics.oggParsed++
         parseOggMetadata(view, headerBuffer, meta)
       }
     }
 
+    if (options?.signal?.aborted) return meta
     await parseId3v1(file, meta, fallbackTitle)
-  } catch {
-    // Graceful fallback to defaults
+  } catch (err) {
+    metadataParserMetrics.parseErrors++
+    metadataParserMetrics.lastError = err instanceof Error ? err.message : String(err)
   }
 
   return meta
 }
 
-export function getAudioDuration(file: File): Promise<number> {
+export function getAudioDuration(file: File, options?: { signal?: AbortSignal }): Promise<number> {
   return new Promise((resolve) => {
-    if (typeof Audio === 'undefined') {
+    if (typeof Audio === 'undefined' || options?.signal?.aborted) {
       resolve(0)
       return
     }
@@ -522,10 +582,14 @@ export function getAudioDuration(file: File): Promise<number> {
     const audio = new Audio()
     audio.preload = 'metadata'
 
+    let timer: ReturnType<typeof setTimeout> | null = null
+
     const cleanup = () => {
+      if (timer) clearTimeout(timer)
       URL.revokeObjectURL(url)
       audio.removeEventListener('loadedmetadata', onLoaded)
       audio.removeEventListener('error', onError)
+      if (options?.signal) options.signal.removeEventListener('abort', onAbort)
     }
 
     const onLoaded = () => {
@@ -538,6 +602,20 @@ export function getAudioDuration(file: File): Promise<number> {
       cleanup()
       resolve(0)
     }
+
+    const onAbort = () => {
+      cleanup()
+      resolve(0)
+    }
+
+    if (options?.signal) {
+      options.signal.addEventListener('abort', onAbort)
+    }
+
+    timer = setTimeout(() => {
+      cleanup()
+      resolve(0)
+    }, 3000)
 
     audio.addEventListener('loadedmetadata', onLoaded)
     audio.addEventListener('error', onError)
