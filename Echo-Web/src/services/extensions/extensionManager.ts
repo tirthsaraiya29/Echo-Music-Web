@@ -44,6 +44,10 @@ export function getExtensionRegistryMetrics(): ExtensionRegistryMetrics {
 export class ExtensionManager {
   private addons: AddonEndpoint[] = []
   private listeners = new Set<(addons: AddonEndpoint[]) => void>()
+  private inFlightResolutions = new Map<string, Promise<ExtensionResolvedStream | null>>()
+  private preloadedStreams = new Map<string, ExtensionResolvedStream>()
+  private static readonly PRELOAD_CACHE_MAX = 20
+
   private telemetry: ExtensionTelemetry = {
     totalAttempts: 0,
     matchesFound: 0,
@@ -51,6 +55,9 @@ export class ExtensionManager {
     fallbackCount: 0,
     fallbackToYouTubeCount: 0,
     extensionCascadeFailures: 0,
+    preloadsTriggered: 0,
+    preloadCacheHits: 0,
+    inFlightPreloadDeduplicated: 0,
   }
 
   constructor() {
@@ -227,12 +234,80 @@ export class ExtensionManager {
    * If matching or resolution fails for all extensions, returns null so the caller
    * falls back cleanly to YouTube resolution.
    */
+  /**
+   * Preloads an extension audio stream for an upcoming track without duplicating in-flight
+   * work or triggering redundant resolutions.
+   */
+  public async preloadExtensionStream(track: Track): Promise<ExtensionResolvedStream | null> {
+    const enabledAddons = this.getAddons().filter((a) => a.enabled)
+    if (enabledAddons.length === 0) return null
+
+    this.telemetry.preloadsTriggered++
+
+    if (this.preloadedStreams.has(track.id)) {
+      this.telemetry.preloadCacheHits++
+      return this.preloadedStreams.get(track.id) || null
+    }
+
+    if (this.inFlightResolutions.has(track.id)) {
+      this.telemetry.inFlightPreloadDeduplicated++
+      return this.inFlightResolutions.get(track.id) || null
+    }
+
+    const promise = this.executeTrackResolution(track, enabledAddons).finally(() => {
+      this.inFlightResolutions.delete(track.id)
+    })
+
+    this.inFlightResolutions.set(track.id, promise)
+    const result = await promise
+
+    if (result) {
+      this.preloadedStreams.set(track.id, result)
+      if (this.preloadedStreams.size > ExtensionManager.PRELOAD_CACHE_MAX) {
+        const oldestKey = this.preloadedStreams.keys().next().value
+        if (oldestKey !== undefined) this.preloadedStreams.delete(oldestKey)
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Resolves an audio stream from configured extension sources in priority order.
+   * Leverages preloaded stream cache and in-flight deduplication before issuing requests.
+   */
   public async resolveTrackExtension(track: Track): Promise<ExtensionResolvedStream | null> {
     const enabledAddons = this.getAddons().filter((a) => a.enabled)
     if (enabledAddons.length === 0) return null
 
+    // Check preloaded cache first
+    if (this.preloadedStreams.has(track.id)) {
+      this.telemetry.preloadCacheHits++
+      const cached = this.preloadedStreams.get(track.id)!
+      this.preloadedStreams.delete(track.id) // Consume cache entry
+      return cached
+    }
+
+    // Await in-flight resolution if already running for this track
+    if (this.inFlightResolutions.has(track.id)) {
+      this.telemetry.inFlightPreloadDeduplicated++
+      return this.inFlightResolutions.get(track.id)!
+    }
+
     this.telemetry.totalAttempts++
 
+    const promise = this.executeTrackResolution(track, enabledAddons).finally(() => {
+      this.inFlightResolutions.delete(track.id)
+    })
+
+    this.inFlightResolutions.set(track.id, promise)
+    return promise
+  }
+
+  private async executeTrackResolution(
+    track: Track,
+    enabledAddons: AddonEndpoint[],
+  ): Promise<ExtensionResolvedStream | null> {
     for (const addon of enabledAddons) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 3500)
@@ -308,7 +383,6 @@ export class ExtensionManager {
         this.telemetry.extensionCascadeFailures++
       } catch {
         this.telemetry.extensionCascadeFailures++
-        // Try next addon in cascade
       } finally {
         clearTimeout(timer)
       }
@@ -317,6 +391,11 @@ export class ExtensionManager {
     this.telemetry.fallbackCount++
     this.telemetry.fallbackToYouTubeCount++
     return null
+  }
+
+  public clearPreloadCache(): void {
+    this.preloadedStreams.clear()
+    this.inFlightResolutions.clear()
   }
 
   public getTelemetry(): ExtensionTelemetry {
@@ -331,7 +410,11 @@ export class ExtensionManager {
       fallbackCount: 0,
       fallbackToYouTubeCount: 0,
       extensionCascadeFailures: 0,
+      preloadsTriggered: 0,
+      preloadCacheHits: 0,
+      inFlightPreloadDeduplicated: 0,
     }
+    this.clearPreloadCache()
   }
 }
 

@@ -1088,6 +1088,12 @@ export class AudioEngine {
       return
     }
 
+    // Preload extension stream for nextTrack in background without duplicating queue resolution
+    const prefs = useEchoStore.getState().preferences
+    if (prefs.extensionSourcePriority !== 'youtube-first' && extensionManager.hasEnabledAddons()) {
+      void extensionManager.preloadExtensionStream(nextTrack).catch(() => {})
+    }
+
     try {
       const streamUrl = await this.resolveStreamUrl(nextTrack)
       this.deckController.prebufferStandby(nextTrack, streamUrl)

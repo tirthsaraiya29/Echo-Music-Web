@@ -89,6 +89,9 @@ export interface ExtensionTelemetry {
   fallbackCount: number
   fallbackToYouTubeCount: number
   extensionCascadeFailures: number
+  preloadsTriggered: number
+  preloadCacheHits: number
+  inFlightPreloadDeduplicated: number
   activeExtensionSource?: string | undefined
 }
 
