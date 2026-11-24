@@ -106,7 +106,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-41 | Application routing | 10 tasks in backlog | Completed | 122dc654 | Yes (verified on origin/main) |
 | SMALL-42 | Global layout/navigation | 10 tasks in backlog | Completed | 0e0031db | Yes (verified on origin/main) |
 | SMALL-43 | Desktop player view | 10 tasks in backlog | Completed | 8ce8d56b | Yes (verified on origin/main) |
-| SMALL-44 | Settings and preference plumbing | 10 tasks in backlog | Pending | - | - |
+| SMALL-44 | Settings and preference plumbing | 10 tasks in backlog | Completed | 870483d7 | Yes (verified on origin/main) |
 | SMALL-45 | Accessibility and keyboard navigation | 10 tasks in backlog | Pending | - | - |
 | SMALL-46 | Theme and design tokens | 10 tasks in backlog | Pending | - | - |
 | SMALL-47 | Artwork/image loading | 10 tasks in backlog | Pending | - | - |
