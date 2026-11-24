@@ -71,7 +71,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-06 | Audio output picker | 10 tasks in backlog | Completed | a9dd7057 | Yes (verified on origin/main) |
 | SMALL-07 | Google Cast adapter | 10 tasks in backlog | Completed | 4e6654f7 | Yes (verified on origin/main) |
 | SMALL-08 | Stream resolver | 10 tasks in backlog | Completed | 78a360cd | Yes (verified on origin/main) |
-| SMALL-09 | HTTP Range streaming | 10 tasks in backlog | Pending | - | - |
+| SMALL-09 | HTTP Range streaming | 10 tasks in backlog | Completed | f5596cda | Yes (verified on origin/main) |
 | SMALL-10 | Streaming proxy security | 10 tasks in backlog | Pending | - | - |
 | SMALL-11 | InnerTube client | 10 tasks in backlog | Pending | - | - |
 | SMALL-12 | InnerTube parser | 10 tasks in backlog | Pending | - | - |
