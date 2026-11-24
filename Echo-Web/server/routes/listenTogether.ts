@@ -1,6 +1,89 @@
 import { Hono, type Context } from 'hono'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { getConnInfo } from '@hono/node-server/conninfo'
+import { z } from 'zod'
+
+export const createRoomServerInputSchema = z.object({
+  hostName: z.string().trim().min(1, 'Host nickname cannot be empty').max(32).optional(),
+})
+
+export const joinRoomServerInputSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{6,8}$/, 'Valid 6-8 character room code required'),
+  userName: z.string().trim().min(1, 'Username cannot be empty').max(32).optional(),
+})
+
+export const syncRoomServerInputSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{6,8}$/, 'Valid 6-8 character room code required'),
+  userId: z.string().trim().min(1, 'User ID is required').max(128),
+  token: z.string().trim().min(1, 'Token is required').max(128),
+  action: z.enum(['update_state', 'heartbeat', 'leave']).default('heartbeat'),
+  track: z.any().nullable().optional(),
+  isPlaying: z.boolean().optional(),
+  playbackPositionSeconds: z.number().optional(),
+  isBuffering: z.boolean().optional(),
+})
+
+export const serverListenTogetherMetricsSchema = z.object({
+  roomsCreated: z.number().int().nonnegative(),
+  roomsJoined: z.number().int().nonnegative(),
+  roomsPruned: z.number().int().nonnegative(),
+  syncRequests: z.number().int().nonnegative(),
+  heartbeatRequests: z.number().int().nonnegative(),
+  stateUpdates: z.number().int().nonnegative(),
+  leaveRequests: z.number().int().nonnegative(),
+  authFailures: z.number().int().nonnegative(),
+  rateLimitedCreations: z.number().int().nonnegative(),
+  rateLimitedJoins: z.number().int().nonnegative(),
+  validationErrors: z.number().int().nonnegative(),
+})
+
+export type ServerListenTogetherMetrics = z.infer<typeof serverListenTogetherMetricsSchema>
+
+let serverMetrics: ServerListenTogetherMetrics = {
+  roomsCreated: 0,
+  roomsJoined: 0,
+  roomsPruned: 0,
+  syncRequests: 0,
+  heartbeatRequests: 0,
+  stateUpdates: 0,
+  leaveRequests: 0,
+  authFailures: 0,
+  rateLimitedCreations: 0,
+  rateLimitedJoins: 0,
+  validationErrors: 0,
+}
+
+export function getServerListenTogetherMetrics(): ServerListenTogetherMetrics {
+  return { ...serverMetrics }
+}
+
+export function resetServerListenTogetherMetrics(): void {
+  serverMetrics = {
+    roomsCreated: 0,
+    roomsJoined: 0,
+    roomsPruned: 0,
+    syncRequests: 0,
+    heartbeatRequests: 0,
+    stateUpdates: 0,
+    leaveRequests: 0,
+    authFailures: 0,
+    rateLimitedCreations: 0,
+    rateLimitedJoins: 0,
+    validationErrors: 0,
+  }
+}
+
+export function recordServerListenTogetherMetric(metric: keyof ServerListenTogetherMetrics): void {
+  serverMetrics[metric]++
+}
 
 export const listenTogetherRouter = new Hono()
 
@@ -176,15 +259,25 @@ export function getClientIp(c: Context): string {
 }
 
 // Cleanup stale rooms every 5 minutes
-const cleanupTimer = setInterval(
+let cleanupTimer: NodeJS.Timeout | null = setInterval(
   async () => {
-    await globalRoomStore.cleanup(30 * 60 * 1000)
+    const pruned = await globalRoomStore.cleanup(30 * 60 * 1000)
+    for (let i = 0; i < pruned; i++) {
+      recordServerListenTogetherMetric('roomsPruned')
+    }
   },
   5 * 60 * 1000,
 )
 
 if (typeof cleanupTimer?.unref === 'function') {
   cleanupTimer.unref()
+}
+
+export function stopRoomCleanupTimer(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer)
+    cleanupTimer = null
+  }
 }
 
 // Room code contract: standard 6-character room codes from unambiguous alphabet.
@@ -296,10 +389,21 @@ export function publicRoomView(room: RoomState, positionSeconds: number) {
   }
 }
 
+// Telemetry endpoint: returns aggregated metrics and active room count
+listenTogetherRouter.get('/telemetry', async (c) => {
+  const activeRooms = await globalRoomStore.size()
+  return c.json({
+    ok: true,
+    activeRooms,
+    metrics: getServerListenTogetherMetrics(),
+  })
+})
+
 // Create a new listening room
 listenTogetherRouter.post('/create', async (c) => {
   const ip = getClientIp(c)
   if (isCreateRateLimited(ip)) {
+    recordServerListenTogetherMetric('rateLimitedCreations')
     return c.json({ error: 'Too many room creations. Try again later.' }, 429)
   }
 
@@ -312,12 +416,16 @@ listenTogetherRouter.post('/create', async (c) => {
     }
   }
 
-  const body = (await c.req.json().catch(() => ({}))) as {
-    hostName?: string
+  const rawBody = await c.req.json().catch(() => ({}))
+  const parsed = createRoomServerInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    recordServerListenTogetherMetric('validationErrors')
+    return c.json({ error: parsed.error.issues[0]?.message || 'Invalid host nickname' }, 400)
   }
+
   const hostId = `host_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   const hostToken = randomUUID()
-  const hostName = sanitizeName(body.hostName, 'Host')
+  const hostName = sanitizeName(parsed.data.hostName, 'Host')
 
   let code = generateRoomCode()
   let attempts = 0
@@ -356,6 +464,7 @@ listenTogetherRouter.post('/create', async (c) => {
   appendRoomLog(room, `Room created by ${hostName}`)
 
   await globalRoomStore.set(code, room)
+  recordServerListenTogetherMetric('roomsCreated')
 
   return c.json({
     code,
@@ -369,17 +478,18 @@ listenTogetherRouter.post('/create', async (c) => {
 listenTogetherRouter.post('/join', async (c) => {
   const ip = getClientIp(c)
   if (isJoinRateLimited(ip)) {
+    recordServerListenTogetherMetric('rateLimitedJoins')
     return c.json({ error: 'Too many join attempts. Try again later.' }, 429)
   }
 
-  const body = (await c.req.json().catch(() => ({}))) as {
-    code?: string
-    userName?: string
-  }
-  const code = (body.code || '').trim().toUpperCase()
-  if (!code || !isValidRoomCode(code)) {
+  const rawBody = await c.req.json().catch(() => ({}))
+  const parsed = joinRoomServerInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    recordServerListenTogetherMetric('validationErrors')
     return c.json({ error: 'Please enter a valid room code (6 characters).' }, 400)
   }
+
+  const code = parsed.data.code
   const room = await globalRoomStore.get(code)
 
   if (!room) {
@@ -391,7 +501,7 @@ listenTogetherRouter.post('/join', async (c) => {
 
   const userId = `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   const userToken = randomUUID()
-  const userName = sanitizeName(body.userName, 'Guest')
+  const userName = sanitizeName(parsed.data.userName, 'Guest')
 
   const member: RoomMember = {
     id: userId,
@@ -411,6 +521,7 @@ listenTogetherRouter.post('/join', async (c) => {
   const estimatedPosition = room.playbackPositionSeconds + elapsed
 
   await globalRoomStore.set(code, room)
+  recordServerListenTogetherMetric('roomsJoined')
 
   return c.json({
     code: room.code,
@@ -423,21 +534,17 @@ listenTogetherRouter.post('/join', async (c) => {
 
 // Sync/Poll endpoint: receives host or member updates, returns current state
 listenTogetherRouter.post('/sync', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    code?: string
-    userId?: string
-    token?: string
-    action?: 'update_state' | 'heartbeat' | 'leave'
-    track?: unknown
-    isPlaying?: boolean
-    playbackPositionSeconds?: number
-    isBuffering?: boolean
-  }
+  recordServerListenTogetherMetric('syncRequests')
 
-  const code = (body.code || '').trim().toUpperCase()
-  if (!code || !isValidRoomCode(code)) {
+  const rawBody = await c.req.json().catch(() => ({}))
+  const parsed = syncRoomServerInputSchema.safeParse(rawBody)
+  if (!parsed.success) {
+    recordServerListenTogetherMetric('validationErrors')
     return c.json({ error: 'Invalid room code format' }, 400)
   }
+
+  const body = parsed.data
+  const code = body.code
   const room = await globalRoomStore.get(code)
 
   if (!room) {
@@ -449,6 +556,7 @@ listenTogetherRouter.post('/sync', async (c) => {
   // Membership is authenticated: a request that does not present the secret token issued at
   // create/join time is not a member, so it cannot act for (or observe) the room.
   if (!member || member.token !== body.token) {
+    recordServerListenTogetherMetric('authFailures')
     return c.json({ error: 'Not a room member' }, 403)
   }
 
@@ -459,14 +567,20 @@ listenTogetherRouter.post('/sync', async (c) => {
   }
 
   if (body.action === 'leave') {
+    recordServerListenTogetherMetric('leaveRequests')
     room.members.delete(userId)
     appendRoomLog(room, `${member.name} left the room`)
     await globalRoomStore.set(code, room)
     return c.json({ status: 'left' })
   }
 
+  if (body.action === 'heartbeat') {
+    recordServerListenTogetherMetric('heartbeatRequests')
+  }
+
   // Only the authenticated host can push playback state
   if (userId === room.hostId && body.action === 'update_state') {
+    recordServerListenTogetherMetric('stateUpdates')
     if (body.track !== undefined) {
       room.track = sanitizeTrackPayload(body.track)
     }

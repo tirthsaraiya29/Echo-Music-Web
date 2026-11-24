@@ -17,6 +17,14 @@ import {
   appendRoomLog,
   sanitizeTrackPayload,
   sanitizeName,
+  createRoomServerInputSchema,
+  joinRoomServerInputSchema,
+  syncRoomServerInputSchema,
+  serverListenTogetherMetricsSchema,
+  getServerListenTogetherMetrics,
+  resetServerListenTogetherMetrics,
+  recordServerListenTogetherMetric,
+  stopRoomCleanupTimer,
 } from '../server/routes/listenTogether.ts'
 
 describe('Listen Together Room Storage & Endpoints', () => {
@@ -414,5 +422,50 @@ describe('Listen Together Room Storage & Endpoints', () => {
     const syncData = (await syncRes.json()) as { playbackPositionSeconds: number; track: Record<string, unknown> }
     assert.strictEqual(syncData.playbackPositionSeconds, 86400, 'Position clamped to 86400s max')
     assert.strictEqual((syncData.track['title'] as string).length, 256, 'Track title sanitized/capped')
+  })
+
+  it('Listen Together Server: validates request schemas and enforces inputs [SMALL-37]', () => {
+    // createRoomServerInputSchema
+    assert.strictEqual(createRoomServerInputSchema.safeParse({ hostName: 'HostAlice' }).success, true)
+    assert.strictEqual(createRoomServerInputSchema.safeParse({}).success, true)
+    assert.strictEqual(createRoomServerInputSchema.safeParse({ hostName: '' }).success, false)
+    assert.strictEqual(createRoomServerInputSchema.safeParse({ hostName: 'a'.repeat(40) }).success, false)
+
+    // joinRoomServerInputSchema
+    assert.strictEqual(joinRoomServerInputSchema.safeParse({ code: 'ABCDEF', userName: 'Guest' }).success, true)
+    assert.strictEqual(joinRoomServerInputSchema.safeParse({ code: 'INVALID!' }).success, false)
+
+    // syncRoomServerInputSchema
+    const validSync = {
+      code: 'ABCDEF',
+      userId: 'u1',
+      token: 't1',
+      action: 'heartbeat',
+    }
+    assert.strictEqual(syncRoomServerInputSchema.safeParse(validSync).success, true)
+    assert.strictEqual(syncRoomServerInputSchema.safeParse({ ...validSync, code: '12' }).success, false)
+    assert.strictEqual(syncRoomServerInputSchema.safeParse({ ...validSync, action: 'unknown_action' }).success, false)
+  })
+
+  it('Listen Together Server: telemetry endpoint reports metrics and room count [SMALL-37]', async () => {
+    resetServerListenTogetherMetrics()
+    recordServerListenTogetherMetric('roomsCreated')
+    recordServerListenTogetherMetric('syncRequests')
+
+    const res = await listenTogetherRouter.request('/telemetry')
+    assert.strictEqual(res.status, 200)
+    const data = (await res.json()) as { ok: boolean; activeRooms: number; metrics: Record<string, number> }
+    assert.strictEqual(data.ok, true)
+    assert.strictEqual(typeof data.activeRooms, 'number')
+    assert.strictEqual(data.metrics['roomsCreated'], 1)
+    assert.strictEqual(data.metrics['syncRequests'], 1)
+
+    resetServerListenTogetherMetrics()
+    assert.strictEqual(getServerListenTogetherMetrics().roomsCreated, 0)
+  })
+
+  it('Listen Together Server: stopRoomCleanupTimer executes cleanly [SMALL-37]', () => {
+    assert.strictEqual(typeof stopRoomCleanupTimer, 'function')
+    stopRoomCleanupTimer()
   })
 })
