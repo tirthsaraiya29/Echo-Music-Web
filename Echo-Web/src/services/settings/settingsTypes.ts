@@ -20,6 +20,7 @@ export const lyricsAnimationStyleSchema = z.enum([
   'metro',
   'none',
 ])
+export const romanizeLanguageSchema = z.enum(['ja', 'ko', 'zh', 'ru', 'uk', 'sr', 'bg', 'pa'])
 export const defaultTabSchema = z.enum(['home', 'search', 'library', 'discover', 'settings'])
 export const discordModeSchema = z.enum(['auto', 'companion', 'backend'])
 export const crossfadeProfileSchema = z.enum(['equalPower', 'linear', 'logarithmic', 'scurve'])
@@ -56,6 +57,11 @@ export const userPreferencesSchema = z.object({
   defaultTab: defaultTabSchema.optional().default('home'),
   dataSaver: z.boolean().optional().default(false),
   romanizeLyrics: z.boolean().optional().default(false),
+  romanizeLanguages: z
+    .array(romanizeLanguageSchema)
+    .optional()
+    .default(['ja', 'ko', 'zh']),
+  romanizeAsMain: z.boolean().optional().default(false),
   lyricsAnimationStyle: lyricsAnimationStyleSchema.optional().default('karaoke'),
   lastfmSession: z
     .object({
@@ -139,6 +145,8 @@ const keyValidators: Partial<Record<keyof UserPreferences, z.ZodTypeAny>> = {
   defaultTab: defaultTabSchema,
   dataSaver: z.boolean(),
   romanizeLyrics: z.boolean(),
+  romanizeLanguages: z.array(romanizeLanguageSchema).optional(),
+  romanizeAsMain: z.boolean().optional(),
   lyricsAnimationStyle: lyricsAnimationStyleSchema.optional(),
   lastfmScrobbling: z.boolean(),
   discordRpc: z.boolean(),

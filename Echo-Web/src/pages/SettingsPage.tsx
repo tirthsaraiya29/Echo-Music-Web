@@ -1461,6 +1461,61 @@ export function SettingsPage() {
               value={preferences.romanizeLyrics}
               onChange={save}
             />
+
+            {preferences.romanizeLyrics && (
+              <div className="ml-6 space-y-3 rounded-lg border border-white/5 bg-white/[0.02] p-3.5">
+                <div>
+                  <span className="text-xs font-semibold text-white">Target Scripts & Languages</span>
+                  <p className="text-[11px] text-[#a59fad]">
+                    Languages with phonetic romanization enabled.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'ja', label: 'Japanese (Romaji)' },
+                    { id: 'ko', label: 'Korean (Romaja)' },
+                    { id: 'zh', label: 'Chinese (Pinyin)' },
+                    { id: 'ru', label: 'Russian / Cyrillic' },
+                    { id: 'uk', label: 'Ukrainian' },
+                    { id: 'sr', label: 'Serbian' },
+                    { id: 'bg', label: 'Bulgarian' },
+                    { id: 'pa', label: 'Punjabi' },
+                  ].map((lang) => {
+                    const currentLangs = preferences.romanizeLanguages || ['ja', 'ko', 'zh']
+                    const isSelected = currentLangs.includes(lang.id as any)
+
+                    return (
+                      <button
+                        key={lang.id}
+                        type="button"
+                        onClick={() => {
+                          const updated = isSelected
+                            ? currentLangs.filter((l) => l !== lang.id)
+                            : [...currentLangs, lang.id as any]
+                          save('romanizeLanguages', updated.length > 0 ? updated : ['ja'])
+                        }}
+                        className={classNames(
+                          'rounded-md px-2.5 py-1 font-mono text-xs font-medium transition',
+                          isSelected
+                            ? 'bg-[#7c5cff] text-[#0b0a0f]'
+                            : 'bg-white/5 text-[#a59fad] hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        {lang.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <PreferenceToggle
+                  label="Romanize as main text"
+                  description="Display romanized phonetics as the main text instead of secondary subtitle."
+                  preference="romanizeAsMain"
+                  value={preferences.romanizeAsMain}
+                  onChange={save}
+                />
+              </div>
+            )}
           </section>
         )}
 

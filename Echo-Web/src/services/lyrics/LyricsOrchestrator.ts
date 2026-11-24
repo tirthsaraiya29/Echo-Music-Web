@@ -108,6 +108,9 @@ export const lyricsOrchestratorMetricsSchema = z.object({
   failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
   customOrderUsedCount: z.number().int().nonnegative().optional(),
   orderReorderCount: z.number().int().nonnegative().optional(),
+  romanizedCacheHits: z.number().int().nonnegative().optional(),
+  originalCacheHits: z.number().int().nonnegative().optional(),
+  variantCacheCollisionsPrevented: z.number().int().nonnegative().optional(),
   avgLatencyMs: z.number().nonnegative(),
   lastLatencyMs: z.number().nonnegative(),
 })
@@ -155,6 +158,9 @@ let orchestratorMetrics: LyricsOrchestratorMetrics = {
   failuresByReason: {},
   customOrderUsedCount: 0,
   orderReorderCount: 0,
+  romanizedCacheHits: 0,
+  originalCacheHits: 0,
+  variantCacheCollisionsPrevented: 0,
   avgLatencyMs: 0,
   lastLatencyMs: 0,
 }
@@ -188,6 +194,9 @@ export function resetLyricsOrchestratorMetrics(): void {
     failuresByReason: {},
     customOrderUsedCount: 0,
     orderReorderCount: 0,
+    romanizedCacheHits: 0,
+    originalCacheHits: 0,
+    variantCacheCollisionsPrevented: 0,
     avgLatencyMs: 0,
     lastLatencyMs: 0,
   }
@@ -249,9 +258,19 @@ export class LyricsOrchestrator {
     track: Track,
     preferred: string = useEchoStore.getState().preferences.preferredLyricsProvider || 'LRCLIB',
     romanize: boolean = Boolean(useEchoStore.getState().preferences.romanizeLyrics),
+    languages?: string[],
+    asMain?: boolean,
   ): string {
     const trackKey = track.id || track.videoId || ''
-    return `${trackKey}:${track.title}:${track.artistName}:${preferred}:${romanize ? 'rom' : 'orig'}`
+    const prefs = useEchoStore.getState().preferences
+    const langs = languages ?? (prefs.romanizeLanguages || ['ja', 'ko', 'zh'])
+    const mainFlag = asMain ?? Boolean(prefs.romanizeAsMain)
+
+    const romTag = romanize
+      ? `rom_${[...langs].sort().join('_')}${mainFlag ? '_main' : ''}`
+      : 'orig'
+
+    return `${trackKey}:${track.title}:${track.artistName}:${preferred}:${romTag}`
   }
 
   public cancelOngoingFetch(): void {
@@ -314,6 +333,11 @@ export class LyricsOrchestrator {
     if (cached) {
       if (Date.now() < cached.expiresAt) {
         orchestratorMetrics.memoryCacheHits++
+        if (cacheKey.includes(':rom')) {
+          orchestratorMetrics.romanizedCacheHits = (orchestratorMetrics.romanizedCacheHits || 0) + 1
+        } else {
+          orchestratorMetrics.originalCacheHits = (orchestratorMetrics.originalCacheHits || 0) + 1
+        }
         this.recordLatency(performance.now() - startTime)
         return cached.lyrics
       }
@@ -324,7 +348,7 @@ export class LyricsOrchestrator {
     const trackId = track.videoId || track.id
     if (trackId && typeof indexedDB !== 'undefined') {
       try {
-        const stored = await db.cachedLyrics.get(trackId)
+        const stored = (await db.cachedLyrics.get(cacheKey)) || (await db.cachedLyrics.get(trackId))
         if (stored && stored.query === cacheKey) {
           const validStored = synchronizedLyricsSchema.safeParse(stored.lyrics)
           if (validStored.success) {
@@ -335,6 +359,13 @@ export class LyricsOrchestrator {
             })
             this.pruneMemoryCache()
             orchestratorMetrics.persistentCacheHits++
+            if (cacheKey.includes(':rom')) {
+              orchestratorMetrics.romanizedCacheHits = (orchestratorMetrics.romanizedCacheHits || 0) + 1
+            } else {
+              orchestratorMetrics.originalCacheHits = (orchestratorMetrics.originalCacheHits || 0) + 1
+            }
+            orchestratorMetrics.variantCacheCollisionsPrevented =
+              (orchestratorMetrics.variantCacheCollisionsPrevented || 0) + 1
             this.recordLatency(performance.now() - startTime)
             return validStored.data
           }
@@ -605,14 +636,14 @@ export class LyricsOrchestrator {
   }
 
   private async persistLyrics(
-    trackId: string,
+    _trackId: string,
     query: string,
     lyrics: SynchronizedLyrics,
   ): Promise<void> {
     if (typeof indexedDB === 'undefined') return
     try {
       const payload = {
-        trackId,
+        trackId: query,
         query,
         lyrics,
         provider: lyrics.provider as LyricsProviderType,

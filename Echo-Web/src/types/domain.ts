@@ -170,6 +170,8 @@ export interface UserPreferences {
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined
   romanizeLyrics?: boolean | undefined
+  romanizeLanguages?: Array<'ja' | 'ko' | 'zh' | 'ru' | 'uk' | 'sr' | 'bg' | 'pa'> | undefined
+  romanizeAsMain?: boolean | undefined
   lastfmSession?: { sessionKey: string; username: string } | undefined
   lastfmScrobbling?: boolean | undefined
   discordRpc?: boolean | undefined
