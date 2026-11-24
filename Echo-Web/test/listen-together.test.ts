@@ -87,4 +87,24 @@ describe('Listen Together Room Storage & Endpoints', () => {
     assert.strictEqual(typeof audioEngineActions.pause, 'function')
     assert.strictEqual(typeof audioEngineActions.seekTo, 'function')
   })
+
+  it('ListenTogetherClient publishes immutable snapshots with incrementing revision [BUG-08]', async () => {
+    const { listenTogether } = await import('../src/services/listenTogether/listenTogetherClient.ts')
+    const receivedSnapshots: unknown[] = []
+
+    const unsub = listenTogether.subscribe((state) => {
+      receivedSnapshots.push(state)
+    })
+
+    listenTogether.leaveRoom()
+    assert.ok(receivedSnapshots.length > 0)
+    const emptyState = receivedSnapshots[receivedSnapshots.length - 1] as { revision: number; members: unknown[] }
+    assert.strictEqual(emptyState.revision, 0)
+    assert.deepStrictEqual(emptyState.members, [])
+
+    // Mutating snapshot should not affect subsequent getState()
+    emptyState.members.push('dirty')
+    assert.deepStrictEqual(listenTogether.getState(), null)
+    unsub()
+  })
 })

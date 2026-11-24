@@ -27,6 +27,7 @@ export interface SynchronizedRoomState {
   playbackPositionSeconds: number
   members: RoomParticipant[]
   logs: RoomEventLog[]
+  revision: number
 }
 
 type RoomListener = (state: SynchronizedRoomState) => void
@@ -66,13 +67,19 @@ export class ListenTogetherClient {
   }
 
   public getState(): SynchronizedRoomState | null {
-    return this.state
+    if (!this.state) return null
+    return {
+      ...this.state,
+      members: [...this.state.members],
+      logs: [...this.state.logs],
+    }
   }
 
   public subscribe(listener: RoomListener): () => void {
     this.listeners.add(listener)
-    if (this.state) {
-      listener(this.state)
+    const current = this.getState()
+    if (current) {
+      listener(current)
     }
     return () => {
       this.listeners.delete(listener)
@@ -80,9 +87,10 @@ export class ListenTogetherClient {
   }
 
   private notify() {
-    if (!this.state) return
+    const current = this.getState()
+    if (!current) return
     for (const listener of this.listeners) {
-      listener(this.state)
+      listener(current)
     }
   }
 
@@ -122,13 +130,14 @@ export class ListenTogetherClient {
       track: data.room.track,
       isPlaying: data.room.isPlaying,
       playbackPositionSeconds: data.room.playbackPositionSeconds,
-      members: data.room.members,
-      logs: data.room.logs,
+      members: [...data.room.members],
+      logs: [...data.room.logs],
+      revision: 1,
     }
 
     this.startSyncLoop()
     this.notify()
-    return this.state
+    return this.getState()!
   }
 
   public async joinRoom(code: string, userName = 'Guest'): Promise<SynchronizedRoomState> {
@@ -171,13 +180,14 @@ export class ListenTogetherClient {
       track: data.room.track,
       isPlaying: data.room.isPlaying,
       playbackPositionSeconds: data.room.playbackPositionSeconds,
-      members: data.room.members,
-      logs: data.room.logs,
+      members: [...data.room.members],
+      logs: [...data.room.logs],
+      revision: 1,
     }
 
     this.startSyncLoop()
     this.notify()
-    return this.state
+    return this.getState()!
   }
 
   public leaveRoom(): void {
@@ -207,19 +217,21 @@ export class ListenTogetherClient {
     }
 
     this.state = null
+    const emptyState: SynchronizedRoomState = {
+      code: '',
+      isHost: false,
+      userId: '',
+      token: '',
+      userName: '',
+      track: null,
+      isPlaying: false,
+      playbackPositionSeconds: 0,
+      members: [],
+      logs: [],
+      revision: 0,
+    }
     for (const listener of this.listeners) {
-      listener({
-        code: '',
-        isHost: false,
-        userId: '',
-        token: '',
-        userName: '',
-        track: null,
-        isPlaying: false,
-        playbackPositionSeconds: 0,
-        members: [],
-        logs: [],
-      })
+      listener(emptyState)
     }
   }
 
@@ -231,9 +243,13 @@ export class ListenTogetherClient {
   ): void {
     if (!this.state || !this.state.isHost) return
 
-    this.state.track = track
-    this.state.isPlaying = isPlaying
-    this.state.playbackPositionSeconds = positionSeconds
+    this.state = {
+      ...this.state,
+      track,
+      isPlaying,
+      playbackPositionSeconds: positionSeconds,
+      revision: this.state.revision + 1,
+    }
 
     // Push local broadcast
     this.broadcastChannel?.postMessage({
@@ -313,14 +329,19 @@ export class ListenTogetherClient {
         logs: RoomEventLog[]
       }
 
-      if (!this.state.isHost) {
-        this.state.isPlaying = data.isPlaying
-        this.state.playbackPositionSeconds = data.playbackPositionSeconds
-        this.state.track = data.track
+      this.state = {
+        ...this.state,
+        ...(!this.state.isHost
+          ? {
+              isPlaying: data.isPlaying,
+              playbackPositionSeconds: data.playbackPositionSeconds,
+              track: data.track,
+            }
+          : {}),
+        members: data.members ? [...data.members] : [],
+        logs: data.logs ? [...data.logs] : [],
+        revision: this.state.revision + 1,
       }
-
-      this.state.members = data.members || []
-      this.state.logs = data.logs || []
       this.notify()
     } catch {
       // Ignore transient network errors
@@ -342,9 +363,13 @@ export class ListenTogetherClient {
   }) {
     if (!this.state || this.state.isHost || this.state.code !== payload.code) return
 
-    this.state.track = payload.track
-    this.state.isPlaying = payload.isPlaying
-    this.state.playbackPositionSeconds = payload.playbackPositionSeconds
+    this.state = {
+      ...this.state,
+      track: payload.track,
+      isPlaying: payload.isPlaying,
+      playbackPositionSeconds: payload.playbackPositionSeconds,
+      revision: this.state.revision + 1,
+    }
     this.notify()
   }
 }
