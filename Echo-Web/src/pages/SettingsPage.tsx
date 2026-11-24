@@ -48,6 +48,8 @@ import { cloudMediaManager } from '../services/cloud/cloudMediaManager.ts'
 import type { CloudServerConfig, CloudProviderType } from '../services/cloud/cloudMediaTypes.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { AddonEndpoint, ExtensionTelemetry } from '../types/extension.ts'
+import { pwaManager } from '../services/pwa/pwaManager.ts'
+import type { SwStatus } from '../services/pwa/pwaTypes.ts'
 
 const accents: { value: AccentColor; label: string; color: string }[] = [
   { value: 'violet', label: 'Violet', color: '#8b79e8' },
@@ -146,6 +148,15 @@ export function SettingsPage() {
     'idle' | 'checking' | 'connected' | 'disconnected'
   >('idle')
   const [discordStatusMessage, setDiscordStatusMessage] = useState<string>('')
+  const [swStatus, setSwStatus] = useState<SwStatus>(() => pwaManager.getStatus())
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false)
+
+  useEffect(() => {
+    const unsubscribe = pwaManager.subscribe((status) => {
+      setSwStatus(status)
+    })
+    return () => unsubscribe()
+  }, [])
 
   const handleTestDiscord = async () => {
     setDiscordCheckStatus('checking')
@@ -1505,6 +1516,55 @@ export function SettingsPage() {
                 <span>Engine Codec: {telemetry.codec}</span>
                 <span>Sample Rate: {telemetry.sampleRate}</span>
                 <span>Bit Depth: {telemetry.bitDepth}</span>
+              </div>
+
+              {/* PWA / Service Worker Update Controls */}
+              <div className="mt-3 flex flex-col gap-2 rounded-lg border border-white/6 bg-white/[0.02] p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-2 font-medium text-[#e6e1e5]">
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${
+                        swStatus.isOnline ? 'bg-emerald-400' : 'bg-amber-400'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    App Status: {swStatus.isOnline ? 'Online' : 'Offline'}
+                    {swStatus.registered && ' · Service Worker Active'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setCheckingForUpdates(true)
+                      const hasUpdate = await pwaManager.checkForUpdates()
+                      setCheckingForUpdates(false)
+                      if (!hasUpdate) {
+                        notify('App is up to date')
+                      }
+                    }}
+                    disabled={checkingForUpdates}
+                    className="flex min-h-[44px] min-w-[44px] items-center gap-1.5 rounded-lg bg-white/6 px-3 py-1.5 text-[11px] font-semibold text-[#a59fad] transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+                    aria-label="Check for web app updates"
+                  >
+                    <RotateCcw size={13} className={checkingForUpdates ? 'animate-spin' : ''} />
+                    {checkingForUpdates ? 'Checking…' : 'Check for updates'}
+                  </button>
+                </div>
+                {swStatus.waitingUpdate && (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className="flex items-center justify-between rounded-md bg-[#8b79e8]/15 px-3 py-2 text-xs text-[#8b79e8]"
+                  >
+                    <span>New version of Echo Music is available!</span>
+                    <button
+                      type="button"
+                      onClick={() => pwaManager.applyUpdate()}
+                      className="min-h-[44px] rounded bg-[#8b79e8] px-3 py-1 text-xs font-semibold text-black transition-colors hover:bg-[#8b79e8]/90"
+                    >
+                      Update now
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <a
