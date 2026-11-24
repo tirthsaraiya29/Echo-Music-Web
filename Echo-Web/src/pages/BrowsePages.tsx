@@ -63,6 +63,14 @@ import { parseM3UPlaylist, parseCSVPlaylist } from '../services/sharing/playlist
 import { LocalMusicSection } from '../components/library/LocalMusicSection.tsx'
 import { SpotifyImportModal } from '../components/modals/SpotifyImportModal.tsx'
 import { InnerTubeClient } from '../services/innertube/client.ts'
+import { RankedChartList } from '../components/charts/RankedChartList.tsx'
+import {
+  SUPPORTED_CHART_REGIONS,
+  CHART_CATEGORIES,
+  fetchRegionalChart,
+  type ChartGroup,
+  type ChartCategory,
+} from '../services/charts/chartService.ts'
 
 export function HomePage() {
   const release = useLatestRelease()
@@ -628,10 +636,39 @@ export function HomePage() {
 
 export function DiscoverPage() {
   const [activeTab, setActiveTab] = useState<'curated' | 'charts' | 'moods' | 'trending'>('curated')
+  const contentRegion = useEchoStore((state) => state.preferences.contentRegion)
+  const [selectedRegion, setSelectedRegion] = useState(contentRegion || 'GLOBAL')
+  const [selectedChartCategory, setSelectedChartCategory] = useState<ChartCategory>('top-songs')
+  const [regionalChart, setRegionalChart] = useState<ChartGroup | null>(null)
+  const [isLoadingChart, setIsLoadingChart] = useState(false)
+  const [chartError, setChartError] = useState<string | null>(null)
+
   const curated = useHomeFeed()
-  const charts = useCharts()
+  const charts = useCharts(selectedRegion === 'GLOBAL' ? 'US' : selectedRegion)
   const moods = useMoodsAndGenres()
   const trending = useTrending()
+
+  useEffect(() => {
+    if (activeTab !== 'charts') return
+    let cancelled = false
+    setIsLoadingChart(true)
+    setChartError(null)
+
+    fetchRegionalChart(selectedRegion, selectedChartCategory)
+      .then((group) => {
+        if (!cancelled) setRegionalChart(group)
+      })
+      .catch((err) => {
+        if (!cancelled) setChartError(err instanceof Error ? err.message : 'Failed to load chart')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingChart(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, selectedRegion, selectedChartCategory])
 
   const currentQuery =
     activeTab === 'charts'
@@ -673,53 +710,143 @@ export function DiscoverPage() {
         ))}
       </div>
 
-      {isLoading && (
-        <div className="skeleton-grid" aria-busy="true" aria-label={`Loading ${activeTab}`}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="skeleton-card" />
-          ))}
+      {/* Charts Controls: Categories & Regional Selector */}
+      {activeTab === 'charts' && (
+        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/3 p-3.5">
+          <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Chart category filters">
+            {CHART_CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                role="tab"
+                aria-selected={selectedChartCategory === cat.id}
+                className={classNames(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all min-h-[36px]',
+                  selectedChartCategory === cat.id
+                    ? 'bg-[#b09cff] text-black shadow-md shadow-purple-500/20'
+                    : 'bg-white/5 text-white/80 hover:bg-white/10 hover:text-white',
+                )}
+                onClick={() => setSelectedChartCategory(cat.id)}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="chart-region-select" className="text-xs text-[#a59fad] whitespace-nowrap">
+              Region:
+            </label>
+            <select
+              id="chart-region-select"
+              className="rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 text-xs font-semibold text-white focus:border-[#b09cff] focus:outline-none min-h-[36px]"
+              value={selectedRegion}
+              onChange={(e) => setSelectedRegion(e.target.value)}
+              aria-label="Select chart region"
+            >
+              {SUPPORTED_CHART_REGIONS.map((region) => (
+                <option key={region.code} value={region.code} className="bg-[#181324] text-white">
+                  {region.flag} {region.name} ({region.code})
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
-      {isError && (
-        <div className="error-banner" role="alert">
-          <h2>Could not load catalog</h2>
-          <p>{error?.message || 'Check your internet connection or proxy server status.'}</p>
-          <button className="button button--primary" type="button" onClick={() => refetch()}>
-            <RotateCcw size={16} /> Retry
-          </button>
-        </div>
-      )}
-
-      {!isLoading &&
-        !isError &&
-        shelves &&
-        shelves.length > 0 &&
-        shelves.map((shelf, shelfIndex) => (
-          <section className="page-section" key={`${shelf.title}-${shelfIndex}`}>
-            <SectionHeading title={shelf.title} />
-            <div className="media-grid">
-              {shelf.items.map((item) => (
-                <MediaCard
-                  key={item.id}
-                  kind={
-                    'durationSeconds' in item
-                      ? 'track'
-                      : 'trackCount' in item
-                        ? 'album'
-                        : 'playlist'
-                  }
-                  item={item}
-                />
+      {/* Charts View */}
+      {activeTab === 'charts' ? (
+        <>
+          {isLoadingChart && (
+            <div className="space-y-2" aria-busy="true" aria-label="Loading regional chart">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="h-14 w-full animate-pulse rounded-xl bg-white/5" />
               ))}
             </div>
-          </section>
-        ))}
+          )}
 
-      {!isLoading && !isError && (!shelves || shelves.length === 0) && (
-        <div className="empty-state">
-          <p>No catalog shelves found for this view.</p>
-        </div>
+          {chartError && !isLoadingChart && (
+            <div className="error-banner" role="alert">
+              <h2>Could not load regional chart</h2>
+              <p>{chartError}</p>
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={() => {
+                  setIsLoadingChart(true)
+                  fetchRegionalChart(selectedRegion, selectedChartCategory)
+                    .then(setRegionalChart)
+                    .catch((err) => setChartError(err.message))
+                    .finally(() => setIsLoadingChart(false))
+                }}
+              >
+                <RotateCcw size={16} /> Retry
+              </button>
+            </div>
+          )}
+
+          {!isLoadingChart && !chartError && regionalChart && (
+            <RankedChartList chart={regionalChart} />
+          )}
+
+          {!isLoadingChart && !chartError && (!regionalChart || regionalChart.items.length === 0) && (
+            <div className="empty-state">
+              <p>No ranking entries found for this region and category.</p>
+            </div>
+          )}
+        </>
+      ) : (
+        /* Curated, Moods, Trending Shelves */
+        <>
+          {isLoading && (
+            <div className="skeleton-grid" aria-busy="true" aria-label={`Loading ${activeTab}`}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="skeleton-card" />
+              ))}
+            </div>
+          )}
+
+          {isError && (
+            <div className="error-banner" role="alert">
+              <h2>Could not load catalog</h2>
+              <p>{error?.message || 'Check your internet connection or proxy server status.'}</p>
+              <button className="button button--primary" type="button" onClick={() => refetch()}>
+                <RotateCcw size={16} /> Retry
+              </button>
+            </div>
+          )}
+
+          {!isLoading &&
+            !isError &&
+            shelves &&
+            shelves.length > 0 &&
+            shelves.map((shelf, shelfIndex) => (
+              <section className="page-section" key={`${shelf.title}-${shelfIndex}`}>
+                <SectionHeading title={shelf.title} />
+                <div className="media-grid">
+                  {shelf.items.map((item) => (
+                    <MediaCard
+                      key={item.id}
+                      kind={
+                        'durationSeconds' in item
+                          ? 'track'
+                          : 'trackCount' in item
+                            ? 'album'
+                            : 'playlist'
+                      }
+                      item={item}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+
+          {!isLoading && !isError && (!shelves || shelves.length === 0) && (
+            <div className="empty-state">
+              <p>No catalog shelves found for this view.</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
