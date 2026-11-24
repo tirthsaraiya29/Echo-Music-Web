@@ -1,5 +1,5 @@
-import { Equalizer } from './Equalizer'
-import { StereoWidener } from './StereoWidener'
+import { Equalizer } from './Equalizer.ts'
+import { StereoWidener } from './StereoWidener.ts'
 
 export interface WebAudioGraphOptions {
   volumeNormalization?: boolean

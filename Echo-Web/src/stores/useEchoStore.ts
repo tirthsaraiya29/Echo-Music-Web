@@ -378,32 +378,26 @@ export const useEchoStore = create<EchoState>()(
           get().cacheTrack(track)
         }
 
-        AudioEngine.getInstance().addToQueue(track)
-        set((state) => ({ queueIds: [...state.queueIds, track!.id] }))
+        const engine = AudioEngine.getInstance()
+        engine.addToQueue(track)
+        set({ queueIds: engine.getState().upNext.map((t) => t.id) })
       },
 
       removeFromQueue: (index) => {
-        AudioEngine.getInstance().removeFromQueue(index)
-        set((state) => ({
-          queueIds: state.queueIds.filter((_, itemIndex) => itemIndex !== index),
-        }))
+        const engine = AudioEngine.getInstance()
+        engine.removeFromQueue(index)
+        set({ queueIds: engine.getState().upNext.map((t) => t.id) })
       },
 
       moveQueueItem: (from, to) => {
-        AudioEngine.getInstance().moveQueueItem(from, to)
-        set((state) => {
-          if (from < 0 || from >= state.queueIds.length || to < 0 || to >= state.queueIds.length) {
-            return state
-          }
-          const queueIds = [...state.queueIds]
-          const [item] = queueIds.splice(from, 1)
-          if (item) queueIds.splice(to, 0, item)
-          return { queueIds }
-        })
+        const engine = AudioEngine.getInstance()
+        engine.moveQueueItem(from, to)
+        set({ queueIds: engine.getState().upNext.map((t) => t.id) })
       },
 
       clearQueue: () => {
-        AudioEngine.getInstance().clearQueue()
+        const engine = AudioEngine.getInstance()
+        engine.clearQueue()
         set({ queueIds: [] })
       },
 

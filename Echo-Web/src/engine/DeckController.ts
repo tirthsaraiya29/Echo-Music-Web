@@ -1,5 +1,5 @@
-import type { DeckId, PlaybackState, Track } from '../types/audio'
-import type { WebAudioGraph } from './WebAudioGraph'
+import type { DeckId, PlaybackState, Track } from '../types/audio.ts'
+import type { WebAudioGraph } from './WebAudioGraph.ts'
 
 export interface DeckControllerOptions {
   crossfadeDuration?: number

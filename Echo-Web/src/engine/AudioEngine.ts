@@ -9,18 +9,18 @@ import type {
   RepeatMode,
   SponsorSegment,
   Track,
-} from '../types/audio'
-import type { StreamResolutionResult } from '../types/innertube'
-import { DeckController } from './DeckController'
-import { MediaSession } from './MediaSession'
-import { QueueManager } from './QueueManager'
-import { SponsorBlock } from './SponsorBlock'
-import { WebAudioGraph } from './WebAudioGraph'
-import { db } from '../services/db/echoDatabase'
-import { useEchoStore } from '../stores/useEchoStore'
-import { recordListeningEvent } from '../services/recommendations/localTasteEngine'
-import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/lastfmService'
-import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService'
+} from '../types/audio.ts'
+import type { StreamResolutionResult } from '../types/innertube.ts'
+import { DeckController } from './DeckController.ts'
+import { MediaSession } from './MediaSession.ts'
+import { QueueManager } from './QueueManager.ts'
+import { SponsorBlock } from './SponsorBlock.ts'
+import { WebAudioGraph } from './WebAudioGraph.ts'
+import { db } from '../services/db/echoDatabase.ts'
+import { useEchoStore } from '../stores/useEchoStore.ts'
+import { recordListeningEvent } from '../services/recommendations/localTasteEngine.ts'
+import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/lastfmService.ts'
+import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService.ts'
 
 export class AudioEngine {
   private static instance: AudioEngine | null = null

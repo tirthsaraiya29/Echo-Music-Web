@@ -1,4 +1,4 @@
-import type { EqualizerBand, EqualizerPreset } from '../types/audio'
+import type { EqualizerBand, EqualizerPreset } from '../types/audio.ts'
 
 export const EQUALIZER_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const
 

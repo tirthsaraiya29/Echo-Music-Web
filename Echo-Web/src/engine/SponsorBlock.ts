@@ -1,4 +1,4 @@
-import type { SponsorSegment } from '../types/audio'
+import type { SponsorSegment } from '../types/audio.ts'
 
 export interface SponsorBlockOptions {
   enabled?: boolean

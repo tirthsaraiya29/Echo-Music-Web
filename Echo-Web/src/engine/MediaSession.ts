@@ -1,4 +1,4 @@
-import type { Track } from '../types/audio'
+import type { Track } from '../types/audio.ts'
 
 export interface MediaSessionCallbacks {
   onPlay: () => void
