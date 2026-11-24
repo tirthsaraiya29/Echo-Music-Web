@@ -68,7 +68,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-03 | Dual-deck crossfade | 10 tasks in backlog | Completed | 08675e3a | Yes (verified on origin/main) |
 | SMALL-04 | AudioEngine state/events | 10 tasks in backlog | Completed | 33aa4a9c | Yes (verified on origin/main) |
 | SMALL-05 | Playback controls | 10 tasks in backlog | Completed | 14efde44 | Yes (verified on origin/main) |
-| SMALL-06 | Audio output picker | 10 tasks in backlog | Pending | - | - |
+| SMALL-06 | Audio output picker | 10 tasks in backlog | Completed | a9dd7057 | Yes (verified on origin/main) |
 | SMALL-07 | Google Cast adapter | 10 tasks in backlog | Pending | - | - |
 | SMALL-08 | Stream resolver | 10 tasks in backlog | Pending | - | - |
 | SMALL-09 | HTTP Range streaming | 10 tasks in backlog | Pending | - | - |
