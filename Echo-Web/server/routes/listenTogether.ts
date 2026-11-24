@@ -113,13 +113,21 @@ if (typeof cleanupTimer?.unref === 'function') {
   cleanupTimer.unref()
 }
 
-// Room codes are 8 chars from a 32-symbol alphabet (8^... ~2^40 candidates). Clients never
-// send the code alone: membership requires the secret token issued at create/join time.
+// Room code contract: standard 6-character room codes from unambiguous alphabet.
+// Accepts 6 to 8 alphanumeric characters for client validation compatibility.
+export const ROOM_CODE_LENGTH = 6
+
+export function isValidRoomCode(code: string): boolean {
+  if (typeof code !== 'string') return false
+  const clean = code.trim().toUpperCase()
+  return (clean.length === 6 || clean.length === 8) && /^[A-Z0-9]+$/.test(clean)
+}
+
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   let result = ''
   const bytes = randomUUID().replace(/-/g, '')
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
     const nibble = Number.parseInt(bytes[i % bytes.length]!, 16)
     result += chars.charAt(nibble % chars.length)
   }
@@ -207,6 +215,9 @@ listenTogetherRouter.post('/join', async (c) => {
     userName?: string
   }
   const code = (body.code || '').trim().toUpperCase()
+  if (!code || !isValidRoomCode(code)) {
+    return c.json({ error: 'Please enter a valid room code (6 characters).' }, 400)
+  }
   const room = await globalRoomStore.get(code)
 
   if (!room) {
@@ -266,6 +277,9 @@ listenTogetherRouter.post('/sync', async (c) => {
   }
 
   const code = (body.code || '').trim().toUpperCase()
+  if (!code || !isValidRoomCode(code)) {
+    return c.json({ error: 'Invalid room code format' }, 400)
+  }
   const room = await globalRoomStore.get(code)
 
   if (!room) {

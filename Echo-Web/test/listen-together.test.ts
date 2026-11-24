@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { listenTogetherRouter, MemoryRoomStore, setRoomStore } from '../server/routes/listenTogether.ts'
+import {
+  listenTogetherRouter,
+  MemoryRoomStore,
+  setRoomStore,
+  ROOM_CODE_LENGTH,
+  isValidRoomCode,
+} from '../server/routes/listenTogether.ts'
 
 describe('Listen Together Room Storage & Endpoints', () => {
   it('MemoryRoomStore performs CRUD and stale cleanup operations', async () => {
@@ -106,5 +112,47 @@ describe('Listen Together Room Storage & Endpoints', () => {
     emptyState.members.push('dirty')
     assert.deepStrictEqual(listenTogether.getState(), null)
     unsub()
+  })
+
+  it('generates 6-character room codes and enforces unified code contract [BUG-31]', async () => {
+    assert.strictEqual(ROOM_CODE_LENGTH, 6)
+
+    // isValidRoomCode validation
+    assert.strictEqual(isValidRoomCode('K7P9MX'), true)
+    assert.strictEqual(isValidRoomCode('TEST01'), true)
+    assert.strictEqual(isValidRoomCode('ABC12345'), true) // 8 chars supported for compatibility
+    assert.strictEqual(isValidRoomCode('123'), false) // Too short
+    assert.strictEqual(isValidRoomCode('TOOLONGCODE99'), false) // Too long
+    assert.strictEqual(isValidRoomCode('BAD-CODE!'), false) // Invalid characters
+
+    // Endpoint creates 6-character room code
+    const createReq = new Request('http://localhost/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostName: 'HostCodeTester' }),
+    })
+    const createRes = await listenTogetherRouter.fetch(createReq)
+    assert.strictEqual(createRes.status, 200)
+    const data = (await createRes.json()) as { code: string }
+    assert.strictEqual(data.code.length, 6, 'Generated room code must be exactly 6 characters')
+    assert.strictEqual(isValidRoomCode(data.code), true)
+
+    // Join rejects invalid code lengths with 400
+    const invalidJoinReq = new Request('http://localhost/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'SHORT', userName: 'Guest' }),
+    })
+    const invalidRes = await listenTogetherRouter.fetch(invalidJoinReq)
+    assert.strictEqual(invalidRes.status, 400)
+
+    // Join accepts the 6-character code
+    const validJoinReq = new Request('http://localhost/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: data.code, userName: 'Guest' }),
+    })
+    const validRes = await listenTogetherRouter.fetch(validJoinReq)
+    assert.strictEqual(validRes.status, 200)
   })
 })

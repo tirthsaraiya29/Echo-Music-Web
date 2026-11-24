@@ -112,14 +112,15 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
   }
 
   const handleJoinRoom = async () => {
-    if (!joinCodeInput.trim()) {
-      setErrorMsg('Please enter a 6-character room code')
+    const cleanCode = joinCodeInput.trim().toUpperCase()
+    if (!cleanCode || cleanCode.length < 6) {
+      setErrorMsg('Please enter a valid 6-character room code')
       return
     }
     setIsLoading(true)
     setErrorMsg(null)
     try {
-      const state = await listenTogether.joinRoom(joinCodeInput.trim(), nickInput.trim() || 'Guest')
+      const state = await listenTogether.joinRoom(cleanCode, nickInput.trim() || 'Guest')
       setRoomState(state)
       setToast(`Joined room ${state.code}`)
     } catch (err) {
@@ -334,9 +335,9 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
                     type="text"
                     value={joinCodeInput}
                     onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    placeholder="E.g. ABC123"
+                    placeholder="E.g. K7P9MX"
                     className="mb-3 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-center font-mono text-sm tracking-wider text-white uppercase focus:border-[#7c5cff] focus:outline-none"
-                    maxLength={6}
+                    maxLength={8}
                   />
                 </div>
                 <button

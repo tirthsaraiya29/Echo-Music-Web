@@ -144,6 +144,9 @@ export class ListenTogetherClient {
     this.leaveRoom()
 
     const cleanCode = code.trim().toUpperCase()
+    if (!cleanCode || (cleanCode.length !== 6 && cleanCode.length !== 8)) {
+      throw new Error('Please enter a valid 6-character room code')
+    }
 
     const res = await fetch(buildApiUrl('/api/listen-together/join'), {
       method: 'POST',
