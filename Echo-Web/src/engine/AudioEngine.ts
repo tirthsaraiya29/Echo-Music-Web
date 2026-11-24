@@ -383,6 +383,10 @@ export class AudioEngine {
     return this.queueManager.currentTrack
   }
 
+  public get isPlaying(): boolean {
+    return this.deckController.state === 'PLAYING'
+  }
+
   public getDuration(): number {
     return this.deckController.getDuration()
   }

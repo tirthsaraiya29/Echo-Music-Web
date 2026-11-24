@@ -9,8 +9,10 @@ import {
   Headphones,
   Search,
   Tv,
+  Info,
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+import { EpisodeDetailsModal } from '../components/podcast/EpisodeDetailsModal.tsx'
 import {
   getAllPodcastProgress,
   dismissPodcastProgress,
@@ -46,6 +48,7 @@ export function PodcastsPage() {
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all')
   const [sortOrder, setSortOrder] = useState<EpisodeSortOrder>('newest')
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedDetailsEpisode, setSelectedDetailsEpisode] = useState<Track | null>(null)
 
   const currentTrack = useEchoStore((state) => state.currentTrack)
   const isPlaying = useEchoStore((state) => state.isPlaying)
@@ -572,12 +575,26 @@ export function PodcastsPage() {
                             </p>
                           </div>
 
-                          <div className="flex items-center gap-2 text-[11px] text-[#a59fad]">
-                            {episode.durationSeconds ? (
-                              <span>{formatDuration(episode.durationSeconds)}</span>
-                            ) : episode.durationMs ? (
-                              <span>{formatDuration(Math.round(episode.durationMs / 1000))}</span>
-                            ) : null}
+                          <div className="flex items-center justify-between text-[11px] text-[#a59fad]">
+                            <div>
+                              {episode.durationSeconds ? (
+                                <span>{formatDuration(episode.durationSeconds)}</span>
+                              ) : episode.durationMs ? (
+                                <span>{formatDuration(Math.round(episode.durationMs / 1000))}</span>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedDetailsEpisode(episode)
+                              }}
+                              className="rounded-full p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                              title="Show notes & chapters"
+                              aria-label="Show notes & chapters"
+                            >
+                              <Info size={14} />
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -589,6 +606,14 @@ export function PodcastsPage() {
           </div>
         )}
       </section>
+
+      {selectedDetailsEpisode && (
+        <EpisodeDetailsModal
+          episode={selectedDetailsEpisode}
+          isOpen={Boolean(selectedDetailsEpisode)}
+          onClose={() => setSelectedDetailsEpisode(null)}
+        />
+      )}
     </div>
   )
 }
