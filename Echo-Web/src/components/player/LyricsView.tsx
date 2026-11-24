@@ -12,12 +12,27 @@
  */
 
 import { useEffect, useRef, useState, useCallback, memo } from 'react'
-import { Languages, Loader2, Sparkles, AlertCircle, Plus, Minus, WifiOff } from 'lucide-react'
+import {
+  Languages,
+  Loader2,
+  Sparkles,
+  AlertCircle,
+  Plus,
+  Minus,
+  WifiOff,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+} from 'lucide-react'
 import type { Track } from '../../types/domain.ts'
 import type { LyricLine, LyricWord, SynchronizedLyrics } from '../../types/lyrics.ts'
 import { db } from '../../services/db/echoDatabase.ts'
 import { LyricsOrchestrator } from '../../services/lyrics/LyricsOrchestrator.ts'
-import { TranslationClient } from '../../services/ai/TranslationClient.ts'
+import {
+  TranslationClient,
+  type ConnectionTestResult,
+  type DiscoveredModel,
+} from '../../services/ai/TranslationClient.ts'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap.ts'
 import { AudioEngine } from '../../engine/AudioEngine.ts'
 import { useEchoStore } from '../../stores/useEchoStore.ts'
@@ -816,6 +831,53 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   const [translationChunkSize, setTranslationChunkSize] = useState(
     initial.translationChunkSize || 30,
   )
+  const [testingStatus, setTestingStatus] = useState<ConnectionTestResult | null>(null)
+  const [isTesting, setIsTesting] = useState(false)
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModel[]>([])
+  const [isDiscovering, setIsDiscovering] = useState(false)
+
+  const handleTestConnection = async () => {
+    setIsTesting(true)
+    setTestingStatus(null)
+    try {
+      const res = await client.testConnection({
+        provider,
+        openRouterKey,
+        openRouterModel,
+        deepLKey,
+        mistralKey,
+        openAiBaseUrl,
+        openAiKey,
+        openAiModel,
+        anthropicKey,
+        anthropicModel,
+        geminiKey,
+        geminiModel,
+        targetLanguage,
+        translationChunkSize,
+      })
+      setTestingStatus(res)
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  const handleDiscoverModels = async () => {
+    setIsDiscovering(true)
+    try {
+      const models = await client.discoverModels(provider, {
+        provider,
+        openRouterKey,
+        mistralKey,
+        openAiBaseUrl,
+        openAiKey,
+        geminiKey,
+      })
+      setDiscoveredModels(models)
+    } finally {
+      setIsDiscovering(false)
+    }
+  }
 
   const handleSave = () => {
     client.saveConfig({
@@ -1024,6 +1086,48 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           </>
         )}
 
+        {provider !== 'deepl' && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-[#a59fad]">Quick Model Picker</label>
+              <button
+                type="button"
+                onClick={handleDiscoverModels}
+                disabled={isDiscovering}
+                className="flex items-center gap-1 font-mono text-[10px] text-[#b09cff] hover:underline"
+              >
+                {isDiscovering ? (
+                  <Loader2 size={10} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={10} />
+                )}
+                Discover Models
+              </button>
+            </div>
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-2">
+              {(discoveredModels.length > 0
+                ? discoveredModels
+                : client.getCuratedModels(provider)
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    if (provider === 'openrouter') setOpenRouterModel(m.id)
+                    else if (provider === 'openai-compatible') setOpenAiModel(m.id)
+                    else if (provider === 'anthropic') setAnthropicModel(m.id)
+                    else if (provider === 'gemini') setGeminiModel(m.id)
+                  }}
+                  className="rounded bg-white/5 px-2 py-0.5 text-[10px] text-[#e7e4ed] hover:bg-white/15"
+                  title={m.id}
+                >
+                  {m.name || m.id}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-[#a59fad]">Target Language</label>
           <input
@@ -1049,6 +1153,46 @@ function AIConfigModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           <p className="text-[10px] text-[#a59fad]">
             Maximum lyric lines dispatched per API batch. Prevents LLM context exhaustion on long songs.
           </p>
+        </div>
+
+        <div className="flex flex-col gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-white">Connection Test</span>
+            <button
+              type="button"
+              onClick={handleTestConnection}
+              disabled={isTesting}
+              className="flex items-center gap-1.5 rounded-md border border-[#7c5cff]/40 bg-[#7c5cff]/10 px-2.5 py-1 text-xs font-medium text-[#b09cff] hover:bg-[#7c5cff]/20"
+            >
+              {isTesting ? <Loader2 size={12} className="animate-spin" /> : null}
+              {isTesting ? 'Testing...' : 'Test Connection'}
+            </button>
+          </div>
+          {testingStatus && (
+            <div
+              className={`flex items-start gap-2 rounded-md p-2 text-xs ${
+                testingStatus.ok
+                  ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                  : 'border border-red-500/20 bg-red-500/10 text-red-300'
+              }`}
+            >
+              {testingStatus.ok ? (
+                <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-400" />
+              ) : (
+                <XCircle size={14} className="mt-0.5 shrink-0 text-red-400" />
+              )}
+              <div className="flex flex-col">
+                <span className="font-semibold">
+                  {testingStatus.ok
+                    ? `Connected (${testingStatus.latencyMs}ms)`
+                    : 'Connection Failed'}
+                </span>
+                <span className="text-[11px] opacity-90">
+                  {testingStatus.error || testingStatus.message}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-white/8 pt-2">

@@ -49,6 +49,60 @@ export const aiKeysConfigSchema = z.object({
 
 export type AIKeysConfig = z.infer<typeof aiKeysConfigSchema>
 
+export const connectionTestResultSchema = z.object({
+  ok: z.boolean(),
+  provider: aiProviderSchema,
+  latencyMs: z.number().nonnegative(),
+  message: z.string(),
+  model: z.string().optional(),
+  error: z.string().optional(),
+  statusCode: z.number().int().optional(),
+})
+
+export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>
+
+export const discoveredModelSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  contextLength: z.number().int().optional(),
+})
+
+export type DiscoveredModel = z.infer<typeof discoveredModelSchema>
+
+export const CURATED_MODELS_BY_PROVIDER: Record<AIProvider, Array<{ id: string; name: string }>> = {
+  openrouter: [
+    { id: 'google/gemini-2.0-flash-001', name: 'Google Gemini 2.0 Flash' },
+    { id: 'openrouter/free', name: 'OpenRouter Free Tier' },
+    { id: 'google/gemini-2.5-flash', name: 'Google Gemini 2.5 Flash' },
+    { id: 'openai/gpt-4o-mini', name: 'OpenAI GPT-4o Mini' },
+    { id: 'x-ai/grok-4.1-fast', name: 'xAI Grok 4.1 Fast' },
+    { id: 'deepseek/deepseek-v3.1-terminus:exacto', name: 'DeepSeek V3.1 Terminus' },
+  ],
+  deepl: [],
+  mistral: [
+    { id: 'mistral-small-latest', name: 'Mistral Small (Latest)' },
+    { id: 'mistral-medium-latest', name: 'Mistral Medium (Latest)' },
+    { id: 'mistral-large-latest', name: 'Mistral Large (Latest)' },
+  ],
+  'openai-compatible': [
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'gpt-4o', name: 'GPT-4o' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+  ],
+  anthropic: [
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+    { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku' },
+    { id: 'claude-3-5-sonnet-latest', name: 'Claude 3.5 Sonnet' },
+  ],
+  gemini: [
+    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+  ],
+}
+
 export const translationMetricsSchema = z.object({
   totalTranslations: z.number().int().nonnegative(),
   cacheHits: z.number().int().nonnegative(),
@@ -58,6 +112,11 @@ export const translationMetricsSchema = z.object({
   chunkRetries: z.number().int().nonnegative().optional(),
   chunkFailures: z.number().int().nonnegative().optional(),
   partialTranslationsDelivered: z.number().int().nonnegative().optional(),
+  connectionTestsRun: z.number().int().nonnegative().optional(),
+  connectionTestsSuccessful: z.number().int().nonnegative().optional(),
+  connectionTestsFailed: z.number().int().nonnegative().optional(),
+  modelDiscoveriesRun: z.number().int().nonnegative().optional(),
+  modelsDiscoveredCount: z.number().int().nonnegative().optional(),
   providerCounts: z.record(z.string(), z.number().int().nonnegative()),
   failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
   avgLatencyMs: z.number().nonnegative(),
@@ -111,6 +170,11 @@ let translationMetrics: TranslationMetrics = {
   chunkRetries: 0,
   chunkFailures: 0,
   partialTranslationsDelivered: 0,
+  connectionTestsRun: 0,
+  connectionTestsSuccessful: 0,
+  connectionTestsFailed: 0,
+  modelDiscoveriesRun: 0,
+  modelsDiscoveredCount: 0,
   providerCounts: {
     openrouter: 0,
     deepl: 0,
@@ -142,6 +206,11 @@ export function resetTranslationMetrics(): void {
     chunkRetries: 0,
     chunkFailures: 0,
     partialTranslationsDelivered: 0,
+    connectionTestsRun: 0,
+    connectionTestsSuccessful: 0,
+    connectionTestsFailed: 0,
+    modelDiscoveriesRun: 0,
+    modelsDiscoveredCount: 0,
     providerCounts: {
       openrouter: 0,
       deepl: 0,
@@ -232,6 +301,403 @@ export class TranslationClient {
   public clearCache(): void {
     this.translationCache.clear()
     this.inFlightTranslations.clear()
+  }
+
+  public getCuratedModels(provider: AIProvider): Array<{ id: string; name: string }> {
+    return CURATED_MODELS_BY_PROVIDER[provider] || []
+  }
+
+  public async testConnection(
+    overrideConfig?: Partial<AIKeysConfig>,
+    signal?: AbortSignal,
+  ): Promise<ConnectionTestResult> {
+    const config = { ...this.getConfig(), ...overrideConfig }
+    const startTime = performance.now()
+    translationMetrics.connectionTestsRun = (translationMetrics.connectionTestsRun || 0) + 1
+
+    try {
+      if (config.provider === 'deepl') {
+        const key = config.deepLKey?.trim()
+        if (!key) throw new Error('DeepL auth key is not configured.')
+        const host =
+          config.deepLPlan === 'pro'
+            ? 'https://api.deepl.com/v2/usage'
+            : 'https://api-free.deepl.com/v2/usage'
+
+        const res = await this.fetchWithTimeout(
+          host,
+          {
+            method: 'GET',
+            headers: { Authorization: `DeepL-Auth-Key ${key}` },
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`DeepL connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'deepl',
+          latencyMs,
+          message: 'Connected to DeepL API successfully',
+          statusCode: res.status,
+        }
+      }
+
+      if (config.provider === 'openrouter') {
+        const key = config.openRouterKey?.trim()
+        if (!key) throw new Error('OpenRouter API key is not configured.')
+        const model = config.openRouterModel || 'google/gemini-2.0-flash-001'
+
+        const res = await this.fetchWithTimeout(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 5,
+            }),
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`OpenRouter connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'openrouter',
+          latencyMs,
+          message: `Connected to OpenRouter using ${model}`,
+          model,
+          statusCode: res.status,
+        }
+      }
+
+      if (config.provider === 'mistral') {
+        const key = config.mistralKey?.trim()
+        if (!key) throw new Error('Mistral API key is not configured.')
+        const model = config.mistralModel || 'mistral-small-latest'
+
+        const res = await this.fetchWithTimeout(
+          'https://api.mistral.ai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 5,
+            }),
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Mistral connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'mistral',
+          latencyMs,
+          message: `Connected to Mistral using ${model}`,
+          model,
+          statusCode: res.status,
+        }
+      }
+
+      if (config.provider === 'openai-compatible') {
+        const key = config.openAiKey?.trim()
+        const baseUrl = config.openAiBaseUrl?.trim().replace(/\/+$/, '')
+        if (!key || !baseUrl) throw new Error('OpenAI-compatible Base URL and API key are required.')
+        const model = config.openAiModel || 'gpt-4o-mini'
+
+        const res = await this.fetchWithTimeout(
+          `${baseUrl}/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 5,
+            }),
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`OpenAI-compatible connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'openai-compatible',
+          latencyMs,
+          message: `Connected to OpenAI-compatible endpoint using ${model}`,
+          model,
+          statusCode: res.status,
+        }
+      }
+
+      if (config.provider === 'anthropic') {
+        const key = config.anthropicKey?.trim()
+        if (!key) throw new Error('Anthropic API key is not configured.')
+        const model = config.anthropicModel || 'claude-haiku-4-5'
+
+        const res = await this.fetchWithTimeout(
+          'https://api.anthropic.com/v1/messages',
+          {
+            method: 'POST',
+            headers: {
+              'x-api-key': key,
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: 'ping' }],
+              max_tokens: 5,
+            }),
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Anthropic connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'anthropic',
+          latencyMs,
+          message: `Connected to Anthropic using ${model}`,
+          model,
+          statusCode: res.status,
+        }
+      }
+
+      if (config.provider === 'gemini') {
+        const key = config.geminiKey?.trim()
+        if (!key) throw new Error('Google Gemini API key is not configured.')
+        const model = config.geminiModel || 'gemini-2.0-flash'
+
+        const res = await this.fetchWithTimeout(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'x-goog-api-key': key,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+              generationConfig: { maxOutputTokens: 5 },
+            }),
+          },
+          signal,
+          8000,
+        )
+
+        const latencyMs = Math.round(performance.now() - startTime)
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Gemini connection failed (${res.status}): ${errText}`)
+        }
+
+        translationMetrics.connectionTestsSuccessful =
+          (translationMetrics.connectionTestsSuccessful || 0) + 1
+        return {
+          ok: true,
+          provider: 'gemini',
+          latencyMs,
+          message: `Connected to Gemini using ${model}`,
+          model,
+          statusCode: res.status,
+        }
+      }
+
+      throw new Error(`Unsupported provider: ${config.provider}`)
+    } catch (err: unknown) {
+      const latencyMs = Math.round(performance.now() - startTime)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      translationMetrics.connectionTestsFailed =
+        (translationMetrics.connectionTestsFailed || 0) + 1
+      return {
+        ok: false,
+        provider: config.provider,
+        latencyMs,
+        message: 'Connection test failed',
+        error: errorMsg,
+      }
+    }
+  }
+
+  public async discoverModels(
+    provider?: AIProvider,
+    overrideConfig?: Partial<AIKeysConfig>,
+    signal?: AbortSignal,
+  ): Promise<DiscoveredModel[]> {
+    const config = { ...this.getConfig(), ...overrideConfig }
+    const targetProvider = provider || config.provider
+    translationMetrics.modelDiscoveriesRun = (translationMetrics.modelDiscoveriesRun || 0) + 1
+
+    try {
+      if (targetProvider === 'openrouter') {
+        const res = await this.fetchWithTimeout(
+          'https://openrouter.ai/api/v1/models',
+          { method: 'GET' },
+          signal,
+          8000,
+        )
+        if (res.ok) {
+          const json = (await res.json()) as {
+            data?: Array<{
+              id: string
+              name?: string
+              description?: string
+              context_length?: number
+            }>
+          }
+          if (Array.isArray(json.data) && json.data.length > 0) {
+            const models = json.data.slice(0, 50).map((m) => ({
+              id: m.id,
+              name: m.name || m.id,
+              description: m.description,
+              contextLength: m.context_length,
+            }))
+            translationMetrics.modelsDiscoveredCount =
+              (translationMetrics.modelsDiscoveredCount || 0) + models.length
+            return models
+          }
+        }
+      }
+
+      if (targetProvider === 'mistral') {
+        const key = config.mistralKey?.trim()
+        if (key) {
+          const res = await this.fetchWithTimeout(
+            'https://api.mistral.ai/v1/models',
+            {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${key}` },
+            },
+            signal,
+            8000,
+          )
+          if (res.ok) {
+            const json = (await res.json()) as { data?: Array<{ id: string }> }
+            if (Array.isArray(json.data) && json.data.length > 0) {
+              const models = json.data.map((m) => ({ id: m.id, name: m.id }))
+              translationMetrics.modelsDiscoveredCount =
+                (translationMetrics.modelsDiscoveredCount || 0) + models.length
+              return models
+            }
+          }
+        }
+      }
+
+      if (targetProvider === 'openai-compatible') {
+        const key = config.openAiKey?.trim()
+        const baseUrl = config.openAiBaseUrl?.trim().replace(/\/+$/, '')
+        if (key && baseUrl) {
+          const res = await this.fetchWithTimeout(
+            `${baseUrl}/models`,
+            {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${key}` },
+            },
+            signal,
+            8000,
+          )
+          if (res.ok) {
+            const json = (await res.json()) as { data?: Array<{ id: string }> }
+            if (Array.isArray(json.data) && json.data.length > 0) {
+              const models = json.data.map((m) => ({ id: m.id, name: m.id }))
+              translationMetrics.modelsDiscoveredCount =
+                (translationMetrics.modelsDiscoveredCount || 0) + models.length
+              return models
+            }
+          }
+        }
+      }
+
+      if (targetProvider === 'gemini') {
+        const key = config.geminiKey?.trim()
+        if (key) {
+          const res = await this.fetchWithTimeout(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+            { method: 'GET' },
+            signal,
+            8000,
+          )
+          if (res.ok) {
+            const json = (await res.json()) as {
+              models?: Array<{ name: string; displayName?: string; description?: string }>
+            }
+            if (Array.isArray(json.models) && json.models.length > 0) {
+              const models = json.models
+                .filter((m) => m.name.includes('gemini'))
+                .map((m) => ({
+                  id: m.name.replace(/^models\//, ''),
+                  name: m.displayName || m.name.replace(/^models\//, ''),
+                  description: m.description,
+                }))
+              translationMetrics.modelsDiscoveredCount =
+                (translationMetrics.modelsDiscoveredCount || 0) + models.length
+              return models
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback to curated catalog
+    }
+
+    const curated = CURATED_MODELS_BY_PROVIDER[targetProvider] || []
+    translationMetrics.modelsDiscoveredCount =
+      (translationMetrics.modelsDiscoveredCount || 0) + curated.length
+    return curated.map((m) => ({ id: m.id, name: m.name }))
   }
 
   public async translateLyrics(
