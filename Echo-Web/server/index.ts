@@ -25,27 +25,37 @@ import {
   getDeploymentMetrics,
   recordDeploymentMetric,
 } from './utils/deploymentTypes.ts'
+import {
+  parseAndValidateAllowedOrigins,
+  isOriginAllowed,
+  getSecurityHeaders,
+  recordCorsMetric,
+  getCorsMetrics,
+} from './utils/corsTypes.ts'
 
 export const app = new Hono()
 
 // Browsers on the same origin never trigger CORS (same-origin requests are exempt), so the
-// allowlist below only has to cover cross-origin deployments. Set CORS_ORIGINS as a comma-
-// separated list of deploy origins (e.g. "https://echo.example,https://staging.echo.example").
-// The default mirrors the Vite dev server so direct origin access keeps working in development.
-const allowedOrigins = (process.env['CORS_ORIGINS'] || 'http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean)
+// allowlist below only has to cover cross-origin deployments.
+const allowedOrigins = parseAndValidateAllowedOrigins(process.env['CORS_ORIGINS'])
 
-app.use('*', async (_c, next) => {
+app.use('*', async (c, next) => {
   recordDeploymentMetric('requestsHandled')
+  const secHeaders = getSecurityHeaders()
+  for (const [key, value] of Object.entries(secHeaders)) {
+    c.header(key, value)
+  }
+  recordCorsMetric('securityHeadersApplied')
   await next()
 })
 
 app.use(
   '*',
   cors({
-    origin: (origin) => (origin && allowedOrigins.includes(origin) ? origin : undefined),
+    origin: (origin) => {
+      if (!origin) return undefined
+      return isOriginAllowed(origin, allowedOrigins) ? origin : undefined
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Range', 'Authorization', 'X-YouTube-Visitor-Data'],
     exposeHeaders: ['Content-Length', 'Content-Range', 'Accept-Ranges'],
@@ -68,6 +78,10 @@ app.get('/api/health', (c) => {
 app.get('/api/deployment/telemetry', (c) => {
   recordDeploymentMetric('telemetryRequests')
   return c.json(getDeploymentMetrics())
+})
+
+app.get('/api/cors/telemetry', (c) => {
+  return c.json(getCorsMetrics())
 })
 
 app.route('/api/innertube', innertubeRouter)
