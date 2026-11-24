@@ -129,7 +129,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-007 | Extension preloading | Completed | 2a321ee9 | Yes (verified on origin/main) |
 | FEATURE-008 | Extension health dashboard | Completed | 1a54d5c9 | Yes (verified on origin/main) |
 | FEATURE-009 | Network-aware quality tiers | Completed | fdda3c76 | Yes (verified on origin/main) |
-| FEATURE-010 | Verified stream telemetry | Pending | - | - |
+| FEATURE-010 | Verified stream telemetry | Completed | b0032d15 | Yes (verified on origin/main) |
 | FEATURE-011 | Correct crossfade promotion | Pending | - | - |
 | FEATURE-012 | Gapless playback | Pending | - | - |
 | FEATURE-013 | Equal-power crossfade profiles | Pending | - | - |
