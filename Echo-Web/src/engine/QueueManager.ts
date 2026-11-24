@@ -522,6 +522,16 @@ export class QueueManager {
     return { track: null, shouldStop: true }
   }
 
+  private isPromotionPending = false
+
+  public hasPendingPromotion(): boolean {
+    return this.isPromotionPending
+  }
+
+  public commitPromotion(): void {
+    this.isPromotionPending = false
+  }
+
   public promoteStandbyTrack(expectedTrack?: Track | null): {
     promoted: Track | null
     previousTrack: Track | null
@@ -534,6 +544,7 @@ export class QueueManager {
     const savedCurrentSourceIndex = this.currentSourceIndex
     const savedRadio = [...this.radioQueueList]
     const savedShuffled = [...this.shuffledList]
+    const savedPending = this.isPromotionPending
 
     const rollback = () => {
       this.historyList = savedHistory
@@ -543,16 +554,12 @@ export class QueueManager {
       this.currentSourceIndex = savedCurrentSourceIndex
       this.radioQueueList = savedRadio
       this.shuffledList = savedShuffled
+      this.isPromotionPending = savedPending
     }
 
     const previousTrack = this.activeTrack
 
-    // Advance queue cursor atomically
-    const { track } = this.next()
-
-    // If expectedTrack was provided and track does not match (e.g. queue was modified),
-    // ensure activeTrack matches the expected standby track if it was in upNext
-    if (expectedTrack && (!track || track.id !== expectedTrack.id)) {
+    if (expectedTrack) {
       const upNextIdx = this.upNextList.findIndex((t) => t.id === expectedTrack.id)
       if (upNextIdx !== -1) {
         const [found] = this.upNextList.splice(upNextIdx, 1)
@@ -562,9 +569,19 @@ export class QueueManager {
           }
           this.activeTrack = found
           this.activeTrackSource = 'upNext'
+          this.isPromotionPending = true
+          return {
+            promoted: this.activeTrack ? cloneTrack(this.activeTrack) : null,
+            previousTrack: previousTrack ? cloneTrack(previousTrack) : null,
+            rollback,
+          }
         }
       }
     }
+
+    // Advance queue cursor atomically
+    this.next()
+    this.isPromotionPending = true
 
     return {
       promoted: this.activeTrack ? cloneTrack(this.activeTrack) : null,

@@ -9,6 +9,7 @@ export interface DeckControllerOptions {
 
 export interface CrossfadeMetrics {
   crossfadeCount: number
+  crossfadeSuccesses: number
   crossfadeFailures: number
   crossfadesCancelled: number
   lastCrossfadeDurationMs: number
@@ -46,6 +47,7 @@ export class DeckController {
 
   private metrics: CrossfadeMetrics = {
     crossfadeCount: 0,
+    crossfadeSuccesses: 0,
     crossfadeFailures: 0,
     crossfadesCancelled: 0,
     lastCrossfadeDurationMs: 0,
@@ -62,6 +64,7 @@ export class DeckController {
   public onPrebufferNeeded?: (standbyDeckId: DeckId) => void
   public onCrossfadeStart?: (fromDeck: DeckId, toDeck: DeckId) => void
   public onCrossfadeFailed?: (fromDeck: DeckId, toDeck: DeckId, error: Error) => void
+  public onCrossfadeCancelled?: (fromDeck: DeckId, toDeck: DeckId) => void
   public onCrossfadeComplete?: (newActiveDeck: DeckId) => void
   public onError?: (error: Error) => void
 
@@ -120,6 +123,10 @@ export class DeckController {
     }
   }
 
+  public isCrossfadeActive(): boolean {
+    return this.isCrossfading
+  }
+
   public cancelCrossfade(): void {
     if (this.crossfadeTimer !== null) {
       window.clearTimeout(this.crossfadeTimer)
@@ -145,6 +152,7 @@ export class DeckController {
         this.activeTrackDeckB = null
       }
       this.metrics.crossfadesCancelled++
+      this.onCrossfadeCancelled?.(fromDeck, toDeck)
     }
   }
 
@@ -177,6 +185,9 @@ export class DeckController {
   public async loadActive(track: Track, url: string, autoPlay = true): Promise<void> {
     if (!isValidTrack(track) || typeof url !== 'string' || !url.trim()) {
       throw new Error('Invalid track or URL provided to loadActive')
+    }
+    if (this.isCrossfading) {
+      this.cancelCrossfade()
     }
     const loadId = ++this.currentLoadOperationId
     const deck = this.activeDeckId
@@ -280,10 +291,10 @@ export class DeckController {
 
   public pause(): void {
     ++this.currentPlayOperationId
-    this.getActiveElement().pause()
     if (this.isCrossfading) {
-      this.getStandbyElement().pause()
+      this.cancelCrossfade()
     }
+    this.getActiveElement().pause()
     this.setPlaybackState('PAUSED')
   }
 
@@ -296,6 +307,9 @@ export class DeckController {
   }
 
   public seek(seconds: number): void {
+    if (this.isCrossfading) {
+      this.cancelCrossfade()
+    }
     const el = this.getActiveElement()
     const duration = this.getDuration()
     const target = duration > 0 ? Math.max(0, Math.min(seconds, duration)) : Math.max(0, seconds)
@@ -427,6 +441,7 @@ export class DeckController {
 
         this.setDeckGain(fromDeck, 0.0)
         this.setDeckGain(toDeck, 1.0)
+        this.metrics.crossfadeSuccesses++
         this.metrics.lastCrossfadeDurationMs =
           (typeof performance !== 'undefined' ? performance.now() : Date.now()) - crossfadeStartTime
 

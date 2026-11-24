@@ -264,6 +264,9 @@ export class AudioEngine {
   }
 
   public async next(): Promise<void> {
+    if (this.deckController.isCrossfadeActive()) {
+      this.deckController.cancelCrossfade()
+    }
     this.recordCurrentTrackTransition(false)
     const { track, shouldStop } = this.queueManager.next()
     this.emit('queueChange')
@@ -279,6 +282,9 @@ export class AudioEngine {
   }
 
   public async previous(): Promise<void> {
+    if (this.deckController.isCrossfadeActive()) {
+      this.deckController.cancelCrossfade()
+    }
     const currentTime = this.deckController.getCurrentTime()
     const { track, seekToZero } = this.queueManager.previous(currentTime)
     this.emit('queueChange')
@@ -931,9 +937,31 @@ export class AudioEngine {
       this.emitState()
     }
 
+    this.deckController.onCrossfadeCancelled = (fromDeck: DeckId, _toDeck: DeckId) => {
+      if (this.crossfadeRollback) {
+        this.crossfadeRollback()
+        this.crossfadeRollback = null
+      }
+      this.queueManager.setActiveDeck(fromDeck)
+      const restoredTrack = this.queueManager.currentTrack
+      if (restoredTrack) {
+        this.mediaSession.updateTrack(restoredTrack)
+        this.emit('trackChange', restoredTrack)
+      }
+      this.emit('deckSwap', fromDeck)
+      this.emit('queueChange')
+      this.emitState()
+    }
+
     this.deckController.onCrossfadeComplete = (newActiveDeck: DeckId) => {
+      this.queueManager.commitPromotion()
       this.crossfadeRollback = null
       this.queueManager.setActiveDeck(newActiveDeck)
+      const currentTrack = this.queueManager.currentTrack
+      if (currentTrack) {
+        this.mediaSession.updateTrack(currentTrack)
+        this.emit('trackChange', currentTrack)
+      }
       this.emit('deckSwap', newActiveDeck)
       this.emitState()
     }
