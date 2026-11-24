@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { FolderPlus, HardDrive, Play, Plus, Trash2, Music } from 'lucide-react'
-import { getAllLocalTracks, importLocalFiles } from '../../services/local/localMusicScanner'
+import {
+  getAllLocalTracks,
+  importLocalFiles,
+  revokeLocalArtwork,
+} from '../../services/local/localMusicScanner'
 import { db } from '../../services/db/echoDatabase'
 import { useEchoStore } from '../../stores/useEchoStore'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
@@ -70,6 +74,7 @@ export function LocalMusicSection() {
   }
 
   const handleDeleteLocalTrack = async (id: string, title: string) => {
+    revokeLocalArtwork(id)
     await db.localFiles.delete(id)
     setToast(`Removed "${title}" from local library`)
     await loadTracks()

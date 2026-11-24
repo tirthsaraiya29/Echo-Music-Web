@@ -1,5 +1,8 @@
-import { db, type LocalFileRecord } from '../db/echoDatabase'
+import { db, type LocalFileRecord } from '../db/echoDatabase.ts'
 import type { Track } from '../../types/domain'
+import { getLocalArtworkUrl, revokeLocalArtwork } from './objectUrlRegistry.ts'
+
+export { getLocalArtworkUrl, revokeLocalArtwork }
 
 export interface ParsedAudioMeta {
   title: string
@@ -219,7 +222,9 @@ export async function importLocalFiles(
 }
 
 export function localRecordToTrack(record: LocalFileRecord): Track {
-  const artworkUrl = record.artworkBlob ? URL.createObjectURL(record.artworkBlob) : ''
+  const artworkUrl = record.artworkBlob
+    ? getLocalArtworkUrl(record.id, record.artworkBlob)
+    : ''
 
   return {
     id: record.id,

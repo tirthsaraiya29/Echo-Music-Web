@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { Track } from '../../types/domain'
 import type { SynchronizedLyrics } from '../../types/lyrics'
+import { getLocalArtworkUrl } from '../local/objectUrlRegistry.ts'
 
 export interface StoredPlaylistRecord {
   id: string
@@ -347,7 +348,7 @@ export async function resolveMissingTrack(id: string): Promise<Track | null> {
     const local = await db.localFiles.get(id)
     if (local) {
       const art = local.artworkBlob
-        ? URL.createObjectURL(local.artworkBlob)
+        ? getLocalArtworkUrl(local.id, local.artworkBlob)
         : `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
       return {
         id: local.id,
