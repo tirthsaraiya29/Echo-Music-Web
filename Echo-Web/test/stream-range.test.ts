@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { parseByteRange, streamRouter } from '../server/routes/stream.ts'
+import {
+  parseByteRange,
+  formatContentRange,
+  getRangeStreamingMetrics,
+  resetRangeStreamingMetrics,
+  streamRouter,
+} from '../server/routes/stream.ts'
 
 describe('HTTP Range Request Parsing [BUG-35]', () => {
   it('parses valid closed byte ranges per RFC 9110', () => {
@@ -172,5 +178,22 @@ describe('HTTP Range Request Parsing [BUG-35]', () => {
     )
     const zeroRes = await streamRouter.fetch(zeroReq)
     assert.strictEqual(zeroRes.status, 416)
+  })
+
+  it('formatContentRange generates standard RFC 9110 content-range headers [SMALL-09]', () => {
+    assert.strictEqual(formatContentRange(0, 499, 1000), 'bytes 0-499/1000')
+    assert.strictEqual(formatContentRange(500, 999, 1000), 'bytes 500-999/1000')
+    assert.strictEqual(formatContentRange(0, 1024, '*'), 'bytes 0-1024/*')
+  })
+
+  it('stream /range-telemetry returns range metrics [SMALL-09]', async () => {
+    resetRangeStreamingMetrics()
+    const res = await streamRouter.fetch(new Request('http://localhost/range-telemetry'))
+    assert.strictEqual(res.status, 200)
+    const metrics = await res.json() as ReturnType<typeof getRangeStreamingMetrics>
+    assert.strictEqual(typeof metrics.totalRangeRequests, 'number')
+    assert.strictEqual(typeof metrics.partialContentResponses, 'number')
+    assert.strictEqual(typeof metrics.notSatisfiableResponses, 'number')
+    assert.strictEqual(typeof metrics.fullContentResponses, 'number')
   })
 })

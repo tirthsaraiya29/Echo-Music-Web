@@ -66,6 +66,38 @@ export function resetStreamResolverMetrics(): void {
   resolverMetrics.lastFailureReason = null
 }
 
+export interface RangeStreamingMetrics {
+  totalRangeRequests: number
+  partialContentResponses: number
+  notSatisfiableResponses: number
+  fullContentResponses: number
+  abortedStreams: number
+}
+
+const rangeMetrics: RangeStreamingMetrics = {
+  totalRangeRequests: 0,
+  partialContentResponses: 0,
+  notSatisfiableResponses: 0,
+  fullContentResponses: 0,
+  abortedStreams: 0,
+}
+
+export function getRangeStreamingMetrics(): RangeStreamingMetrics {
+  return { ...rangeMetrics }
+}
+
+export function resetRangeStreamingMetrics(): void {
+  rangeMetrics.totalRangeRequests = 0
+  rangeMetrics.partialContentResponses = 0
+  rangeMetrics.notSatisfiableResponses = 0
+  rangeMetrics.fullContentResponses = 0
+  rangeMetrics.abortedStreams = 0
+}
+
+export function formatContentRange(start: number, end: number, total: number | '*'): string {
+  return `bytes ${start}-${end}/${total}`
+}
+
 type VideoFormat = ReturnType<typeof chooseFormat>
 
 export interface CachedVideoInfo {
@@ -392,7 +424,16 @@ streamRouter.get('/resolve', async (c) => {
   }
 })
 
+streamRouter.get('/range-telemetry', (c) => {
+  return c.json(getRangeStreamingMetrics())
+})
+
 streamRouter.get('/listen', async (c) => {
+  if (c.req.raw.signal?.aborted) {
+    rangeMetrics.abortedStreams++
+    return new Response(null, { status: 499 })
+  }
+
   const videoId = c.req.query('videoId')
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     return c.text('Valid 11-character videoId is required', 400)
@@ -408,8 +449,10 @@ streamRouter.get('/listen', async (c) => {
     let end: number | undefined = total > 0 ? total - 1 : undefined
 
     if (rangeHeader) {
+      rangeMetrics.totalRangeRequests++
       const parsed = parseByteRange(rangeHeader, total)
       if (!parsed.valid) {
+        rangeMetrics.notSatisfiableResponses++
         const notSatHeaders = new Headers()
         notSatHeaders.set('Content-Range', `bytes */${total > 0 ? total : '*'}`)
         notSatHeaders.set('Accept-Ranges', 'bytes')
@@ -433,15 +476,16 @@ streamRouter.get('/listen', async (c) => {
     headers.set('Access-Control-Allow-Headers', 'Range, Accept-Ranges, Content-Type')
 
     if (rangeHeader) {
+      rangeMetrics.partialContentResponses++
       if (total > 0) {
         const chunkEnd = end !== undefined ? Math.min(end, total - 1) : total - 1
         const chunkLen = Math.max(0, chunkEnd - start + 1)
-        headers.set('Content-Range', `bytes ${start}-${chunkEnd}/${total}`)
+        headers.set('Content-Range', formatContentRange(start, chunkEnd, total))
         headers.set('Content-Length', String(chunkLen))
       } else {
         if (end !== undefined) {
           const chunkLen = Math.max(0, end - start + 1)
-          headers.set('Content-Range', `bytes ${start}-${end}/*`)
+          headers.set('Content-Range', formatContentRange(start, end, '*'))
           headers.set('Content-Length', String(chunkLen))
         } else {
           headers.set('Content-Range', `bytes ${start}-/*`)
@@ -450,6 +494,7 @@ streamRouter.get('/listen', async (c) => {
       return new Response(webStream as unknown as ReadableStream, { status: 206, headers })
     }
 
+    rangeMetrics.fullContentResponses++
     if (total > 0) {
       headers.set('Content-Length', String(total))
     }
