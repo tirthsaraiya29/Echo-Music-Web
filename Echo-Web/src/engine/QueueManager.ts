@@ -446,6 +446,8 @@ export class QueueManager {
       repeatMode: this.repeatModeSetting,
       isShuffle: this.shuffleEnabled,
       pauseAtEndOfItems: this.pauseAtEndOfItemsSetting,
+      currentSourceIndex: this.currentSourceIndex,
+      activeTrackSource: this.activeTrackSource,
     }
   }
 
@@ -461,13 +463,18 @@ export class QueueManager {
     this.shuffleEnabled = snapshot.isShuffle
     this.pauseAtEndOfItemsSetting = snapshot.pauseAtEndOfItems
 
-    if (this.activeTrack) {
+    if (typeof snapshot.currentSourceIndex === 'number') {
+      this.currentSourceIndex = snapshot.currentSourceIndex
+      this.activeTrackSource =
+        snapshot.activeTrackSource ?? (this.activeTrack ? 'sourceQueue' : 'direct')
+    } else if (this.activeTrack) {
       const list = this.shuffleEnabled ? this.shuffledList : this.sourceQueueList
       const index = list.findIndex((track) => track.id === this.activeTrack?.id)
       this.currentSourceIndex = index !== -1 ? index : 0
       this.activeTrackSource = index !== -1 ? 'sourceQueue' : 'direct'
     } else {
       this.currentSourceIndex = -1
+      this.activeTrackSource = 'direct'
     }
 
     return this.activeTrack

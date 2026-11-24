@@ -303,3 +303,43 @@ test('QueueManager: currentTrack maintains stable object reference across consec
   assert.strictEqual(firstRead, secondRead, 'currentTrack reference must be stable across reads')
   assert.strictEqual(firstRead, thirdReadFromDetailed, 'getDetailedQueue().currentTrack must share the stable reference')
 })
+
+test('QueueManager: snapshot restoration preserves source queue cursor when Up Next track is audible [BUG-10]', () => {
+  const qm = new QueueManager()
+  const tracks = [
+    createMockTrack('1', 'T1'),
+    createMockTrack('2', 'T2'),
+    createMockTrack('3', 'T3'),
+    createMockTrack('4', 'T4'),
+  ]
+  // Start on track 2 (index 1)
+  qm.setSourceQueue(tracks, 1)
+  assert.strictEqual(qm.currentTrack?.id, '2')
+
+  // Enqueue user track into Up Next
+  qm.addToQueue(createMockTrack('u1', 'User Track'))
+
+  // Next track is the Up Next track
+  const nextRes = qm.next()
+  assert.strictEqual(nextRes.track?.id, 'u1')
+  assert.strictEqual(qm.currentTrack?.id, 'u1')
+
+  // Snapshot while Up Next track is playing
+  const snapshot = qm.snapshotQueue(42)
+  assert.strictEqual(snapshot.currentSourceIndex, 1)
+  assert.strictEqual(snapshot.activeTrackSource, 'upNext')
+
+  // Restore into a fresh QueueManager
+  const restored = new QueueManager()
+  restored.restoreQueue(snapshot)
+
+  assert.strictEqual(restored.currentTrack?.id, 'u1')
+  // sourceUpcoming must still be tracks [3, 4], not reset to [2, 3, 4]
+  const upcomingIds = restored.getDetailedQueue().sourceUpcoming.map((t) => t.id)
+  assert.deepStrictEqual(upcomingIds, ['3', '4'])
+
+  // Next track from restored queue must resume source queue at track 3
+  const afterUpNext = restored.next()
+  assert.strictEqual(afterUpNext.track?.id, '3')
+  assert.strictEqual(restored.currentTrack?.id, '3')
+})

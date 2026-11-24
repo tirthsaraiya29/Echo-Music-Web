@@ -36,6 +36,8 @@ export interface QueueSnapshot {
   repeatMode: RepeatMode
   isShuffle: boolean
   pauseAtEndOfItems: boolean
+  currentSourceIndex?: number
+  activeTrackSource?: 'upNext' | 'sourceQueue' | 'radio' | 'direct'
 }
 
 export type EqualizerFilterType =
