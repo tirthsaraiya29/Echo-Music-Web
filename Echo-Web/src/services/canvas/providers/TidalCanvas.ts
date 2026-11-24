@@ -8,8 +8,13 @@ export class TidalCanvas {
     signal?: AbortSignal,
   ): Promise<CanvasVideoResult | null> {
     try {
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : 'http://localhost'
+
       if (isrc) {
-        const url = new URL('/api/canvas/tidal', window.location.origin)
+        const url = new URL('/api/canvas/tidal', origin)
         url.searchParams.set('isrc', isrc)
         const res = await fetch(url.toString(), {
           ...(signal ? { signal } : {}),
@@ -30,7 +35,7 @@ export class TidalCanvas {
 
       // If no ISRC or ISRC failed, resolve via central resolve endpoint
       if (title && artist) {
-        const resolveUrl = new URL('/api/canvas/resolve', window.location.origin)
+        const resolveUrl = new URL('/api/canvas/resolve', origin)
         resolveUrl.searchParams.set('title', title)
         resolveUrl.searchParams.set('artist', artist)
         if (isrc) resolveUrl.searchParams.set('isrc', isrc)

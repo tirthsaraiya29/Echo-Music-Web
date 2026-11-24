@@ -12,7 +12,11 @@ export class AppleCanvas {
     signal?: AbortSignal,
   ): Promise<CanvasVideoResult | null> {
     try {
-      const url = new URL('/api/canvas/resolve', window.location.origin)
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : 'http://localhost'
+      const url = new URL('/api/canvas/resolve', origin)
       url.searchParams.set('title', title)
       url.searchParams.set('artist', artist)
       if (album) url.searchParams.set('album', album)
