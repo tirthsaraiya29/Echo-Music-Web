@@ -19,7 +19,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-05 | P1 | Listen Together is HTTP polling, not WebSockets | `src/services/listenTogether/listenTogetherClient.ts, server/routes/listenTogether.ts, README.md` | Completed | cba9946bf8d135409549f39aa1ce54f38e6e5dd2 | Yes (verified on origin/main) |
 | BUG-06 | P1 | Listen Together host updates can flood the backend | `src/components/modals/ListenTogetherModal.tsx, src/hooks/useAudioEngine.ts, src/services/listenTogether/listenTogetherClient.ts` | Completed | 461fbac580c85bca3b22bcf428613fc0ebff5869 | Yes (verified on origin/main) |
 | BUG-07 | P1 | Listen Together room expiry ignores active heartbeats | `server/routes/listenTogether.ts` | Completed | e1fefebfe8846c268875ea0112a5dbd4d03da0a0 | Yes (verified on origin/main) |
-| BUG-08 | P1 | Listen Together state is mutated in place | `src/services/listenTogether/listenTogetherClient.ts, src/components/modals/ListenTogetherModal.tsx` | Pending | - | - |
+| BUG-08 | P1 | Listen Together state is mutated in place | `src/services/listenTogether/listenTogetherClient.ts, src/components/modals/ListenTogetherModal.tsx` | Completed | 6ef1c2409748fae08f5d054593457a44f8ae7483 | Yes (verified on origin/main) |
 | BUG-09 | P1 | Streaming proxy redirect validation is missing | `server/routes/stream.ts, server/routes/canvas.ts` | Pending | - | - |
 | BUG-10 | P1 | Queue snapshot restoration loses source cursor context | `src/engine/QueueManager.ts` | Pending | - | - |
 | BUG-11 | P1 | Backup and restore use a second playlist store | `src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts, src/components/modals/SpotifyImportModal.tsx, src/pages/SettingsPage.tsx` | Pending | - | - |
