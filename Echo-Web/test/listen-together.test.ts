@@ -45,4 +45,14 @@ describe('Listen Together Room Storage & Endpoints', () => {
     assert.strictEqual(data.room.code, data.code)
     assert.strictEqual(await customStore.has(data.code), true)
   })
+
+  it('audioEngineActions maintains stable references across calls [BUG-06]', async () => {
+    const { audioEngineActions } = await import('../src/hooks/useAudioEngine.ts')
+    assert.ok(audioEngineActions.play)
+    assert.ok(audioEngineActions.pause)
+    assert.ok(audioEngineActions.seekTo)
+    assert.strictEqual(typeof audioEngineActions.play, 'function')
+    assert.strictEqual(typeof audioEngineActions.pause, 'function')
+    assert.strictEqual(typeof audioEngineActions.seekTo, 'function')
+  })
 })

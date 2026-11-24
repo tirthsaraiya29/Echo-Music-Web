@@ -2,8 +2,8 @@ import {
   db,
   type ListeningHistoryRecord,
   type RecommendationExclusionRecord,
-} from '../db/echoDatabase'
-import type { Track } from '../../types/domain'
+} from '../db/echoDatabase.ts'
+import type { Track } from '../../types/domain.ts'
 
 export interface ScoredTrack {
   trackId: string

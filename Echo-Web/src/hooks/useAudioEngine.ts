@@ -3,6 +3,55 @@ import { AudioEngine } from '../engine/AudioEngine.ts'
 import type { AudioEngineState, RepeatMode, Track } from '../types/audio.ts'
 import { getCachedTrack, useEchoStore } from '../stores/useEchoStore.ts'
 
+export const audioEngineActions = {
+  play: (track?: Track) => AudioEngine.getInstance().play(track),
+  playQueue: (tracks: Track[], startIndex?: number) => AudioEngine.getInstance().playQueue(tracks, startIndex),
+  pause: () => AudioEngine.getInstance().pause(),
+  togglePlayback: () => AudioEngine.getInstance().togglePlayback(),
+  next: () => AudioEngine.getInstance().next(),
+  previous: () => AudioEngine.getInstance().previous(),
+  seek: (seconds: number) => AudioEngine.getInstance().seek(seconds),
+  seekTo: (seconds: number) => AudioEngine.getInstance().seekTo(seconds),
+  getCurrentTime: () => AudioEngine.getInstance().getCurrentTime(),
+  playNext: (track: Track) => AudioEngine.getInstance().playNext(track),
+  addToQueue: (track: Track) => AudioEngine.getInstance().addToQueue(track),
+  removeFromQueue: (index: number) => AudioEngine.getInstance().removeFromQueue(index),
+  moveQueueItem: (from: number, to: number) => AudioEngine.getInstance().moveQueueItem(from, to),
+  removeSourceQueueItem: (index: number) => AudioEngine.getInstance().removeSourceQueueItem(index),
+  moveSourceQueueItem: (from: number, to: number) => AudioEngine.getInstance().moveSourceQueueItem(from, to),
+  clearQueue: () => AudioEngine.getInstance().clearQueue(),
+  clearSourceUpcoming: () => AudioEngine.getInstance().clearSourceUpcoming(),
+  clearEntireQueue: () => AudioEngine.getInstance().clearEntireQueue(),
+  getDetailedQueue: () => AudioEngine.getInstance().getDetailedQueue(),
+  setVolume: (volume: number) => AudioEngine.getInstance().setVolume(volume),
+  setMuted: (muted: boolean) => AudioEngine.getInstance().setMuted(muted),
+  setShuffle: (shuffle: boolean) => AudioEngine.getInstance().setShuffle(shuffle),
+  setRepeatMode: (mode: RepeatMode) => AudioEngine.getInstance().setRepeatMode(mode),
+  setCrossfadeDuration: (seconds: number) => AudioEngine.getInstance().setCrossfadeDuration(seconds),
+  setVolumeNormalization: (enabled: boolean) => AudioEngine.getInstance().setVolumeNormalization(enabled),
+  setStereoWidth: (width: number) => AudioEngine.getInstance().setStereoWidth(width),
+  setEqualizerGain: (band: number, gainDb: number) => AudioEngine.getInstance().setEqualizerGain(band, gainDb),
+  setEqualizerBands: (gains: number[]) => AudioEngine.getInstance().setEqualizerBands(gains),
+  setEqualizerPreset: (name: string) => AudioEngine.getInstance().setEqualizerPreset(name),
+  resetEqualizer: () => AudioEngine.getInstance().resetEqualizer(),
+  snapshotQueue: () => AudioEngine.getInstance().snapshotQueue(),
+  restoreQueue: (
+    snapshot: Parameters<ReturnType<typeof AudioEngine.getInstance>['restoreQueue']>[0],
+    resume?: boolean,
+  ) => AudioEngine.getInstance().restoreQueue(snapshot, resume),
+  setPauseAtEndOfItems: (enable: boolean) => AudioEngine.getInstance().setPauseAtEndOfItems(enable),
+  getVisualizerData: () => AudioEngine.getInstance().getVisualizerData(),
+  getFrequencyData: (outputArray?: Uint8Array<ArrayBuffer>) =>
+    AudioEngine.getInstance().getFrequencyData(outputArray),
+  getBeatEnergy: () => AudioEngine.getInstance().getBeatEnergy(),
+  startSleepTimer: (minutesOrOption: number | 'end_of_track') =>
+    AudioEngine.getInstance().startSleepTimer(minutesOrOption),
+  cancelSleepTimer: () => AudioEngine.getInstance().cancelSleepTimer(),
+  setPlaybackRate: (rate: number) => AudioEngine.getInstance().setPlaybackRate(rate),
+  setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
+  getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),
+}
+
 export function useAudioEngine() {
   const engine = AudioEngine.getInstance()
   const [state, setState] = useState<AudioEngineState>(() => engine.getState())
@@ -42,51 +91,7 @@ export function useAudioEngine() {
     playbackRate: state.playbackRate ?? 1.0,
     sleepTimerRemaining: state.sleepTimerRemaining,
     sleepTimerEndOfTrack: state.sleepTimerEndOfTrack,
-
-    play: (track?: Track) => engine.play(track),
-    playQueue: (tracks: Track[], startIndex?: number) => engine.playQueue(tracks, startIndex),
-    pause: () => engine.pause(),
-    togglePlayback: () => engine.togglePlayback(),
-    next: () => engine.next(),
-    previous: () => engine.previous(),
-    seek: (seconds: number) => engine.seek(seconds),
-    seekTo: (seconds: number) => engine.seekTo(seconds),
-    getCurrentTime: () => engine.getCurrentTime(),
-    playNext: (track: Track) => engine.playNext(track),
-    addToQueue: (track: Track) => engine.addToQueue(track),
-    removeFromQueue: (index: number) => engine.removeFromQueue(index),
-    moveQueueItem: (from: number, to: number) => engine.moveQueueItem(from, to),
-    removeSourceQueueItem: (index: number) => engine.removeSourceQueueItem(index),
-    moveSourceQueueItem: (from: number, to: number) => engine.moveSourceQueueItem(from, to),
-    clearQueue: () => engine.clearQueue(),
-    clearSourceUpcoming: () => engine.clearSourceUpcoming(),
-    clearEntireQueue: () => engine.clearEntireQueue(),
-    getDetailedQueue: () => engine.getDetailedQueue(),
-    setVolume: (volume: number) => engine.setVolume(volume),
-    setMuted: (muted: boolean) => engine.setMuted(muted),
-    setShuffle: (shuffle: boolean) => engine.setShuffle(shuffle),
-    setRepeatMode: (mode: RepeatMode) => engine.setRepeatMode(mode),
-    setCrossfadeDuration: (seconds: number) => engine.setCrossfadeDuration(seconds),
-    setVolumeNormalization: (enabled: boolean) => engine.setVolumeNormalization(enabled),
-    setStereoWidth: (width: number) => engine.setStereoWidth(width),
-    setEqualizerGain: (band: number, gainDb: number) => engine.setEqualizerGain(band, gainDb),
-    setEqualizerBands: (gains: number[]) => engine.setEqualizerBands(gains),
-    setEqualizerPreset: (name: string) => engine.setEqualizerPreset(name),
-    resetEqualizer: () => engine.resetEqualizer(),
-    snapshotQueue: () => engine.snapshotQueue(),
-    restoreQueue: (snapshot: Parameters<typeof engine.restoreQueue>[0], resume?: boolean) =>
-      engine.restoreQueue(snapshot, resume),
-    setPauseAtEndOfItems: (enable: boolean) => engine.setPauseAtEndOfItems(enable),
-    getVisualizerData: () => engine.getVisualizerData(),
-    getFrequencyData: (outputArray?: Uint8Array<ArrayBuffer>) =>
-      engine.getFrequencyData(outputArray),
-    getBeatEnergy: () => engine.getBeatEnergy(),
-    startSleepTimer: (minutesOrOption: number | 'end_of_track') =>
-      engine.startSleepTimer(minutesOrOption),
-    cancelSleepTimer: () => engine.cancelSleepTimer(),
-    setPlaybackRate: (rate: number) => engine.setPlaybackRate(rate),
-    setAudioOutput: (sinkId: string) => engine.setAudioOutput(sinkId),
-    getAudioTelemetry: () => engine.getAudioTelemetry(),
+    ...audioEngineActions,
   }
 }
 

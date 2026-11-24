@@ -28,40 +28,72 @@ export function ListenTogetherModal({ isOpen, onClose }: ListenTogetherModalProp
   const setToast = useEchoStore((state) => state.setToast)
   const { currentTrack, isPlaying, currentTime, play, pause, seekTo } = useAudioEngine()
 
+  const playerStateRef = useRef({ currentTrack, isPlaying, currentTime, play, pause, seekTo })
+  useEffect(() => {
+    playerStateRef.current = { currentTrack, isPlaying, currentTime, play, pause, seekTo }
+  })
+
+  // Guest sync: subscribe to room state updates and adjust local playback
   useEffect(() => {
     const unsub = listenTogether.subscribe((state) => {
       setRoomState(state.code ? state : null)
 
       // If guest and host state changed, synchronize local player
       if (state.code && !state.isHost && state.track) {
-        const localTrackId = currentTrack?.id
+        const { currentTrack: curTrack, isPlaying: curPlaying, currentTime: curTime, play: doPlay, pause: doPause, seekTo: doSeek } = playerStateRef.current
+        const localTrackId = curTrack?.id
         const remoteTrackId = state.track.id
 
         if (localTrackId !== remoteTrackId) {
-          play(state.track)
+          doPlay(state.track)
         }
 
-        if (state.isPlaying !== isPlaying) {
+        if (state.isPlaying !== curPlaying) {
           if (state.isPlaying) {
-            play()
+            doPlay()
           } else {
-            pause()
+            doPause()
           }
         }
 
         // Latency drift adjustment
-        if (Math.abs(currentTime - state.playbackPositionSeconds) > 2.5) {
-          seekTo(state.playbackPositionSeconds)
+        if (Math.abs(curTime - state.playbackPositionSeconds) > 2.5) {
+          doSeek(state.playbackPositionSeconds)
         }
       }
     })
     return () => unsub()
-  }, [currentTrack, isPlaying, currentTime, play, pause, seekTo])
+  }, [])
 
-  // If host, push local playback changes to listening room
+  // If host, push local playback changes to listening room with throttling and change detection
+  const prevHostStateRef = useRef<{
+    trackId?: string | undefined
+    isPlaying?: boolean | undefined
+    position?: number | undefined
+  }>({})
+
   useEffect(() => {
-    if (roomState?.isHost) {
-      listenTogether.updateHostPlayback(currentTrack, isPlaying, currentTime)
+    if (!roomState?.isHost) return
+
+    const prev = prevHostStateRef.current
+    const trackChanged = currentTrack?.id !== prev.trackId
+    const playingChanged = isPlaying !== prev.isPlaying
+    const seekJump = Math.abs((currentTime || 0) - (prev.position || 0)) > 2
+
+    // Only update if something meaningful changed (track, play/pause, or explicit seek)
+    // Continuous playback progression is handled via server interpolation and periodic sync heartbeat.
+    if (trackChanged || playingChanged || seekJump) {
+      prevHostStateRef.current = {
+        trackId: currentTrack?.id,
+        isPlaying,
+        position: currentTime,
+      }
+      listenTogether.updateHostPlayback(
+        currentTrack,
+        isPlaying,
+        currentTime,
+        trackChanged || playingChanged,
+      )
     }
   }, [roomState?.isHost, currentTrack, isPlaying, currentTime])
 
