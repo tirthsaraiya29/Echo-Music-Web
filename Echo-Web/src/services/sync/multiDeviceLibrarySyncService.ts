@@ -21,6 +21,7 @@ import { useEchoStore } from '../../stores/useEchoStore.ts'
 import type { Playlist, RecentlyPlayedItem, UserPreferences } from '../../types/domain.ts'
 import type { LikedAlbumEntity } from './likedAlbumsSyncService.ts'
 import type { FollowedArtistEntity } from './followedArtistsSyncService.ts'
+import { reconcilePlaylistsWithConflictResolution } from './libraryConflictResolver.ts'
 
 // ============================================================================
 // Schemas
@@ -187,10 +188,17 @@ export function applyRemoteLibrarySnapshot(
     }
 
     const store = useEchoStore.getState()
+    const tombstonesMap = new Map(Object.entries(store.playlistTombstones || {}))
+    const reconcileResult = reconcilePlaylistsWithConflictResolution(
+      store.playlists,
+      (valid.playlists || []) as Playlist[],
+      tombstonesMap,
+    )
 
     // Apply library entities atomically to store while preserving local playback state
     useEchoStore.setState({
-      playlists: valid.playlists as Playlist[],
+      playlists: reconcileResult.resolvedPlaylists,
+      playlistTombstones: Object.fromEntries(reconcileResult.updatedTombstones.entries()),
       likedTrackIds: valid.likedTrackIds,
       likedAlbumIds: valid.likedAlbumIds,
       likedAlbums: valid.likedAlbums as LikedAlbumEntity[],

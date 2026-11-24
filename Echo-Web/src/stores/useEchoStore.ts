@@ -13,6 +13,7 @@ import type {
 } from '../types/domain.ts'
 import type { LikedAlbumEntity } from '../services/sync/likedAlbumsSyncService.ts'
 import type { FollowedArtistEntity } from '../services/sync/followedArtistsSyncService.ts'
+import { reconcilePlaylistsWithConflictResolution } from '../services/sync/libraryConflictResolver.ts'
 import { uniqueId } from '../utils/format.ts'
 import { AudioEngine } from '../engine/AudioEngine.ts'
 import { db } from '../services/db/echoDatabase.ts'
@@ -153,6 +154,7 @@ export function getCachedTrack(id: string): Track | undefined {
 type EchoState = {
   playlists: Playlist[]
   savedPlaylistIds: string[]
+  playlistTombstones: Record<string, number>
   likedTrackIds: string[]
   likedAlbumIds: string[]
   likedAlbums: LikedAlbumEntity[]
@@ -187,6 +189,7 @@ type EchoState = {
   createPlaylist: (title: string, description?: string) => string
   updatePlaylist: (id: string, title: string, description: string) => void
   deletePlaylist: (id: string) => void
+  resolvePlaylistConflicts: (remotePlaylists: Playlist[]) => void
   togglePlaylistLike: (id: string) => void
   addTrackToPlaylist: (playlistId: string, trackOrId: Track | string) => void
   removeTrackFromPlaylist: (playlistId: string, trackId: string) => void
@@ -227,6 +230,7 @@ export const useEchoStore = create<EchoState>()(
     (set, get) => ({
       playlists: [],
       savedPlaylistIds: [],
+      playlistTombstones: {},
       likedTrackIds: [],
       likedAlbumIds: [],
       likedAlbums: [],
@@ -373,6 +377,8 @@ export const useEchoStore = create<EchoState>()(
           trackIds: [],
           curated: false,
           createdAt: Date.now(),
+          updatedAt: Date.now(),
+          revision: 1,
         }
         playlistMetrics.createdCount++
         set((state) => ({ playlists: [playlist, ...state.playlists] }))
@@ -399,7 +405,13 @@ export const useEchoStore = create<EchoState>()(
         set((state) => ({
           playlists: state.playlists.map((playlist) =>
             playlist.id === id
-              ? { ...playlist, title: valid.title, description: valid.description }
+              ? {
+                  ...playlist,
+                  title: valid.title,
+                  description: valid.description,
+                  updatedAt: Date.now(),
+                  revision: (playlist.revision || 1) + 1,
+                }
               : playlist,
           ),
         }))
@@ -421,11 +433,26 @@ export const useEchoStore = create<EchoState>()(
         set((state) => ({
           playlists: state.playlists.filter((playlist) => playlist.id !== id),
           savedPlaylistIds: state.savedPlaylistIds.filter((savedId) => savedId !== id),
+          playlistTombstones: { ...(state.playlistTombstones || {}), [id]: Date.now() },
         }))
         if (typeof indexedDB !== 'undefined') {
           db.playlists.delete(id).catch(() => {})
         }
       },
+
+      resolvePlaylistConflicts: (remotePlaylists: Playlist[]) =>
+        set((state) => {
+          const tombstonesMap = new Map(Object.entries(state.playlistTombstones || {}))
+          const result = reconcilePlaylistsWithConflictResolution(
+            state.playlists,
+            remotePlaylists,
+            tombstonesMap,
+          )
+          return {
+            playlists: result.resolvedPlaylists,
+            playlistTombstones: Object.fromEntries(result.updatedTombstones.entries()),
+          }
+        }),
 
       togglePlaylistLike: (id) =>
         set((state) => ({
@@ -894,6 +921,7 @@ export const useEchoStore = create<EchoState>()(
         return {
           playlists: state.playlists,
           savedPlaylistIds: state.savedPlaylistIds,
+          playlistTombstones: state.playlistTombstones,
           likedTrackIds: state.likedTrackIds,
           likedAlbumIds: state.likedAlbumIds,
           likedAlbums: state.likedAlbums,
@@ -927,6 +955,7 @@ export const useEchoStore = create<EchoState>()(
           followedPodcasts: saved.followedPodcasts ?? [],
           playlists: saved.playlists ?? [],
           savedPlaylistIds: saved.savedPlaylistIds ?? [],
+          playlistTombstones: saved.playlistTombstones ?? {},
           likedTrackIds: saved.likedTrackIds ?? [],
           likedAlbumIds: saved.likedAlbumIds ?? [],
           likedAlbums: saved.likedAlbums ?? [],

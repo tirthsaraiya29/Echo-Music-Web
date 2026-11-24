@@ -109,6 +109,9 @@ export interface Playlist {
   trackIds: string[]
   curated: boolean
   createdAt: number
+  updatedAt?: number | undefined
+  revision?: number | undefined
+  deletedAt?: number | undefined
   browseId?: string | undefined
   isAutoSync?: boolean | undefined
   lastSyncedAt?: number | undefined
