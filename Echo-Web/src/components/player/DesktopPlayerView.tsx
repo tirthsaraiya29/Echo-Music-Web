@@ -8,6 +8,8 @@ import {
   Pause,
   Play,
   Repeat,
+  RotateCcw,
+  RotateCw,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -57,6 +59,8 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
     togglePlayback,
     next,
     previous,
+    skipPodcastBackward,
+    skipPodcastForward,
     seekTo,
     setVolume,
     setMuted,
@@ -82,6 +86,8 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
   const currentTrack = engineTrack || storeTrack || null
 
   const preferences = useEchoStore((state) => state.preferences)
+  const skipBackSeconds = preferences.podcastSkipBackwardSeconds ?? 15
+  const skipForwardSeconds = preferences.podcastSkipForwardSeconds ?? 30
   const setPreference = useEchoStore((state) => state.setPreference)
   const setToast = useEchoStore((state) => state.setToast)
   const liked = useEchoStore((state) =>
@@ -130,14 +136,22 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
         e.preventDefault()
         recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         togglePlayback()
-      } else if (e.code === 'ArrowRight') {
+      } else if (e.code === 'ArrowRight' || e.key.toLowerCase() === 'l') {
         e.preventDefault()
         recordDesktopPlayerMetric('keyboardShortcutsTriggered')
-        seekTo(Math.min(duration, currentTime + 5))
-      } else if (e.code === 'ArrowLeft') {
+        if (currentTrack?.isPodcast) {
+          skipPodcastForward(skipForwardSeconds)
+        } else {
+          seekTo(Math.min(duration, currentTime + 5))
+        }
+      } else if (e.code === 'ArrowLeft' || e.key.toLowerCase() === 'j') {
         e.preventDefault()
         recordDesktopPlayerMetric('keyboardShortcutsTriggered')
-        seekTo(Math.max(0, currentTime - 5))
+        if (currentTrack?.isPodcast) {
+          skipPodcastBackward(skipBackSeconds)
+        } else {
+          seekTo(Math.max(0, currentTime - 5))
+        }
       } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault()
         recordDesktopPlayerMetric('keyboardShortcutsTriggered')
@@ -161,6 +175,11 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
       isShortcutsOpen,
       togglePlayback,
       seekTo,
+      skipPodcastForward,
+      skipPodcastBackward,
+      skipForwardSeconds,
+      skipBackSeconds,
+      currentTrack,
       duration,
       currentTime,
       handleClose,
@@ -483,42 +502,107 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                 <Shuffle size={18} />
               </button>
 
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={previous}
-                  className="p-3 text-[#f4f1f7] transition-colors hover:text-white"
-                  title="Previous track"
-                >
-                  <SkipBack size={24} fill="currentColor" />
-                </button>
+              {currentTrack?.isPodcast ? (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => skipPodcastBackward(skipBackSeconds)}
+                    className="group relative flex flex-col items-center justify-center rounded-full p-2 text-[#f4f1f7] transition-all hover:bg-white/10 hover:text-white active:scale-95"
+                    title={`Skip back ${skipBackSeconds}s (J / Left Arrow)`}
+                    aria-label={`Skip back ${skipBackSeconds} seconds`}
+                  >
+                    <RotateCcw size={22} />
+                    <span className="text-[10px] font-bold text-[#a59fad] group-hover:text-white">
+                      {skipBackSeconds}
+                    </span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={togglePlayback}
-                  className="flex h-14 w-14 items-center justify-center rounded-full bg-[#7c5cff] text-[#0b0a0f] shadow-lg transition-transform hover:scale-105 hover:bg-[#6c48ff] active:scale-95"
-                  aria-label={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
-                  aria-busy={isBuffering}
-                  title={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isBuffering ? (
-                    <Loader2 size={24} className="animate-spin" />
-                  ) : isPlaying ? (
-                    <Pause size={24} fill="currentColor" />
-                  ) : (
-                    <Play size={24} fill="currentColor" className="ml-1" />
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={previous}
+                    className="p-2.5 text-[#a59fad] transition-colors hover:text-white"
+                    title="Previous episode"
+                  >
+                    <SkipBack size={20} fill="currentColor" />
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={next}
-                  className="p-3 text-[#f4f1f7] transition-colors hover:text-white"
-                  title="Next track"
-                >
-                  <SkipForward size={24} fill="currentColor" />
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={togglePlayback}
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-[#7c5cff] text-[#0b0a0f] shadow-lg transition-transform hover:scale-105 hover:bg-[#6c48ff] active:scale-95"
+                    aria-label={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+                    aria-busy={isBuffering}
+                    title={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+                  >
+                    {isBuffering ? (
+                      <Loader2 size={24} className="animate-spin" />
+                    ) : isPlaying ? (
+                      <Pause size={24} fill="currentColor" />
+                    ) : (
+                      <Play size={24} fill="currentColor" className="ml-1" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={next}
+                    className="p-2.5 text-[#a59fad] transition-colors hover:text-white"
+                    title="Next episode"
+                  >
+                    <SkipForward size={20} fill="currentColor" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => skipPodcastForward(skipForwardSeconds)}
+                    className="group relative flex flex-col items-center justify-center rounded-full p-2 text-[#f4f1f7] transition-all hover:bg-white/10 hover:text-white active:scale-95"
+                    title={`Skip forward ${skipForwardSeconds}s (L / Right Arrow)`}
+                    aria-label={`Skip forward ${skipForwardSeconds} seconds`}
+                  >
+                    <RotateCw size={22} />
+                    <span className="text-[10px] font-bold text-[#a59fad] group-hover:text-white">
+                      {skipForwardSeconds}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={previous}
+                    className="p-3 text-[#f4f1f7] transition-colors hover:text-white"
+                    title="Previous track"
+                  >
+                    <SkipBack size={24} fill="currentColor" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={togglePlayback}
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-[#7c5cff] text-[#0b0a0f] shadow-lg transition-transform hover:scale-105 hover:bg-[#6c48ff] active:scale-95"
+                    aria-label={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+                    aria-busy={isBuffering}
+                    title={isBuffering ? 'Buffering' : isPlaying ? 'Pause' : 'Play'}
+                  >
+                    {isBuffering ? (
+                      <Loader2 size={24} className="animate-spin" />
+                    ) : isPlaying ? (
+                      <Pause size={24} fill="currentColor" />
+                    ) : (
+                      <Play size={24} fill="currentColor" className="ml-1" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={next}
+                    className="p-3 text-[#f4f1f7] transition-colors hover:text-white"
+                    title="Next track"
+                  >
+                    <SkipForward size={24} fill="currentColor" />
+                  </button>
+                </div>
+              )}
 
               <button
                 type="button"

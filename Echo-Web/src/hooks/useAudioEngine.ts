@@ -80,6 +80,8 @@ export const audioEngineActions = {
     const clamped = Math.max(0.5, Math.min(2.0, Number.isFinite(rate) ? rate : 1.0))
     AudioEngine.getInstance().setPlaybackRate(clamped)
   },
+  skipPodcastBackward: (seconds?: number) => AudioEngine.getInstance().skipPodcastBackward(seconds),
+  skipPodcastForward: (seconds?: number) => AudioEngine.getInstance().skipPodcastForward(seconds),
   setAudioOutput: (sinkId: string) => AudioEngine.getInstance().setAudioOutput(sinkId),
   getAudioOutput: () => AudioEngine.getInstance().getAudioOutput(),
   getAudioTelemetry: () => AudioEngine.getInstance().getAudioTelemetry(),

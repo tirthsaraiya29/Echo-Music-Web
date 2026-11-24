@@ -119,6 +119,11 @@ const defaultPreferences: UserPreferences = {
   hideYoutubeShorts: true,
   filterShorts: true,
   hideVideoSongs: false,
+  podcastPlaybackRate: 1.0,
+  podcastSkipBackwardSeconds: 15,
+  podcastSkipForwardSeconds: 30,
+  podcastIntroSkipSeconds: 0,
+  podcastOutroSkipSeconds: 0,
 }
 
 // In-memory catalog cache for fast synchronous lookup by track ID

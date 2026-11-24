@@ -16,6 +16,7 @@ interface ShortcutItem {
 const shortcuts: ShortcutItem[] = [
   { keys: ['Space'], description: 'Play or pause playback' },
   { keys: ['←', '→'], description: 'Seek backward / forward 5 seconds' },
+  { keys: ['J', 'L'], description: 'Podcast rewind / fast-forward (15s / 30s)' },
   { keys: ['Shift', '← / →'], description: 'Skip to previous or next song' },
   { keys: ['↑', '↓'], description: 'Increase or decrease player volume' },
   { keys: ['M'], description: 'Toggle mute' },

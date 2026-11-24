@@ -16,6 +16,8 @@ import {
   Play,
   Plus,
   Repeat,
+  RotateCcw,
+  RotateCw,
   Search,
   Settings,
   Shuffle,
@@ -299,6 +301,8 @@ function PlayerBar() {
     togglePlayback,
     next: playNext,
     previous: playPrevious,
+    skipPodcastBackward,
+    skipPodcastForward,
     seek: engineSeek,
     getAudioTelemetry,
     sleepTimerRemaining,
@@ -383,6 +387,17 @@ function PlayerBar() {
             >
               <Shuffle size={16} />
             </button>
+            {Boolean(currentTrack.isPodcast) && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`Skip back ${preferences.podcastSkipBackwardSeconds ?? 15}s`}
+                title={`Skip back ${preferences.podcastSkipBackwardSeconds ?? 15}s`}
+                onClick={() => skipPodcastBackward(preferences.podcastSkipBackwardSeconds ?? 15)}
+              >
+                <RotateCcw size={16} />
+              </button>
+            )}
             <button
               className="icon-button"
               type="button"
@@ -415,6 +430,17 @@ function PlayerBar() {
             >
               <SkipForward size={18} fill="currentColor" />
             </button>
+            {Boolean(currentTrack.isPodcast) && (
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`Skip forward ${preferences.podcastSkipForwardSeconds ?? 30}s`}
+                title={`Skip forward ${preferences.podcastSkipForwardSeconds ?? 30}s`}
+                onClick={() => skipPodcastForward(preferences.podcastSkipForwardSeconds ?? 30)}
+              >
+                <RotateCw size={16} />
+              </button>
+            )}
             <button
               className={classNames(
                 'icon-button',

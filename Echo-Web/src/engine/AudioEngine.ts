@@ -40,6 +40,13 @@ import {
 } from '../services/podcast/podcastProgressService.ts'
 import { resolveEffectivePlaybackRate } from '../services/podcast/podcastSpeedService.ts'
 import {
+  calculateSkipBackward,
+  calculateSkipForward,
+  shouldApplyIntroSkip,
+  shouldApplyOutroSkip,
+  recordPodcastSkipMetric,
+} from '../services/podcast/podcastSkipService.ts'
+import {
   bluetoothReconnectService,
   type BluetoothReconnectTelemetry,
 } from '../services/audio/bluetoothReconnectService.ts'
@@ -111,6 +118,7 @@ export class AudioEngine {
   private activeExtensionStream: ExtensionResolvedStream | null = null
   private consecutiveErrorCount = 0
   private lastPodcastSaveMs = 0
+  private outroSkippedEpisodeId: string | null = null
   private lastFmScrobbled = false
   private loudnessMeasured = false
   private crossfadeRollback: (() => void) | null = null
@@ -151,9 +159,22 @@ export class AudioEngine {
       onPreviousTrack: () => void this.previous(),
       onNextTrack: () => void this.next(),
       onSeekTo: (seconds) => this.seek(seconds),
-      onSeekBackward: (offset) => this.seek(Math.max(0, this.getCurrentTime() - offset)),
-      onSeekForward: (offset) =>
-        this.seek(Math.min(this.deckController.getDuration(), this.getCurrentTime() + offset)),
+      onSeekBackward: (offset) => {
+        const track = this.queueManager.currentTrack
+        if (track?.isPodcast) {
+          this.skipPodcastBackward(offset)
+        } else {
+          this.seek(Math.max(0, this.getCurrentTime() - offset))
+        }
+      },
+      onSeekForward: (offset) => {
+        const track = this.queueManager.currentTrack
+        if (track?.isPodcast) {
+          this.skipPodcastForward(offset)
+        } else {
+          this.seek(Math.min(this.deckController.getDuration(), this.getCurrentTime() + offset))
+        }
+      },
     })
 
     this.autoRadioEnabled = config.autoRadio ?? true
@@ -355,6 +376,33 @@ export class AudioEngine {
 
   public seekTo(positionSeconds: number): void {
     this.seek(positionSeconds)
+  }
+
+  public getCurrentTrack(): Track | null {
+    return this.queueManager.currentTrack
+  }
+
+  public skipPodcastBackward(customSeconds?: number): number {
+    const prefs = useEchoStore.getState().preferences
+    const skipSec = customSeconds ?? prefs.podcastSkipBackwardSeconds ?? 15
+    const current = this.getCurrentTime()
+    const target = calculateSkipBackward(current, skipSec)
+    this.seek(target)
+    recordPodcastSkipMetric('skipBackwardCount')
+    recordPodcastSkipMetric('totalSecondsSkipped', Math.max(0, current - target))
+    return target
+  }
+
+  public skipPodcastForward(customSeconds?: number): number {
+    const prefs = useEchoStore.getState().preferences
+    const skipSec = customSeconds ?? prefs.podcastSkipForwardSeconds ?? 30
+    const current = this.getCurrentTime()
+    const duration = this.deckController.getDuration()
+    const target = calculateSkipForward(current, duration, skipSec)
+    this.seek(target)
+    recordPodcastSkipMetric('skipForwardCount')
+    recordPodcastSkipMetric('totalSecondsSkipped', Math.max(0, target - current))
+    return target
   }
 
   public playNext(track: Track): void {
@@ -1101,6 +1149,17 @@ export class AudioEngine {
         )
         if (isPodcast) {
           const episodeId = currentTrack.videoId || currentTrack.id
+          const outroSkipSec = prefs.podcastOutroSkipSeconds ?? 0
+          if (outroSkipSec > 0 && this.outroSkippedEpisodeId !== episodeId) {
+            const { shouldSkip, remainingSeconds } = shouldApplyOutroSkip(current, duration, outroSkipSec)
+            if (shouldSkip) {
+              this.outroSkippedEpisodeId = episodeId
+              recordPodcastSkipMetric('outroSkipCount')
+              recordPodcastSkipMetric('totalSecondsSkipped', remainingSeconds)
+              void this.next()
+              return
+            }
+          }
           const posSec = Math.round(current)
           const durSec = Math.round(duration)
           const posMs = Math.round(current * 1000)
@@ -1359,6 +1418,7 @@ export class AudioEngine {
     this.consecutiveErrorCount = 0
     this.lastFmScrobbled = false
     this.loudnessMeasured = false
+    this.outroSkippedEpisodeId = null
 
     this.queueManager.setActiveDeck(this.deckController.activeDeck)
 
@@ -1376,7 +1436,7 @@ export class AudioEngine {
       void updateDiscordPresence(track, autoPlay, 0)
     }
 
-    // Podcast position resume check
+    // Podcast position resume check & intro skip
     const episodeId = track.videoId || track.id
     if (episodeId) {
       try {
@@ -1385,6 +1445,15 @@ export class AudioEngine {
         if (shouldResume) {
           this.seek(seekPositionSeconds)
           recordPodcastProgressMetric('resumesTriggered')
+        } else {
+          const introSkip = prefs.podcastIntroSkipSeconds ?? 0
+          const dur = track.durationSeconds ?? (track.durationMs ? track.durationMs / 1000 : 0)
+          const { shouldSkip, targetPosition } = shouldApplyIntroSkip(0, introSkip, dur)
+          if (shouldSkip) {
+            this.seek(targetPosition)
+            recordPodcastSkipMetric('introSkipCount')
+            recordPodcastSkipMetric('totalSecondsSkipped', targetPosition)
+          }
         }
       } catch {
         // Non-fatal

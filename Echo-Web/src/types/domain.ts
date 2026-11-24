@@ -167,6 +167,10 @@ export interface UserPreferences {
   filterShorts?: boolean | undefined
   hideVideoSongs?: boolean | undefined
   podcastPlaybackRate?: number | undefined
+  podcastSkipBackwardSeconds?: number | undefined
+  podcastSkipForwardSeconds?: number | undefined
+  podcastIntroSkipSeconds?: number | undefined
+  podcastOutroSkipSeconds?: number | undefined
 }
 
 export interface SearchResultCatalog {

@@ -857,6 +857,107 @@ export function SettingsPage() {
               </select>
             </div>
 
+            <div className="settings-field">
+              <div className="settings-field__info">
+                <span className="settings-field__label">Podcast skip backward interval</span>
+                <span className="settings-field__description">
+                  Jump backward interval for episode rewind controls (matches upstream SKIP_BACK_MS 15s).
+                </span>
+              </div>
+              <select
+                className="select"
+                value={preferences.podcastSkipBackwardSeconds ?? 15}
+                onChange={(e) => {
+                  const val = Number.parseInt(e.target.value, 10)
+                  save('podcastSkipBackwardSeconds', val)
+                }}
+                aria-label="Podcast skip backward interval"
+              >
+                <option value={5}>5 seconds</option>
+                <option value={10}>10 seconds</option>
+                <option value={15}>15 seconds (Default)</option>
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+              </select>
+            </div>
+
+            <div className="settings-field">
+              <div className="settings-field__info">
+                <span className="settings-field__label">Podcast skip forward interval</span>
+                <span className="settings-field__description">
+                  Jump forward interval for episode fast-forward controls (matches upstream SKIP_FORWARD_MS 30s).
+                </span>
+              </div>
+              <select
+                className="select"
+                value={preferences.podcastSkipForwardSeconds ?? 30}
+                onChange={(e) => {
+                  const val = Number.parseInt(e.target.value, 10)
+                  save('podcastSkipForwardSeconds', val)
+                }}
+                aria-label="Podcast skip forward interval"
+              >
+                <option value={10}>10 seconds</option>
+                <option value={15}>15 seconds</option>
+                <option value={30}>30 seconds (Default)</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+                <option value={90}>90 seconds</option>
+              </select>
+            </div>
+
+            <div className="settings-field">
+              <div className="settings-field__info">
+                <span className="settings-field__label">Podcast intro skip</span>
+                <span className="settings-field__description">
+                  Automatically skips introductory theme music and sponsorship announcements at the start of an episode.
+                </span>
+              </div>
+              <select
+                className="select"
+                value={preferences.podcastIntroSkipSeconds ?? 0}
+                onChange={(e) => {
+                  const val = Number.parseInt(e.target.value, 10)
+                  save('podcastIntroSkipSeconds', val)
+                }}
+                aria-label="Podcast intro skip duration"
+              >
+                <option value={0}>Off (0 seconds)</option>
+                <option value={15}>15 seconds</option>
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+                <option value={90}>90 seconds</option>
+                <option value={120}>120 seconds (2 min)</option>
+              </select>
+            </div>
+
+            <div className="settings-field">
+              <div className="settings-field__info">
+                <span className="settings-field__label">Podcast outro skip</span>
+                <span className="settings-field__description">
+                  Automatically advances to next episode when reaching the final closing credits and outro music.
+                </span>
+              </div>
+              <select
+                className="select"
+                value={preferences.podcastOutroSkipSeconds ?? 0}
+                onChange={(e) => {
+                  const val = Number.parseInt(e.target.value, 10)
+                  save('podcastOutroSkipSeconds', val)
+                }}
+                aria-label="Podcast outro skip duration"
+              >
+                <option value={0}>Off (0 seconds)</option>
+                <option value={15}>15 seconds</option>
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+                <option value={90}>90 seconds</option>
+              </select>
+            </div>
+
             <PreferenceToggle
               label="Pause on mute"
               description="Automatically pauses playback when audio output is muted or volume is set to zero."
