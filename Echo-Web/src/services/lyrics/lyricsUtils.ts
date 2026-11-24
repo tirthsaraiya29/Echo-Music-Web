@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { LyricLine } from '../../types/lyrics.ts'
+import type { LyricLine, LyricWord } from '../../types/lyrics.ts'
 
 // --- Runtime Schemas ---
 
@@ -36,6 +36,8 @@ export const lyricsUiMetricsSchema = z.object({
   autoScrolls: z.number().int().nonnegative(),
   manualScrollPauses: z.number().int().nonnegative(),
   translationsTriggered: z.number().int().nonnegative(),
+  wordAnimationTicks: z.number().int().nonnegative().optional(),
+  wordSeeks: z.number().int().nonnegative().optional(),
 })
 
 export type LyricsUiMetrics = z.infer<typeof lyricsUiMetricsSchema>
@@ -48,6 +50,8 @@ let lyricsUiMetrics: LyricsUiMetrics = {
   autoScrolls: 0,
   manualScrollPauses: 0,
   translationsTriggered: 0,
+  wordAnimationTicks: 0,
+  wordSeeks: 0,
 }
 
 export function getLyricsUiMetrics(): LyricsUiMetrics {
@@ -62,6 +66,8 @@ export function resetLyricsUiMetrics(): void {
     autoScrolls: 0,
     manualScrollPauses: 0,
     translationsTriggered: 0,
+    wordAnimationTicks: 0,
+    wordSeeks: 0,
   }
 }
 
@@ -109,4 +115,44 @@ export function findActiveLineIndex(lines: LyricLine[], adjustedMs: number): num
   }
 
   return candidate
+}
+
+/**
+ * Calculates continuous normalized progress [0.0 - 1.0] for a word or syllable.
+ * Resilient against NaN, 0-length durations, and inverted durations.
+ */
+export function calculateWordProgress(
+  nowMs: number,
+  startTimeMs: number,
+  endTimeMs: number,
+): number {
+  if (endTimeMs <= startTimeMs) return nowMs >= startTimeMs ? 1 : 0
+  if (nowMs <= startTimeMs) return 0
+  if (nowMs >= endTimeMs) return 1
+  const raw = (nowMs - startTimeMs) / (endTimeMs - startTimeMs)
+  return Math.max(0, Math.min(1, isNaN(raw) ? 0 : raw))
+}
+
+/**
+ * Derives comprehensive word timing state (past, active, progress).
+ */
+export function getWordProgressState(
+  nowMs: number,
+  word: LyricWord,
+): {
+  isPast: boolean
+  isCurrent: boolean
+  progress: number
+} {
+  const isPast = nowMs >= word.endTimeMs
+  const isCurrent = nowMs >= word.startTimeMs && nowMs < word.endTimeMs
+  const progress = calculateWordProgress(nowMs, word.startTimeMs, word.endTimeMs)
+  return { isPast, isCurrent, progress }
+}
+
+/**
+ * Computes exact playback target time (in seconds) for seeking to a specific word.
+ */
+export function calculateWordSeekTime(wordStartTimeMs: number, syncOffsetMs: number): number {
+  return Math.max(0, (wordStartTimeMs + syncOffsetMs) / 1000)
 }

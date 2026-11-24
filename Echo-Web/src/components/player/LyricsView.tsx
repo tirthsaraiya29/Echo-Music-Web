@@ -25,6 +25,7 @@ import {
   recordLyricsUiMetric,
   clampSyncOffset,
   findActiveLineIndex,
+  getWordProgressState,
   type SyncOffsetPayload,
 } from '../../services/lyrics/lyricsUtils.ts'
 
@@ -32,12 +33,14 @@ interface ActiveWordKaraokeLineProps {
   words: LyricWord[]
   syncOffsetMs: number
   isPlaying: boolean
+  onWordClick?: (startTimeMs: number) => void
 }
 
 function ActiveWordKaraokeLine({
   words,
   syncOffsetMs,
   isPlaying,
+  onWordClick,
 }: ActiveWordKaraokeLineProps) {
   const [nowMs, setNowMs] = useState(() => {
     return Math.max(0, AudioEngine.getInstance().getCurrentTime() * 1000 - syncOffsetMs)
@@ -50,6 +53,7 @@ function ActiveWordKaraokeLine({
     const tick = () => {
       const ms = Math.max(0, engine.getCurrentTime() * 1000 - syncOffsetMs)
       setNowMs(ms)
+      recordLyricsUiMetric('wordAnimationTicks')
       if (isPlaying) {
         rafId = requestAnimationFrame(tick)
       }
@@ -69,21 +73,32 @@ function ActiveWordKaraokeLine({
   return (
     <>
       {words.map((word, wordIdx) => {
-        const isPast = nowMs >= word.endTimeMs
-        const isCurrent = nowMs >= word.startTimeMs && nowMs < word.endTimeMs
-        const progress = isCurrent
-          ? Math.max(
-              0,
-              Math.min(1, (nowMs - word.startTimeMs) / (word.endTimeMs - word.startTimeMs)),
-            )
-          : isPast
-            ? 1
-            : 0
+        const { isPast, isCurrent, progress } = getWordProgressState(nowMs, word)
 
         return (
           <span
             key={wordIdx}
-            className="lyric-word relative mr-1.5 inline-block transition-all duration-75"
+            role="button"
+            tabIndex={0}
+            title={`Seek to ${Math.round(word.startTimeMs / 1000)}s: ${word.text}`}
+            onClick={(e) => {
+              if (onWordClick) {
+                e.stopPropagation()
+                recordLyricsUiMetric('wordSeeks')
+                onWordClick(word.startTimeMs)
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                if (onWordClick) {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  recordLyricsUiMetric('wordSeeks')
+                  onWordClick(word.startTimeMs)
+                }
+              }
+            }}
+            className="lyric-word relative mr-1.5 inline-block cursor-pointer transition-all duration-75 hover:scale-105"
             style={{
               color: isPast ? '#ffffff' : isCurrent ? '#ffffff' : 'rgba(244, 241, 247, 0.45)',
               textShadow: isCurrent
@@ -106,6 +121,50 @@ function ActiveWordKaraokeLine({
           </span>
         )
       })}
+    </>
+  )
+}
+
+interface StaticWordKaraokeLineProps {
+  words: LyricWord[]
+  isPast: boolean
+  onWordClick?: (startTimeMs: number) => void
+}
+
+function StaticWordKaraokeLine({ words, isPast, onWordClick }: StaticWordKaraokeLineProps) {
+  return (
+    <>
+      {words.map((word, wordIdx) => (
+        <span
+          key={wordIdx}
+          role="button"
+          tabIndex={0}
+          title={`Seek to ${Math.round(word.startTimeMs / 1000)}s: ${word.text}`}
+          onClick={(e) => {
+            if (onWordClick) {
+              e.stopPropagation()
+              recordLyricsUiMetric('wordSeeks')
+              onWordClick(word.startTimeMs)
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (onWordClick) {
+                e.preventDefault()
+                e.stopPropagation()
+                recordLyricsUiMetric('wordSeeks')
+                onWordClick(word.startTimeMs)
+              }
+            }
+          }}
+          className="lyric-word relative mr-1.5 inline-block cursor-pointer transition-colors duration-150 hover:text-white"
+          style={{
+            color: isPast ? '#ffffff' : 'rgba(244, 241, 247, 0.45)',
+          }}
+        >
+          {word.text}
+        </span>
+      ))}
     </>
   )
 }
@@ -159,14 +218,28 @@ const LyricLineRow = memo(function LyricLineRow({
       <p
         className={`text-xl font-semibold tracking-tight transition-colors duration-200 md:text-2xl ${
           isActive ? 'text-white' : 'text-[#f4f1f7]'
-        }`}
+        } ${line.isBackground ? 'italic text-purple-200/90' : ''}`}
       >
-        {line.words && line.words.length > 0 && isActive ? (
-          <ActiveWordKaraokeLine
-            words={line.words}
-            syncOffsetMs={syncOffsetMs}
-            isPlaying={isPlaying}
-          />
+        {line.isBackground && (
+          <span className="mr-2 inline-flex items-center rounded border border-[#b09cff]/30 bg-[#b09cff]/10 px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-[#b09cff] uppercase not-italic">
+            bg
+          </span>
+        )}
+        {line.words && line.words.length > 0 ? (
+          isActive ? (
+            <ActiveWordKaraokeLine
+              words={line.words}
+              syncOffsetMs={syncOffsetMs}
+              isPlaying={isPlaying}
+              onWordClick={onClick}
+            />
+          ) : (
+            <StaticWordKaraokeLine
+              words={line.words}
+              isPast={isPast}
+              onWordClick={onClick}
+            />
+          )
         ) : (
           line.text
         )}
