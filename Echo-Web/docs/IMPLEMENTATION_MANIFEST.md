@@ -21,7 +21,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-07 | P1 | Listen Together room expiry ignores active heartbeats | `server/routes/listenTogether.ts` | Completed | e1fefebfe8846c268875ea0112a5dbd4d03da0a0 | Yes (verified on origin/main) |
 | BUG-08 | P1 | Listen Together state is mutated in place | `src/services/listenTogether/listenTogetherClient.ts, src/components/modals/ListenTogetherModal.tsx` | Completed | 6ef1c2409748fae08f5d054593457a44f8ae7483 | Yes (verified on origin/main) |
 | BUG-09 | P1 | Streaming proxy redirect validation is missing | `server/routes/stream.ts, server/routes/canvas.ts` | Completed | d3c624578fe664aa8a960fb58ea0b7593c6665e8 | Yes (verified on origin/main) |
-| BUG-10 | P1 | Queue snapshot restoration loses source cursor context | `src/engine/QueueManager.ts` | Pending | - | - |
+| BUG-10 | P1 | Queue snapshot restoration loses source cursor context | `src/engine/QueueManager.ts` | Completed | 2bdc15264b3c4f74d47d48dc70a5cbb7eb8f4203 | Yes (verified on origin/main) |
 | BUG-11 | P1 | Backup and restore use a second playlist store | `src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts, src/components/modals/SpotifyImportModal.tsx, src/pages/SettingsPage.tsx` | Pending | - | - |
 | BUG-12 | P1 | Clear History leaves persisted recent items intact | `src/pages/SettingsPage.tsx, src/services/db/echoDatabase.ts, src/stores/useEchoStore.ts` | Pending | - | - |
 | BUG-13 | P1 | Cast is not wired into playback | `src/services/cast/castService.ts, src/components/player/AudioOutputPicker.tsx` | Pending | - | - |
