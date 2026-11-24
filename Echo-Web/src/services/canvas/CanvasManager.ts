@@ -3,11 +3,20 @@ import type { CanvasVideoResult } from './providers/AppleCanvas.ts'
 import { AppleCanvas } from './providers/AppleCanvas.ts'
 import { TidalCanvas } from './providers/TidalCanvas.ts'
 
+export interface CanvasCacheEntry {
+  result: CanvasVideoResult | null
+  cachedAt: number
+  expiresAt: number
+}
+
 export class CanvasManager {
+  public static readonly POSITIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+  public static readonly NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+
   private static instance: CanvasManager | null = null
   // LRU-bounded (Map keeps insertion order)
   private static readonly CACHE_MAX = 200
-  private cache = new Map<string, CanvasVideoResult | null>()
+  private cache = new Map<string, CanvasCacheEntry>()
   private currentAbortController: AbortController | null = null
 
   public static getInstance(): CanvasManager {
@@ -17,13 +26,25 @@ export class CanvasManager {
     return CanvasManager.instance
   }
 
+  public getCacheEntry(cacheKey: string): CanvasCacheEntry | undefined {
+    return this.cache.get(cacheKey)
+  }
+
+  public setCacheEntry(cacheKey: string, entry: CanvasCacheEntry): void {
+    this.cache.set(cacheKey, entry)
+  }
+
   public async resolveCanvasVideo(
     track: Track,
     externalSignal?: AbortSignal,
   ): Promise<CanvasVideoResult | null> {
     const cacheKey = `${track.id || track.videoId || ''}:${track.title}:${track.artistName}`
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey) ?? null
+    const cached = this.cache.get(cacheKey)
+    if (cached) {
+      if (Date.now() < cached.expiresAt) {
+        return cached.result
+      }
+      this.cache.delete(cacheKey)
     }
 
     if (this.currentAbortController) {
@@ -60,37 +81,53 @@ export class CanvasManager {
 
       // 3. Central resolver fallback (Artist Video / Tidal / Apple search)
       if (!result && !signal.aborted) {
-        const resolveUrl = new URL('/api/canvas/resolve', window.location.origin)
-        resolveUrl.searchParams.set('title', title)
-        resolveUrl.searchParams.set('artist', artist)
-        if (album) resolveUrl.searchParams.set('album', album)
-        if (isrc) resolveUrl.searchParams.set('isrc', isrc)
+        try {
+          const origin =
+            typeof window !== 'undefined' && window.location?.origin
+              ? window.location.origin
+              : 'http://localhost'
+          const resolveUrl = new URL('/api/canvas/resolve', origin)
+          resolveUrl.searchParams.set('title', title)
+          resolveUrl.searchParams.set('artist', artist)
+          if (album) resolveUrl.searchParams.set('album', album)
+          if (isrc) resolveUrl.searchParams.set('isrc', isrc)
 
-        const res = await fetch(resolveUrl.toString(), {
-          ...(signal ? { signal } : {}),
-        })
-        if (res.ok) {
-          const data = (await res.json()) as {
-            success?: boolean
-            provider?: 'APPLE' | 'TIDAL' | 'ARTIST_VIDEO'
-            videoUrl?: string
-            rawUrl?: string
-          }
-          if (data.success && data.videoUrl && data.provider) {
-            const resolvedItem: CanvasVideoResult = {
-              provider: data.provider,
-              videoUrl: data.videoUrl,
+          const res = await fetch(resolveUrl.toString(), {
+            ...(signal ? { signal } : {}),
+          })
+          if (res.ok) {
+            const data = (await res.json()) as {
+              success?: boolean
+              provider?: 'APPLE' | 'TIDAL' | 'ARTIST_VIDEO'
+              videoUrl?: string
+              rawUrl?: string
             }
-            if (data.rawUrl) {
-              resolvedItem.rawUrl = data.rawUrl
+            if (data.success && data.videoUrl && data.provider) {
+              const resolvedItem: CanvasVideoResult = {
+                provider: data.provider,
+                videoUrl: data.videoUrl,
+              }
+              if (data.rawUrl) {
+                resolvedItem.rawUrl = data.rawUrl
+              }
+              result = resolvedItem
             }
-            result = resolvedItem
           }
+        } catch {
+          // Resolver fallback network or parsing failure is non-fatal
         }
       }
 
       if (!signal.aborted) {
-        this.cache.set(cacheKey, result)
+        this.cache.set(cacheKey, {
+          result,
+          cachedAt: Date.now(),
+          expiresAt:
+            Date.now() +
+            (result
+              ? CanvasManager.POSITIVE_CACHE_TTL_MS
+              : CanvasManager.NEGATIVE_CACHE_TTL_MS),
+        })
         if (this.cache.size > CanvasManager.CACHE_MAX) {
           const oldest = this.cache.keys().next().value
           if (oldest !== undefined) this.cache.delete(oldest)

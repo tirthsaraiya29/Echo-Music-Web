@@ -17,18 +17,35 @@ export const PROVIDER_CASCADE: Record<LyricsProviderKey, LyricsProviderKey[]> = 
   KUGOU: ['KUGOU', 'LRCLIB', 'BETTER_LYRICS'],
 }
 
+export interface LyricsCacheEntry {
+  lyrics: SynchronizedLyrics | null
+  cachedAt: number
+  expiresAt: number
+}
+
 export class LyricsOrchestrator {
+  public static readonly POSITIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
+  public static readonly NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
+
   private static instance: LyricsOrchestrator | null = null
   private currentAbortController: AbortController | null = null
   // LRU-bounded (Map keeps insertion order)
   private static readonly CACHE_MAX = 200
-  private cache = new Map<string, SynchronizedLyrics | null>()
+  private cache = new Map<string, LyricsCacheEntry>()
 
   public static getInstance(): LyricsOrchestrator {
     if (!LyricsOrchestrator.instance) {
       LyricsOrchestrator.instance = new LyricsOrchestrator()
     }
     return LyricsOrchestrator.instance
+  }
+
+  public getCacheEntry(cacheKey: string): LyricsCacheEntry | undefined {
+    return this.cache.get(cacheKey)
+  }
+
+  public setCacheEntry(cacheKey: string, entry: LyricsCacheEntry): void {
+    this.cache.set(cacheKey, entry)
   }
 
   public getProviderCascade(
@@ -78,8 +95,12 @@ export class LyricsOrchestrator {
     const preferRomanized = Boolean(prefs.romanizeLyrics)
 
     const cacheKey = this.buildCacheKey(track, preferred, preferRomanized)
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey) ?? null
+    const cached = this.cache.get(cacheKey)
+    if (cached) {
+      if (Date.now() < cached.expiresAt) {
+        return cached.lyrics
+      }
+      this.cache.delete(cacheKey)
     }
 
     // Persistent cache first, so a reload or offline session still gets lyrics.
@@ -87,7 +108,11 @@ export class LyricsOrchestrator {
     if (trackId && typeof indexedDB !== 'undefined') {
       const stored = await db.cachedLyrics.get(trackId)
       if (stored && stored.query === cacheKey) {
-        this.cache.set(cacheKey, stored.lyrics)
+        this.cache.set(cacheKey, {
+          lyrics: stored.lyrics,
+          cachedAt: stored.fetchedAt || Date.now(),
+          expiresAt: Date.now() + LyricsOrchestrator.POSITIVE_CACHE_TTL_MS,
+        })
         this.pruneMemoryCache()
         return stored.lyrics
       }
@@ -163,7 +188,15 @@ export class LyricsOrchestrator {
       }
 
       if (!signal.aborted) {
-        this.cache.set(cacheKey, lyrics)
+        this.cache.set(cacheKey, {
+          lyrics,
+          cachedAt: Date.now(),
+          expiresAt:
+            Date.now() +
+            (lyrics
+              ? LyricsOrchestrator.POSITIVE_CACHE_TTL_MS
+              : LyricsOrchestrator.NEGATIVE_CACHE_TTL_MS),
+        })
         this.pruneMemoryCache()
         if (trackId && lyrics) {
           void this.persistLyrics(trackId, cacheKey, lyrics)
@@ -188,7 +221,11 @@ export class LyricsOrchestrator {
     signal?: AbortSignal,
   ): Promise<SynchronizedLyrics | null> {
     try {
-      const url = new URL('/api/lyrics/youtube', window.location.origin)
+      const origin =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : 'http://localhost'
+      const url = new URL('/api/lyrics/youtube', origin)
       url.searchParams.set('videoId', videoId)
       const res = await fetch(url.toString(), {
         ...(signal ? { signal } : {}),
