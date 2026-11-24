@@ -5,6 +5,12 @@ import {
   setCachedMetadata,
   fetchWithCache,
   invalidateMetadata,
+  getMetadataCacheMetrics,
+  resetMetadataCacheMetrics,
+  cacheKeySchema,
+  cacheKindSchema,
+  cacheRecordSchema,
+  metadataCacheMetricsSchema,
 } from '../src/services/cache/metadataCache.ts'
 
 test('MetadataCache: setCachedMetadata stores in memory cache and getCachedMetadata retrieves it', async () => {
@@ -198,5 +204,70 @@ test('MetadataCache: enforceHardCap evicts expired rows and oldest fresh rows to
     db.transaction = originalTransaction
   }
 })
+
+test('MetadataCache: schemas validate keys, kinds, and records correctly', () => {
+  assert.strictEqual(cacheKeySchema.safeParse('album:123').success, true)
+  assert.strictEqual(cacheKeySchema.safeParse('').success, false)
+  assert.strictEqual(cacheKeySchema.safeParse('   ').success, false)
+
+  assert.strictEqual(cacheKindSchema.safeParse('album').success, true)
+  assert.strictEqual(cacheKindSchema.safeParse('invalid_kind').success, false)
+
+  const validRecord = {
+    key: 'artist:456',
+    kind: 'artist',
+    data: { name: 'Sample' },
+    updatedAt: Date.now(),
+    expiresAt: Date.now() + 60000,
+  }
+  assert.strictEqual(cacheRecordSchema.safeParse(validRecord).success, true)
+})
+
+test('MetadataCache: telemetry metrics track hits, writes, and deduplication', async () => {
+  resetMetadataCacheMetrics()
+  const initial = getMetadataCacheMetrics()
+  assert.strictEqual(initial.writes, 0)
+  assert.strictEqual(initial.memoryHits, 0)
+
+  // Write and read
+  await setCachedMetadata('metrics:test:1', 'shelf', { content: 'test' }, 60000)
+  const cached = await getCachedMetadata('metrics:test:1')
+  assert.ok(cached !== null)
+
+  const updatedMetrics = getMetadataCacheMetrics()
+  assert.strictEqual(updatedMetrics.writes, 1)
+  assert.strictEqual(updatedMetrics.memoryHits, 1)
+
+  // Validate metrics schema
+  assert.strictEqual(metadataCacheMetricsSchema.safeParse(updatedMetrics).success, true)
+  resetMetadataCacheMetrics()
+  assert.strictEqual(getMetadataCacheMetrics().writes, 0)
+})
+
+test('MetadataCache: fetchWithCache respects AbortSignal and supports stale fallback', async () => {
+  const key = 'test:abort:signal'
+  const controller = new AbortController()
+  controller.abort()
+
+  // Abort with no cache throws error
+  await assert.rejects(
+    async () => {
+      await fetchWithCache(key, 'album', async () => ({ title: 'Test' }), {
+        signal: controller.signal,
+      })
+    },
+    /aborted/,
+  )
+
+  // Prime cache
+  await setCachedMetadata(key, 'album', { title: 'Cached Title' }, -100)
+
+  // Abort with stale cache returns fallback without throwing
+  const fallback = await fetchWithCache(key, 'album', async () => ({ title: 'Fresh Title' }), {
+    signal: controller.signal,
+  })
+  assert.strictEqual(fallback.title, 'Cached Title')
+})
+
 
 
