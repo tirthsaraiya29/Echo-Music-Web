@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { Mic, RotateCcw, X, Volume2, Play, Music, AlertCircle } from 'lucide-react'
-import { echoFind, type RecognitionResult } from '../../services/recognition/echoFindService'
+import { Mic, RotateCcw, X, Volume2, Play, Music, AlertCircle, WifiOff } from 'lucide-react'
+import { echoFind, type RecognitionResult } from '../../services/recognition/echoFindService.ts'
+import { isReducedMotionPreferred } from '../../services/recognition/echoFindTypes.ts'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import { useEchoStore } from '../../stores/useEchoStore'
 import type { Track } from '../../types/domain'
@@ -18,12 +19,40 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   const [isConfigured, setIsConfigured] = useState(true)
   const [matchedTrack, setMatchedTrack] = useState<Track | null>(null)
   const [confidence, setConfidence] = useState<number | null>(null)
+  const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine)
 
   const isMounted = useRef(true)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const prefersReducedMotion = isReducedMotionPreferred()
+
   useModalFocusTrap(dialogRef, onClose, isOpen)
 
+  // Online / offline network monitoring
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
   const handleStartListening = async () => {
+    if (isOffline) {
+      setErrorMsg('You are currently offline. Connect to the internet to identify songs.')
+      return
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setErrorMsg(null)
     setGuidance(null)
     setMatchedTrack(null)
@@ -32,13 +61,16 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
     setAudioLevel(0)
 
     try {
-      const res: RecognitionResult = await echoFind.startListening((lvl) => {
-        if (isMounted.current) {
-          setAudioLevel(lvl)
-        }
-      }, 6000)
+      const res: RecognitionResult = await echoFind.startListening(
+        (lvl) => {
+          if (isMounted.current && !controller.signal.aborted) {
+            setAudioLevel(lvl)
+          }
+        },
+        { durationMs: 6000, signal: controller.signal },
+      )
 
-      if (isMounted.current) {
+      if (isMounted.current && !controller.signal.aborted) {
         setIsListening(false)
         if (res.matched && res.track) {
           setMatchedTrack(res.track)
@@ -54,7 +86,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
         }
       }
     } catch (err) {
-      if (isMounted.current) {
+      if (isMounted.current && !controller.signal.aborted) {
         setIsListening(false)
         setErrorMsg(err instanceof Error ? err.message : 'Microphone access failed')
       }
@@ -69,6 +101,10 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   }
 
   const handleClose = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
     echoFind.stopListening()
     setIsListening(false)
     setErrorMsg(null)
@@ -83,6 +119,9 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
     isMounted.current = true
     return () => {
       isMounted.current = false
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
       echoFind.stopListening()
     }
   }, [])
@@ -100,6 +139,9 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
     return () => {
       active = false
       clearTimeout(timer)
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
       echoFind.stopListening()
     }
   }, [isOpen])
@@ -107,14 +149,14 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   if (!isOpen) return null
 
   // Calculate radar pulse ring scale based on live microphone level
-  const pulseScale = 1 + Math.min(0.6, audioLevel * 1.8)
+  const pulseScale = prefersReducedMotion ? 1 : 1 + Math.min(0.6, audioLevel * 1.8)
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
-      aria-label="Echo Find music recognition"
+      aria-labelledby="echo-find-modal-title"
     >
       <div
         ref={dialogRef}
@@ -124,19 +166,20 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
         <button
           type="button"
           onClick={handleClose}
-          className="absolute top-4 right-4 rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
+          className="absolute top-4 right-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/4 p-2 text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
           title="Close (Esc)"
+          aria-label="Close Echo Find dialog"
         >
           <X size={18} />
         </button>
 
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-[#7c5cff]/15 px-3 py-1 text-xs font-semibold tracking-wider text-[#b09cff] uppercase">
-            <Volume2 size={13} />
+            <Volume2 size={13} aria-hidden="true" />
             <span>Echo Find</span>
           </div>
 
-          <h2 className="mb-1 text-xl font-bold text-white">
+          <h2 id="echo-find-modal-title" className="mb-1 text-xl font-bold text-white">
             {isListening
               ? 'Listening to audio...'
               : matchedTrack
@@ -151,9 +194,25 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
                 : errorMsg || 'Identify any song playing in your room or background.'}
           </p>
 
+          {/* Offline warning badge */}
+          {isOffline && (
+            <div
+              className="mb-4 flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300"
+              role="status"
+            >
+              <WifiOff size={14} />
+              <span>Offline: song recognition requires a network connection</span>
+            </div>
+          )}
+
           {/* Radar Animation Stage */}
           {isListening && (
-            <div className="relative mb-6 flex h-40 w-40 items-center justify-center">
+            <div
+              className="relative mb-6 flex h-40 w-40 items-center justify-center"
+              role="status"
+              aria-live="polite"
+              aria-label="Microphone active, listening for music"
+            >
               <div
                 className="absolute inset-0 rounded-full border border-[#7c5cff]/20 bg-[#7c5cff]/10 transition-transform duration-75"
                 style={{ transform: `scale(${pulseScale * 1.25})` }}
@@ -163,7 +222,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
                 style={{ transform: `scale(${pulseScale * 1.1})` }}
               />
               <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[#7c5cff] text-black shadow-lg shadow-[#7c5cff]/30">
-                <Mic size={32} className="animate-pulse" />
+                <Mic size={32} className={prefersReducedMotion ? '' : 'animate-pulse'} />
               </div>
             </div>
           )}
@@ -178,7 +237,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
                   className="h-16 w-16 rounded-lg object-cover shadow-md"
                 />
               ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-[#7c5cff]/20 text-[#b09cff]">
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-[#7c5cff]/20 text-[#b09cff]" aria-hidden="true">
                   <Music size={28} />
                 </div>
               )}
@@ -203,7 +262,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
 
           {/* Unconfigured Guidance Notice */}
           {!isListening && !matchedTrack && !isConfigured && guidance && (
-            <div className="mb-6 w-full rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-left text-xs text-amber-300">
+            <div className="mb-6 w-full rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-left text-xs text-amber-300" role="status">
               <div className="flex items-center gap-2 font-semibold">
                 <AlertCircle size={15} />
                 <span>Recognition Service Unconfigured</span>
@@ -214,7 +273,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
 
           {/* Error Notice */}
           {!isListening && !matchedTrack && isConfigured && errorMsg && (
-            <div className="mb-6 w-full rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-left text-xs text-red-300">
+            <div className="mb-6 w-full rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-left text-xs text-red-300" role="alert">
               <p>{errorMsg}</p>
             </div>
           )}
@@ -225,10 +284,13 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
               <button
                 type="button"
                 onClick={() => {
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort()
+                  }
                   echoFind.stopListening()
                   setIsListening(false)
                 }}
-                className="rounded-xl bg-white/8 px-5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/12"
+                className="flex min-h-[44px] items-center justify-center rounded-xl bg-white/8 px-5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
               >
                 Cancel
               </button>
@@ -237,7 +299,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
                 <button
                   type="button"
                   onClick={handlePlayMatched}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#7c5cff] px-5 py-2.5 text-xs font-semibold text-black shadow-md transition-all hover:bg-[#6c48ff]"
+                  className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-[#7c5cff] px-5 py-2.5 text-xs font-semibold text-black shadow-md transition-all hover:bg-[#6c48ff] focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
                 >
                   <Play size={15} />
                   <span>Play Track</span>
@@ -245,7 +307,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
                 <button
                   type="button"
                   onClick={handleStartListening}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-white/8 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/12"
+                  className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-white/8 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
                   title="Listen again"
                 >
                   <RotateCcw size={15} />
@@ -256,7 +318,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
               <button
                 type="button"
                 onClick={handleStartListening}
-                className="flex items-center justify-center gap-2 rounded-xl bg-[#7c5cff] px-6 py-2.5 text-xs font-semibold text-black shadow-md transition-all hover:bg-[#6c48ff]"
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#7c5cff] px-6 py-2.5 text-xs font-semibold text-black shadow-md transition-all hover:bg-[#6c48ff] focus:outline-none focus:ring-2 focus:ring-[#7c5cff]"
               >
                 <RotateCcw size={15} />
                 <span>Listen Again</span>
