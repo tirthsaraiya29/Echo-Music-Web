@@ -53,7 +53,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-39 | P2 | Podcast data exists without a complete podcast product surface | `src/services/db/echoDatabase.ts, src/engine/AudioEngine.ts, src/App.tsx` | Completed | e3006974 | Yes (verified on origin/main) |
 | BUG-40 | P2 | Music Flow is absent | `src/App.tsx, src/pages, src/components` | Completed | 98d232ff | Yes (verified on origin/main) |
 | BUG-41 | P2 | Cloud media providers are absent | `src/services, server/routes` | Completed | 434b77bc | Yes (verified on origin/main) |
-| BUG-42 | P2 | Extension audio framework is absent | `src/services, server/routes, src/types` | Pending | - | - |
+| BUG-42 | P2 | Extension audio framework is absent | `src/services, server/routes, src/types` | Completed | 80ccc061 | Yes (verified on origin/main) |
 | BUG-43 | P2 | Browser Discord integration is deployment-dependent | `server/routes/discord.ts, src/services` | Pending | - | - |
 | BUG-44 | P2 | Recognition is a configured integration, not a complete default service | `server/routes/recognition.ts` | Pending | - | - |
 | BUG-45 | P2 | Preferred content region is not propagated | `src/pages/SettingsPage.tsx, src/services/innertube/client.ts, server/utils/potoken.ts` | Pending | - | - |
