@@ -186,6 +186,12 @@ export class EchoFindService {
           const rawData = await res.json()
           const parsed = recognitionResultSchema.safeParse(rawData)
           if (parsed.success) {
+            if (parsed.data.provider?.includes('Default') || !parsed.data.provider) {
+              recordEchoFindMetric('defaultProviderRequests')
+            } else {
+              recordEchoFindMetric('customProviderRequests')
+            }
+
             if (parsed.data.matched) {
               recordEchoFindMetric('identificationsMatched')
             } else if (parsed.data.configured === false) {
@@ -291,11 +297,15 @@ export class EchoFindService {
     }
 
     return {
-      configured: false,
-      provider: 'None',
-      guidance:
-        'Set RECOGNITION_PROVIDER_URL in server environment variables to connect ACRCloud or Shazam.',
+      configured: true,
+      provider: 'Shazam Gateway (Default)',
+      isDefault: true,
+      guidance: 'Echo Find is operating with the built-in default Shazam recognition gateway.',
     }
+  }
+
+  public async getStatus(): Promise<RecognitionStatus> {
+    return this.checkStatus()
   }
 }
 

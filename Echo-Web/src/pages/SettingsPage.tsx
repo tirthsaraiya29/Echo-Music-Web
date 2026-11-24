@@ -1889,12 +1889,13 @@ export function SettingsPage() {
               <span>
                 <strong>Echo Find audio recognition</strong>
                 <small>
-                  Microphone-based music identification service for background audio. External live
-                  matching requires RECOGNITION_PROVIDER_URL.
+                  Microphone-based music identification service for background audio. Powered by the default
+                  Shazam recognition gateway out of the box. Custom ACRCloud or AudD gateways can be configured via
+                  RECOGNITION_PROVIDER_URL.
                 </small>
               </span>
-              <span className="rounded bg-white/6 px-2.5 py-1 text-[11px] font-semibold text-[#b09cff]">
-                Configurable Gateway
+              <span className="rounded bg-[#7c5cff]/15 px-2.5 py-1 text-[11px] font-semibold text-[#b09cff]">
+                Shazam Gateway (Default)
               </span>
             </div>
           </section>

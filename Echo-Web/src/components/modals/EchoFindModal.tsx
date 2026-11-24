@@ -20,6 +20,7 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   const [matchedTrack, setMatchedTrack] = useState<Track | null>(null)
   const [confidence, setConfidence] = useState<number | null>(null)
   const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine)
+  const [providerName, setProviderName] = useState('Shazam Gateway (Default)')
 
   const isMounted = useRef(true)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -27,6 +28,17 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   const prefersReducedMotion = isReducedMotionPreferred()
 
   useModalFocusTrap(dialogRef, onClose, isOpen)
+
+  // Load active recognition provider status
+  useEffect(() => {
+    if (isOpen) {
+      void echoFind.getStatus().then((status) => {
+        if (isMounted.current && status?.provider) {
+          setProviderName(status.provider)
+        }
+      })
+    }
+  }, [isOpen])
 
   // Online / offline network monitoring
   useEffect(() => {
@@ -177,6 +189,9 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
           <div className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-[#7c5cff]/15 px-3 py-1 text-xs font-semibold tracking-wider text-[#b09cff] uppercase">
             <Volume2 size={13} aria-hidden="true" />
             <span>Echo Find</span>
+            <span className="ml-1 rounded bg-black/30 px-1.5 py-0.5 font-mono text-[9px] text-[#e7e4ed] normal-case">
+              {providerName}
+            </span>
           </div>
 
           <h2 id="echo-find-modal-title" className="mb-1 text-xl font-bold text-white">

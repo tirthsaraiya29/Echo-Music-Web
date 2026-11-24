@@ -17,7 +17,7 @@ test('Recognition: /api/recognition/status reports configuration state and guida
   assert.ok(data.guidance.includes('RECOGNITION_PROVIDER_URL'))
 })
 
-test('Recognition: /api/recognition/identify returns informative unconfigured response when no provider set', async () => {
+test('Recognition: /api/recognition/identify operates with default Shazam provider when no custom provider set', async () => {
   const res = await recognitionRouter.request('/identify', {
     method: 'POST',
   })
@@ -25,13 +25,13 @@ test('Recognition: /api/recognition/identify returns informative unconfigured re
   const data = (await res.json()) as {
     matched: boolean
     configured: boolean
+    provider: string
     message: string
-    guidance: string
   }
   assert.strictEqual(data.matched, false)
-  assert.strictEqual(data.configured, false)
-  assert.ok(data.message.includes('not configured'))
-  assert.ok(data.guidance.includes('RECOGNITION_PROVIDER_URL'))
+  assert.strictEqual(data.configured, true)
+  assert.ok(data.provider.includes('Shazam'))
+  assert.ok(data.message.includes('No matching track'))
 })
 
 test('Recognition: /api/recognition/identify supports demo mode for testing UI and track display', async () => {

@@ -24,6 +24,7 @@ export const recognitionTrackSchema = z.object({
 export const recognitionResultSchema = z.object({
   matched: z.boolean(),
   configured: z.boolean().optional(),
+  provider: z.string().optional(),
   confidence: z.number().min(0).max(100).optional(),
   track: recognitionTrackSchema.optional(),
   message: z.string().optional(),
@@ -34,6 +35,7 @@ export const recognitionResultSchema = z.object({
 export interface RecognitionResult {
   matched: boolean
   configured?: boolean | undefined
+  provider?: string | undefined
   confidence?: number | undefined
   track?: Track | undefined
   message?: string | undefined
@@ -44,6 +46,7 @@ export interface RecognitionResult {
 export const recognitionStatusSchema = z.object({
   configured: z.boolean(),
   provider: z.string(),
+  isDefault: z.boolean().optional(),
   demoAvailable: z.boolean().optional(),
   guidance: z.string(),
 })
@@ -64,6 +67,8 @@ export const echoFindMetricsSchema = z.object({
   identificationsMatched: z.number().int().nonnegative(),
   identificationsFailed: z.number().int().nonnegative(),
   unconfiguredAttempts: z.number().int().nonnegative(),
+  defaultProviderRequests: z.number().int().nonnegative().default(0),
+  customProviderRequests: z.number().int().nonnegative().default(0),
   errors: z.number().int().nonnegative(),
 })
 
@@ -76,6 +81,8 @@ let metrics: EchoFindMetrics = {
   identificationsMatched: 0,
   identificationsFailed: 0,
   unconfiguredAttempts: 0,
+  defaultProviderRequests: 0,
+  customProviderRequests: 0,
   errors: 0,
 }
 
@@ -91,6 +98,8 @@ export function resetEchoFindMetrics(): void {
     identificationsMatched: 0,
     identificationsFailed: 0,
     unconfiguredAttempts: 0,
+    defaultProviderRequests: 0,
+    customProviderRequests: 0,
     errors: 0,
   }
 }
