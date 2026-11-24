@@ -34,6 +34,7 @@ import { SleepTimerPopover } from './SleepTimerPopover.tsx'
 import { AudioOutputPicker } from './AudioOutputPicker.tsx'
 import { KeyboardShortcutsModal } from '../modals/KeyboardShortcutsModal.tsx'
 import { shareTrack } from '../../services/sharing/playlistPortability.ts'
+import { recordDesktopPlayerMetric } from './desktopPlayerTypes.ts'
 
 interface DesktopPlayerViewProps {
   isOpen: boolean
@@ -90,6 +91,25 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
 
   const telemetry = getAudioTelemetry()
 
+  const handleClose = useCallback(() => {
+    recordDesktopPlayerMetric('closes')
+    onClose()
+  }, [onClose])
+
+  useEffect(() => {
+    if (isOpen) {
+      recordDesktopPlayerMetric('opens')
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
   // Keyboard controls
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -100,23 +120,28 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
 
       if (e.code === 'Space') {
         e.preventDefault()
+        recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         togglePlayback()
       } else if (e.code === 'ArrowRight') {
         e.preventDefault()
+        recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         seekTo(Math.min(duration, currentTime + 5))
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault()
+        recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         seekTo(Math.max(0, currentTime - 5))
       } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault()
+        recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         setIsShortcutsOpen((v) => !v)
       } else if (e.key === 'Escape') {
+        recordDesktopPlayerMetric('keyboardShortcutsTriggered')
         if (isEqOpen) setIsEqOpen(false)
         else if (isDnaOpen) setIsDnaOpen(false)
         else if (isSleepTimerOpen) setIsSleepTimerOpen(false)
         else if (isOutputPickerOpen) setIsOutputPickerOpen(false)
         else if (isShortcutsOpen) setIsShortcutsOpen(false)
-        else onClose()
+        else handleClose()
       }
     },
     [
@@ -130,7 +155,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
       seekTo,
       duration,
       currentTime,
-      onClose,
+      handleClose,
     ],
   )
 
@@ -140,6 +165,7 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
   }, [handleKeyDown])
 
   const toggleFullscreen = () => {
+    recordDesktopPlayerMetric('fullscreenToggles')
     if (!document.fullscreenElement) {
       document.documentElement
         .requestFullscreen()
@@ -155,11 +181,13 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
 
   const handleShare = async () => {
     if (!currentTrack) return
+    recordDesktopPlayerMetric('shareClicks')
     const status = await shareTrack(currentTrack)
     setToast(status === 'shared' ? 'Shared track' : 'Share link copied to clipboard')
   }
 
   const cyclePlaybackRate = () => {
+    recordDesktopPlayerMetric('speedChanges')
     const rates = [1.0, 1.25, 1.5, 0.75]
     const curIdx = rates.indexOf(playbackRate)
     const nextRate = rates[(curIdx + 1) % rates.length]!
@@ -205,8 +233,8 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
         <header className="flex items-center justify-between border-b border-white/6 px-8 py-4">
           <button
             type="button"
-            onClick={onClose}
-            className="flex items-center gap-2 rounded-lg bg-white/4 px-3 py-1.5 text-xs font-medium text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
+            onClick={handleClose}
+            className="flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-lg bg-white/4 px-3 py-1.5 text-xs font-medium text-[#a59fad] transition-colors hover:bg-white/8 hover:text-white"
             title="Minimize player (Esc)"
           >
             <ChevronDown size={18} />
