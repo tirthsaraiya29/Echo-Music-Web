@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import process from 'node:process'
+import { isAllowedAppleDomain, isAllowedTidalDomain, safeProxyFetch } from '../utils/ssrf.ts'
 
 export const canvasRouter = new Hono()
 
@@ -10,32 +11,6 @@ const TIDAL_PUBLIC_TOKEN = process.env['TIDAL_TOKEN'] || ''
 
 let cachedAppleToken: string | null = null
 let tokenExpiry = 0
-
-function isAllowedAppleDomain(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr)
-    const host = parsed.hostname.toLowerCase()
-    return (
-      host === 'music.apple.com' ||
-      host === 'beta.music.apple.com' ||
-      host.endsWith('.apple.com') ||
-      host.endsWith('.mzstatic.com') ||
-      host.endsWith('.apple-dns.net')
-    )
-  } catch {
-    return false
-  }
-}
-
-function isAllowedTidalDomain(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr)
-    const host = parsed.hostname.toLowerCase()
-    return host === 'tidal.com' || host.endsWith('.tidal.com')
-  } catch {
-    return false
-  }
-}
 
 async function getAppleMusicToken(): Promise<string> {
   if (cachedAppleToken && Date.now() < tokenExpiry) {
@@ -97,7 +72,10 @@ canvasRouter.get('/apple', async (c) => {
       headers['Range'] = rangeHeader
     }
 
-    const upstreamRes = await fetch(targetUrl, { headers })
+    const upstreamRes = await safeProxyFetch(targetUrl, {
+      headers,
+      domainValidator: isAllowedAppleDomain,
+    })
     if (!upstreamRes.ok && upstreamRes.status !== 206) {
       return c.text(`Upstream error: ${upstreamRes.statusText}`, upstreamRes.status as 400)
     }
@@ -192,7 +170,10 @@ canvasRouter.get('/tidal', async (c) => {
       }
       if (range) headers['Range'] = range
 
-      const res = await fetch(videoUrl, { headers })
+      const res = await safeProxyFetch(videoUrl, {
+        headers,
+        domainValidator: isAllowedTidalDomain,
+      })
       const resHeaders = new Headers()
       resHeaders.set('Access-Control-Allow-Origin', '*')
       resHeaders.set('Content-Type', res.headers.get('content-type') || 'video/mp4')

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { Ytdl, chooseFormat } from '@distube/ytdl-core'
 import { Readable } from 'node:stream'
 import type { StreamFormat, StreamResolutionResult } from '../../src/types/innertube.ts'
+import { isAllowedStreamingDomain, safeProxyFetch } from '../utils/ssrf.ts'
 
 export const streamRouter = new Hono()
 const ytdl = new Ytdl()
@@ -240,21 +241,6 @@ streamRouter.get('/listen', async (c) => {
   }
 })
 
-function isAllowedStreamingDomain(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr)
-    const host = parsed.hostname.toLowerCase()
-    return (
-      host === 'youtube.com' ||
-      host.endsWith('.youtube.com') ||
-      host === 'googlevideo.com' ||
-      host.endsWith('.googlevideo.com')
-    )
-  } catch {
-    return false
-  }
-}
-
 streamRouter.get('/proxy', async (c) => {
   const targetUrl = c.req.query('url')
   if (!targetUrl || !isAllowedStreamingDomain(targetUrl)) {
@@ -275,7 +261,10 @@ streamRouter.get('/proxy', async (c) => {
   }
 
   try {
-    const upstream = await fetch(targetUrl, { headers })
+    const upstream = await safeProxyFetch(targetUrl, {
+      headers,
+      domainValidator: isAllowedStreamingDomain,
+    })
     const responseHeaders = new Headers()
 
     responseHeaders.set('Access-Control-Allow-Origin', '*')
