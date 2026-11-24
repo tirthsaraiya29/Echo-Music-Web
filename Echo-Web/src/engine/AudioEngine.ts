@@ -22,6 +22,7 @@ import { recordListeningEvent } from '../services/recommendations/localTasteEngi
 import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/lastfmService.ts'
 import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService.ts'
 import { castService } from '../services/cast/castService.ts'
+import { extensionManager } from '../services/extensions/extensionManager.ts'
 
 /**
  * Evaluates whether Data Saver is active from user preference or browser network policy.
@@ -1011,6 +1012,21 @@ export class AudioEngine {
       this.streamCache.set(track.id, cached)
       track.streamUrl = cached.url
       return cached
+    }
+
+    // Attempt custom extension audio provider resolution when configured
+    if (!this.isDataSaverActive() && extensionManager.hasEnabledAddons()) {
+      try {
+        const extStream = await extensionManager.resolveTrackExtension(track)
+        if (extStream?.streamUrl) {
+          const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
+          this.streamCache.set(track.id, streamInfo)
+          track.streamUrl = extStream.streamUrl
+          return streamInfo
+        }
+      } catch {
+        // Fall back seamlessly to YouTube resolution
+      }
     }
 
     const videoId = track.videoId || track.id

@@ -22,6 +22,7 @@ import {
   X,
   Cloud,
   Server,
+  Puzzle,
 } from 'lucide-react'
 import { EchoMusicLogo } from '../components/EchoMusicLogo.tsx'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
@@ -44,6 +45,8 @@ import {
 import { triggerFileDownload } from '../services/sharing/playlistPortability.ts'
 import { cloudMediaManager } from '../services/cloud/cloudMediaManager.ts'
 import type { CloudServerConfig, CloudProviderType } from '../services/cloud/cloudMediaTypes.ts'
+import { extensionManager } from '../services/extensions/extensionManager.ts'
+import type { AddonEndpoint, ExtensionTelemetry } from '../types/extension.ts'
 
 const accents: { value: AccentColor; label: string; color: string }[] = [
   { value: 'violet', label: 'Violet', color: '#8b79e8' },
@@ -138,6 +141,15 @@ export function SettingsPage() {
   const [cloudConnecting, setCloudConnecting] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
 
+  const [addons, setAddons] = useState<AddonEndpoint[]>(() => extensionManager.getAddons())
+  const [addonUrl, setAddonUrl] = useState('')
+  const [addonName, setAddonName] = useState('')
+  const [addonTesting, setAddonTesting] = useState(false)
+  const [addonError, setAddonError] = useState<string | null>(null)
+  const [addonTelemetry, setAddonTelemetry] = useState<ExtensionTelemetry>(() =>
+    extensionManager.getTelemetry(),
+  )
+
   const restoreInputRef = useRef<HTMLInputElement>(null)
   const telemetry = getAudioTelemetry()
 
@@ -177,6 +189,12 @@ export function SettingsPage() {
       label: 'Cloud Media',
       icon: Cloud,
       keywords: 'cloud jellyfin navidrome subsonic server self-hosted streaming library',
+    },
+    {
+      id: 'extensions',
+      label: 'Extension Audio',
+      icon: Puzzle,
+      keywords: 'extensions addon audio lossless sources high quality manifest stream',
     },
     {
       id: 'taste',
@@ -280,6 +298,44 @@ export function SettingsPage() {
   const handleRemoveCloud = (id: string, name: string) => {
     cloudMediaManager.removeServer(id)
     notify(`Removed ${name}`)
+  }
+
+  useEffect(() => {
+    return extensionManager.subscribe((list) => {
+      setAddons(list)
+      setAddonTelemetry(extensionManager.getTelemetry())
+    })
+  }, [])
+
+  const handleAddAddon = async () => {
+    if (!addonUrl.trim()) {
+      setAddonError('Extension URL is required')
+      return
+    }
+    setAddonTesting(true)
+    setAddonError(null)
+    try {
+      const added = await extensionManager.addAddon({
+        name: addonName.trim() || undefined,
+        url: addonUrl.trim(),
+      })
+      setAddonUrl('')
+      setAddonName('')
+      notify(`Added audio extension: ${added.name}`)
+    } catch (err) {
+      setAddonError(err instanceof Error ? err.message : 'Could not add extension')
+    } finally {
+      setAddonTesting(false)
+    }
+  }
+
+  const handleToggleAddon = (id: string, enabled: boolean) => {
+    extensionManager.toggleAddon(id, enabled)
+  }
+
+  const handleRemoveAddon = (id: string, name: string) => {
+    extensionManager.removeAddon(id)
+    notify(`Removed extension ${name}`)
   }
 
   const save = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
@@ -965,6 +1021,157 @@ export function SettingsPage() {
                     >
                       <Trash2 size={15} />
                     </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Section: Extension Audio Sources */}
+        {matchesFilter(
+          'extensions',
+          'Extension Audio Sources',
+          'extensions addon audio lossless sources high quality manifest stream',
+        ) && (
+          <section id="settings-extensions" className="settings-section">
+            <div className="settings-section__heading">
+              <span className="settings-section__icon">
+                <Puzzle size={18} />
+              </span>
+              <div>
+                <h2>Extension Audio Sources</h2>
+                <p>
+                  Configure external audio source extensions matching upstream Echo Music. When
+                  enabled, matching catalog songs resolve bit-perfect lossless or high-res audio
+                  before falling back to YouTube.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-xl border border-white/6 bg-white/2 p-4">
+              <h3 className="text-sm font-semibold text-white">Add Extension Endpoint</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">Addon Base URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://addon.example.com"
+                    value={addonUrl}
+                    onChange={(e) => setAddonUrl(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-[#a59fad]">
+                    Custom Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Auto-discovered from manifest.json"
+                    value={addonName}
+                    onChange={(e) => setAddonName(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-xs text-white placeholder-white/30 focus:border-[#7c5cff] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {addonError && (
+                <div className="rounded-lg bg-red-500/10 p-2 text-xs text-red-400">
+                  {addonError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                disabled={addonTesting || !addonUrl.trim()}
+                onClick={handleAddAddon}
+                className="button button--primary disabled:opacity-50"
+              >
+                {addonTesting ? 'Verifying Manifest...' : 'Add Extension'}
+              </button>
+            </div>
+
+            {/* Extension Telemetry Summary */}
+            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-xs">
+                <span className="mb-1 block text-[#a59fad]">Attempts</span>
+                <strong className="font-mono text-base text-white">
+                  {addonTelemetry.totalAttempts}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-xs">
+                <span className="mb-1 block text-[#a59fad]">Matches Found</span>
+                <strong className="font-mono text-base text-[#58ad83]">
+                  {addonTelemetry.matchesFound}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-xs">
+                <span className="mb-1 block text-[#a59fad]">Lossless Resolves</span>
+                <strong className="font-mono text-base text-[#b09cff]">
+                  {addonTelemetry.resolutionSuccesses}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-white/6 bg-white/3 p-3 text-xs">
+                <span className="mb-1 block text-[#a59fad]">YouTube Fallbacks</span>
+                <strong className="font-mono text-base text-[#d59b52]">
+                  {addonTelemetry.fallbackCount}
+                </strong>
+              </div>
+            </div>
+
+            {/* Installed Extensions List */}
+            <div className="mt-4 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a59fad]">
+                Configured Extensions ({addons.length})
+              </h3>
+              {addons.length === 0 ? (
+                <p className="rounded-xl border border-white/5 bg-white/2 p-4 text-xs text-[#a59fad]">
+                  No audio extensions configured. Add an extension URL above to enable upstream
+                  high-res / lossless source resolution.
+                </p>
+              ) : (
+                addons.map((addon) => (
+                  <div
+                    key={addon.id}
+                    className="flex items-center justify-between rounded-xl border border-white/6 bg-white/3 p-3.5 text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-[#b09cff]">
+                        <Puzzle size={16} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <strong className="text-white">{addon.name}</strong>
+                          <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-[#a59fad]">
+                            Priority {addon.priority}
+                          </span>
+                        </div>
+                        <span className="text-[#a59fad]">{addon.url}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <span className="text-[11px] text-[#a59fad]">
+                          {addon.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={addon.enabled}
+                          onChange={(e) => handleToggleAddon(addon.id, e.target.checked)}
+                          className="switch"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAddon(addon.id, addon.name)}
+                        className="rounded-lg p-2 text-[#a59fad] transition-colors hover:bg-white/5 hover:text-red-400"
+                        title="Remove extension"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
