@@ -45,7 +45,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-31 | P2 | The room code UI length conflicts with generated codes | `src/components/modals/ListenTogetherModal.tsx, server/routes/listenTogether.ts` | Completed | a275b8d3 | Yes (verified on origin/main) |
 | BUG-32 | P2 | Room code entropy is lower than the alphabet suggests | `server/routes/listenTogether.ts` | Completed | 771dc1d3 | Yes (verified on origin/main) |
 | BUG-33 | P2 | Room rate limiting trusts forwarded IP input | `server/routes/listenTogether.ts` | Completed | dc34bbb4 | Yes (verified on origin/main) |
-| BUG-34 | P2 | Room resource limits are incomplete | `server/routes/listenTogether.ts` | Pending | - | - |
+| BUG-34 | P2 | Room resource limits are incomplete | `server/routes/listenTogether.ts` | Completed | be81d3e5 | Yes (verified on origin/main) |
 | BUG-35 | P2 | Range parsing is incomplete | `server/routes/stream.ts` | Pending | - | - |
 | BUG-36 | P2 | Stream-info requests are not deduplicated | `server/routes/stream.ts` | Pending | - | - |
 | BUG-37 | P2 | Data Saver description overpromises | `src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts` | Pending | - | - |
