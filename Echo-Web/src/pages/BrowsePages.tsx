@@ -16,6 +16,8 @@ import {
   Music2,
   Compass,
   Smartphone,
+  FolderPlus,
+  RefreshCw,
 } from 'lucide-react'
 import { useLatestRelease } from '../hooks/useLatestRelease.ts'
 import type { Track } from '../types/domain.ts'
@@ -53,6 +55,8 @@ import {
   getTopArtists,
   generateTastePlaylist,
   getCurrentTimeOfDay,
+  getDailyTasteMix,
+  type TasteMix,
 } from '../services/recommendations/localTasteEngine.ts'
 import { resolveMissingTrack } from '../services/db/echoDatabase.ts'
 import { parseM3UPlaylist, parseCSVPlaylist } from '../services/sharing/playlistPortability.ts'
@@ -70,6 +74,7 @@ export function HomePage() {
   const playing = useEchoStore((state) => state.isPlaying)
   const togglePlayback = useEchoStore((state) => state.togglePlayback)
   const playTrack = useEchoStore((state) => state.playTrack)
+  const playQueue = useEchoStore((state) => state.playQueue)
   const playlists = useEchoStore((state) => state.playlists)
   const likedTrackIds = useEchoStore((state) => state.likedTrackIds)
   const recentItems = useEchoStore((state) => state.recentItems)
@@ -84,6 +89,8 @@ export function HomePage() {
     Array<{ id: string; name: string; count: number; artwork?: string | undefined }>
   >([])
   const [isGeneratingMix, setIsGeneratingMix] = useState(false)
+  const [dailyTasteMix, setDailyTasteMix] = useState<TasteMix | null>(null)
+  const [isLoadingTasteMix, setIsLoadingTasteMix] = useState(false)
 
   const timeOfDay = getCurrentTimeOfDay()
   const greeting =
@@ -118,7 +125,69 @@ export function HomePage() {
     }
   }, [likedTrackIds, recentItems.length])
 
+  useEffect(() => {
+    let cancelled = false
+    setIsLoadingTasteMix(true)
+    getDailyTasteMix({
+      catalogFallback: quickPicks,
+      likedTrackIds,
+    })
+      .then((mix) => {
+        if (!cancelled) {
+          setDailyTasteMix(mix)
+        }
+      })
+      .catch((err) => {
+        console.warn('[TasteMix] Failed to load daily mix', err)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingTasteMix(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [likedTrackIds, quickPicks.length])
+
+  const handlePlayTasteMix = () => {
+    if (!dailyTasteMix || dailyTasteMix.tracks.length === 0) return
+    playQueue(dailyTasteMix.tracks, 0)
+    setToast(`Playing ${dailyTasteMix.title}`)
+  }
+
+  const handleSaveTasteMix = () => {
+    if (!dailyTasteMix || dailyTasteMix.tracks.length === 0) return
+    const plId = createPlaylist(dailyTasteMix.title, dailyTasteMix.subtitle)
+    for (const t of dailyTasteMix.tracks) {
+      addTrackToPlaylist(plId, t)
+    }
+    setToast(`Saved "${dailyTasteMix.title}" to library`)
+  }
+
+  const handleRefreshTasteMix = async () => {
+    setIsLoadingTasteMix(true)
+    try {
+      const refreshed = await getDailyTasteMix({
+        forceRefresh: true,
+        catalogFallback: quickPicks,
+        likedTrackIds,
+      })
+      setDailyTasteMix(refreshed)
+      setToast('Refreshed your Daily Taste Mix')
+    } catch {
+      setToast('Could not refresh Daily Taste Mix')
+    } finally {
+      setIsLoadingTasteMix(false)
+    }
+  }
+
   const handleGenerateTasteMix = async () => {
+    if (dailyTasteMix && dailyTasteMix.tracks.length > 0) {
+      handlePlayTasteMix()
+      return
+    }
     setIsGeneratingMix(true)
     try {
       const catalogTracks = quickPicks
@@ -285,6 +354,74 @@ export function HomePage() {
             <Link to="/search" className="button button--quiet text-xs">
               <SearchIcon size={14} /> Search Music
             </Link>
+          </div>
+        </section>
+      )}
+
+      {/* Daily Taste Mix */}
+      {dailyTasteMix && dailyTasteMix.tracks.length > 0 && (
+        <section className="page-section" aria-labelledby="daily-taste-mix-heading">
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-black/60 p-5 backdrop-blur-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#b09cff] to-[#7052ff] text-white shadow-lg shadow-purple-500/20">
+                  <Sparkles size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-[#b09cff]/20 px-2 py-0.5 text-[10px] font-bold tracking-wider text-[#b09cff] uppercase">
+                      Daily Mix
+                    </span>
+                    <span className="text-xs text-white/50">{dailyTasteMix.dateKey}</span>
+                  </div>
+                  <h2 id="daily-taste-mix-heading" className="text-base sm:text-lg font-bold text-white mt-1">
+                    {dailyTasteMix.title}
+                  </h2>
+                  <p className="text-xs text-white/70 max-w-xl mt-0.5">
+                    {dailyTasteMix.subtitle}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePlayTasteMix}
+                  className="flex items-center gap-2 rounded-xl bg-[#b09cff] px-4 py-2 text-xs font-bold text-black transition-all hover:bg-[#c2b2ff] active:scale-95 min-h-[44px]"
+                  aria-label={`Play ${dailyTasteMix.title}`}
+                >
+                  <Play size={15} fill="currentColor" />
+                  <span>Play Mix ({dailyTasteMix.tracks.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveTasteMix}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/10 min-h-[44px]"
+                  title="Save mix to your library"
+                  aria-label="Save mix to playlists"
+                >
+                  <FolderPlus size={14} />
+                  <span>Save</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRefreshTasteMix}
+                  disabled={isLoadingTasteMix}
+                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/10 min-h-[44px] disabled:opacity-50"
+                  title="Refresh mix for today"
+                  aria-label="Refresh daily taste mix"
+                >
+                  <RefreshCw size={14} className={isLoadingTasteMix ? 'animate-spin' : ''} />
+                  <span>{isLoadingTasteMix ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-white/10">
+              <TrackList items={dailyTasteMix.tracks.slice(0, 5)} />
+            </div>
           </div>
         </section>
       )}

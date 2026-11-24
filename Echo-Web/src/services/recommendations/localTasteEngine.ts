@@ -292,7 +292,7 @@ export async function computeTasteScores(likedTrackIds: Set<string>): Promise<Sc
   return calculateTasteScore(history, excludedSet, likedTrackIds)
 }
 
-function scoredToTrack(st: ScoredTrack): Track {
+export function scoredToTrack(st: ScoredTrack): Track {
   const art = st.artwork || ''
   return {
     id: st.trackId,
@@ -425,3 +425,6 @@ export async function getTopArtists(
 
   return [...artistMap.values()].sort((a, b) => b.count - a.count).slice(0, limit)
 }
+
+export * from './tasteMixService.ts'
+
