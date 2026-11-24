@@ -50,6 +50,7 @@ import { listenTogether } from '../services/listenTogether/listenTogetherClient.
 import { useIsMobileDevice } from '../hooks/useIsMobileDevice.ts'
 import { MobileApkLanding } from './MobileApkLanding.tsx'
 import { recordLayoutMetric } from './layout/layoutTypes.ts'
+import { themeManager } from '../services/theme/themeManager.ts'
 
 const primaryLinks = [
   { to: '/', label: 'Home', icon: Home, end: true },
@@ -623,25 +624,16 @@ export default function AppLayout() {
   }, [location.pathname, recordMedia])
 
   useEffect(() => {
-    document.documentElement.dataset['accent'] = preferences.accentColor
+    themeManager.applyAccent(preferences.accentColor)
   }, [preferences.accentColor])
 
   useEffect(() => {
-    const root = document.documentElement
-    const systemTheme = window.matchMedia('(prefers-color-scheme: light)')
-    const applyTheme = () => {
-      root.dataset['theme'] =
-        preferences.themeMode === 'system'
-          ? systemTheme.matches
-            ? 'light'
-            : 'dark'
-          : preferences.themeMode
-    }
-
-    applyTheme()
+    themeManager.applyTheme(preferences.themeMode)
     if (preferences.themeMode !== 'system') return
-    systemTheme.addEventListener('change', applyTheme)
-    return () => systemTheme.removeEventListener('change', applyTheme)
+    const unsubscribe = themeManager.subscribeSystemTheme(() => {
+      themeManager.applyTheme('system')
+    })
+    return () => unsubscribe()
   }, [preferences.themeMode])
 
   const isMobile = useIsMobileDevice()
