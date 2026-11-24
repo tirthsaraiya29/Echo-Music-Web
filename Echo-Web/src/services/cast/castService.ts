@@ -137,7 +137,7 @@ class GoogleCastService {
   }
 
   public async requestSession(): Promise<boolean> {
-    if (!this.isLoaded || !window.cast?.framework) {
+    if (typeof window === 'undefined' || !this.isLoaded || !window.cast?.framework) {
       this.init()
       return false
     }
@@ -153,7 +153,13 @@ class GoogleCastService {
   }
 
   public async castTrack(track: Track, streamUrl: string, currentTime = 0): Promise<boolean> {
-    if (!this.isConnected || !window.cast?.framework || !window.chrome?.cast?.media) return false
+    if (
+      typeof window === 'undefined' ||
+      !this.isConnected ||
+      !window.cast?.framework ||
+      !window.chrome?.cast?.media
+    )
+      return false
 
     try {
       const context = window.cast.framework.CastContext.getInstance()
@@ -185,6 +191,7 @@ class GoogleCastService {
   }
 
   public pause(): void {
+    if (typeof window === 'undefined') return
     const session = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession()
     session?.getMediaSession()?.pause(
       {},
@@ -194,6 +201,7 @@ class GoogleCastService {
   }
 
   public play(): void {
+    if (typeof window === 'undefined') return
     const session = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession()
     session?.getMediaSession()?.play(
       {},
@@ -203,6 +211,7 @@ class GoogleCastService {
   }
 
   public seek(seconds: number): void {
+    if (typeof window === 'undefined') return
     const session = window.cast?.framework?.CastContext?.getInstance()?.getCurrentSession()
     session?.getMediaSession()?.seek(
       { currentTime: seconds },

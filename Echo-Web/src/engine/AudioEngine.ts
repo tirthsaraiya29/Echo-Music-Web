@@ -21,6 +21,7 @@ import { useEchoStore } from '../stores/useEchoStore.ts'
 import { recordListeningEvent } from '../services/recommendations/localTasteEngine.ts'
 import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/lastfmService.ts'
 import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService.ts'
+import { castService } from '../services/cast/castService.ts'
 
 export class AudioEngine {
   private static instance: AudioEngine | null = null
@@ -156,6 +157,18 @@ export class AudioEngine {
   }
 
   public async play(track?: Track): Promise<void> {
+    if (castService.getIsConnected()) {
+      if (track) {
+        this.queueManager.playTrackDirectly(track)
+        await this.loadAndPlayTrack(track)
+        return
+      }
+      castService.play()
+      this.mediaSession.updatePlaybackState('playing')
+      this.emitState()
+      return
+    }
+
     if (track) {
       this.queueManager.playTrackDirectly(track)
       await this.loadAndPlayTrack(track)
@@ -176,6 +189,9 @@ export class AudioEngine {
   }
 
   public pause(): void {
+    if (castService.getIsConnected()) {
+      castService.pause()
+    }
     this.deckController.pause()
     this.mediaSession.updatePlaybackState('paused')
     this.emitState()
@@ -223,6 +239,9 @@ export class AudioEngine {
   }
 
   public seek(seconds: number): void {
+    if (castService.getIsConnected()) {
+      castService.seek(seconds)
+    }
     this.deckController.seek(seconds)
     this.mediaSession.updatePositionState(this.deckController.getDuration(), seconds)
     this.emitState()
@@ -531,6 +550,22 @@ export class AudioEngine {
       this.emit('segmentSkip', seg)
     }
 
+    castService.subscribe((connected) => {
+      if (connected) {
+        const current = this.queueManager.currentTrack
+        if (current) {
+          const currentTime = this.getCurrentTime()
+          void this.resolveStreamUrl(current)
+            .then((streamUrl) => {
+              void castService.castTrack(current, streamUrl, currentTime)
+              this.deckController.pause()
+              this.emitState()
+            })
+            .catch(() => {})
+        }
+      }
+    })
+
     this.deckController.onPlaybackStateChange = (state: PlaybackState) => {
       this.emit('playbackStateChange', state)
       if (state === 'PLAYING') {
@@ -728,6 +763,16 @@ export class AudioEngine {
 
     const streamUrl = await this.resolveStreamUrl(track)
     if (requestId !== this.currentLoadRequestId) {
+      return
+    }
+
+    if (castService.getIsConnected()) {
+      this.deckController.pause()
+      await castService.castTrack(track, streamUrl, 0)
+      this.consecutiveErrorCount = 0
+      this.lastFmScrobbled = false
+      this.loudnessMeasured = false
+      this.emitState()
       return
     }
 

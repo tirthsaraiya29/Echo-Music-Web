@@ -18,8 +18,15 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
   const [devices, setDevices] = useState<AudioDeviceItem[]>([])
   const [activeDeviceId, setActiveDeviceId] = useState('default')
   const [hasPermission, setHasPermission] = useState(true)
+  const [isCastConnected, setIsCastConnected] = useState(() => castService.getIsConnected())
   const isCastEnabled = useEchoStore((state) => state.preferences.googleCast)
   const { setAudioOutput } = useAudioEngine()
+
+  useEffect(() => {
+    return castService.subscribe((connected) => {
+      setIsCastConnected(connected)
+    })
+  }, [])
 
   useEffect(() => {
     if (!isOpen) return
@@ -108,7 +115,7 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
                   onClose()
                 }}
                 className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
-                  castService.getIsConnected()
+                  isCastConnected
                     ? 'border border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#b09cff]'
                     : 'text-white hover:bg-white/6'
                 }`}
@@ -116,11 +123,11 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
                 <span className="flex items-center gap-2.5 truncate pr-2">
                   <Cast
                     size={15}
-                    className={castService.getIsConnected() ? 'text-[#7c5cff]' : 'text-[#a59fad]'}
+                    className={isCastConnected ? 'text-[#7c5cff]' : 'text-[#a59fad]'}
                   />
                   <span className="truncate">Google Cast Receiver</span>
                 </span>
-                {castService.getIsConnected() && (
+                {isCastConnected && (
                   <Check size={14} className="shrink-0 text-[#7c5cff]" />
                 )}
               </button>
