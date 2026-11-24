@@ -40,6 +40,7 @@ export const addonTrackSchema = z.object({
   duration: z.number().nonnegative().optional(),
   artworkURL: z.string().optional(),
   albumArtworkURL: z.string().optional(),
+  isrc: z.string().optional(),
 })
 
 export type AddonTrack = z.infer<typeof addonTrackSchema>
@@ -67,6 +68,8 @@ export type ExtensionHealthStatus = z.infer<typeof extensionHealthStatusSchema>
 export interface ExtensionMatchCandidate {
   track: AddonTrack
   score: number
+  confidence: number
+  matchReason?: string | undefined
 }
 
 export const extensionRegistryMetricsSchema = z.object({

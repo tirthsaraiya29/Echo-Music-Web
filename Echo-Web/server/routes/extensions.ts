@@ -64,8 +64,23 @@ export function selectBestMatch(
   title: string,
   artist: string,
   durationMs?: number,
-): { track: AddonTrack; score: number } | null {
+  isrc?: string,
+): { track: AddonTrack; score: number; confidence: number; matchReason: string } | null {
   if (!tracks || tracks.length === 0) return null
+
+  // Fast-path: Exact ISRC match
+  if (isrc && isrc.trim()) {
+    const cleanIsrc = isrc.trim().toUpperCase()
+    const isrcMatch = tracks.find((t) => t.isrc && t.isrc.trim().toUpperCase() === cleanIsrc)
+    if (isrcMatch) {
+      return {
+        track: isrcMatch,
+        score: 250,
+        confidence: 1.0,
+        matchReason: 'ISRC exact match',
+      }
+    }
+  }
 
   const wantTokens = tokenize(title)
   if (wantTokens.length === 0) return null
@@ -78,6 +93,7 @@ export function selectBestMatch(
 
   let best: AddonTrack | null = null
   let bestScore = -Infinity
+  let bestReason = 'Token match'
 
   for (const track of tracks) {
     if (!track.id || !track.title) continue
@@ -97,6 +113,12 @@ export function selectBestMatch(
       Array.from(gotQualifiers).some((gq) => tokensMatch(wq, gq)),
     )
     if (!qualifiersMatched) continue
+
+    // Reject candidates with unwanted qualifiers when original studio version was requested
+    if (wantQualifiers.size === 0 && gotQualifiers.size > 0) {
+      // e.g. candidate is live/remix but studio track was requested
+      continue
+    }
 
     // Gate 3: Artist must match if both specify one
     const artistMatched = artistMatches(artistTokens, tokenize(track.artist || ''))
@@ -118,17 +140,22 @@ export function selectBestMatch(
 
     if (durationMs && durationMs > 0 && track.duration && track.duration > 0) {
       const diffMs = Math.abs(track.duration * 1000 - durationMs)
-      if (diffMs <= 8000) score += 10
-      else if (diffMs <= 20000) score += 3
+      if (diffMs <= 8000) score += 15
+      else if (diffMs <= 20000) score += 5
     }
 
     if (score > bestScore) {
       bestScore = score
       best = track
+      bestReason = exactBase ? 'Exact title & artist match' : 'High confidence token match'
     }
   }
 
-  return best ? { track: best, score: bestScore } : null
+  if (!best || bestScore < 70) return null
+
+  const confidence = Math.min(1.0, Math.max(0.0, Math.round((bestScore / 180) * 100) / 100))
+
+  return { track: best, score: bestScore, confidence, matchReason: bestReason }
 }
 
 extensionsRouter.get('/health', async (c) => {
@@ -186,6 +213,7 @@ extensionsRouter.post('/match', async (c) => {
     title: string
     artist: string
     durationMs?: number
+    isrc?: string
   }
 
   if (!body.addonUrl || !body.title) {
@@ -216,7 +244,13 @@ extensionsRouter.post('/match', async (c) => {
     const data = (await res.json()) as { tracks?: AddonTrack[] }
     const tracks = data.tracks || []
 
-    const best = selectBestMatch(tracks, body.title, body.artist || '', body.durationMs)
+    const best = selectBestMatch(
+      tracks,
+      body.title,
+      body.artist || '',
+      body.durationMs,
+      body.isrc,
+    )
     if (!best) {
       return c.json({ matched: false })
     }
@@ -225,6 +259,8 @@ extensionsRouter.post('/match', async (c) => {
       matched: true,
       candidate: best.track,
       score: best.score,
+      confidence: best.confidence,
+      matchReason: best.matchReason,
     })
   } catch (err) {
     return c.json({ matched: false, error: err instanceof Error ? err.message : String(err) }, 502)

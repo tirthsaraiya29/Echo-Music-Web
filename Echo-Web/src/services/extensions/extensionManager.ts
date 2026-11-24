@@ -247,6 +247,7 @@ export class ExtensionManager {
             title: track.title,
             artist: track.artistName,
             durationMs: track.durationMs,
+            isrc: track.isrc || undefined,
           }),
         })
 
