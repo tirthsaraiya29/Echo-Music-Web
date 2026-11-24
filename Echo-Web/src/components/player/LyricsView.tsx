@@ -21,6 +21,7 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
 
   const [lyricsData, setLyricsData] = useState<SynchronizedLyrics | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [activeLineIndex, setActiveLineIndex] = useState<number>(-1)
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(0)
   // Sync offset (ms) shifts when lyric lines are matched against playback; persisted per track.
@@ -59,34 +60,60 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
     }
   }
 
-  // Fetch lyrics whenever track changes
-  useEffect(() => {
-    if (!track) return
+  const fetchLyricsForTrack = useCallback((targetTrack: Track | null, signal?: AbortSignal) => {
+    if (!targetTrack) {
+      setLyricsData(null)
+      setIsLoading(false)
+      setActiveLineIndex(-1)
+      setLoadError(false)
+      return
+    }
 
-    const abortController = new AbortController()
+    setIsLoading(true)
+    setLyricsData(null)
+    setActiveLineIndex(-1)
+    setLoadError(false)
+    setIsTranslated(false)
+    setTranslationError(null)
 
     LyricsOrchestrator.getInstance()
-      .getLyrics(track, abortController.signal)
+      .getLyrics(targetTrack, signal)
       .then((lyrics) => {
-        if (!abortController.signal.aborted) {
+        if (!signal?.aborted) {
           setLyricsData(lyrics)
           setIsLoading(false)
+          setLoadError(false)
           setIsTranslated(false)
           setTranslationError(null)
         }
       })
       .catch(() => {
-        if (!abortController.signal.aborted) {
+        if (!signal?.aborted) {
           setLyricsData(null)
           setIsLoading(false)
+          setLoadError(true)
         }
       })
+  }, [])
+
+  // Fetch lyrics whenever track changes
+  useEffect(() => {
+    if (!track) {
+      setLyricsData(null)
+      setIsLoading(false)
+      setActiveLineIndex(-1)
+      setLoadError(false)
+      return
+    }
+
+    const abortController = new AbortController()
+    fetchLyricsForTrack(track, abortController.signal)
 
     return () => {
       abortController.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id, track?.videoId])
+  }, [track?.id, track?.videoId, fetchLyricsForTrack])
 
   // Microsecond Synchronization: RAF Loop polling audioEngine.getCurrentTime()
   useEffect(() => {
@@ -421,13 +448,26 @@ export function LyricsView({ track, isPlaying, className = '', onSeek }: LyricsV
             {lyricsData.lines.map((line, idx) => renderLine(line, idx))}
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-[#918a98]">
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-[#918a98]">
             <p className="text-base font-medium">
-              No synchronized lyrics available for this track.
+              {loadError
+                ? 'Failed to load lyrics for this track.'
+                : 'No synchronized lyrics available for this track.'}
             </p>
             <p className="text-xs text-[#a59fad]">
-              Enjoy the music or try searching for another version.
+              {loadError
+                ? 'A network issue occurred while checking lyrics providers.'
+                : 'Enjoy the music or try searching for another version.'}
             </p>
+            {track && (
+              <button
+                type="button"
+                onClick={() => fetchLyricsForTrack(track)}
+                className="mt-2 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/6 px-3.5 py-1.5 text-xs font-medium text-[#f4f1f7] transition-all hover:bg-white/12"
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
       </div>

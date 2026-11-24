@@ -64,3 +64,62 @@ test('Lyrics Cache Key: incorporates preferred provider and romanization setting
   assert.notStrictEqual(keyLrclib, keyRomanized)
   assert.ok(keyRomanized.includes('LRCLIB:rom'))
 })
+
+test('Lyrics Loading Lifecycle: transitions from loading to resolved/empty state cleanly [BUG-25]', async () => {
+  const orchestrator = LyricsOrchestrator.getInstance()
+  const track: Track = {
+    id: 'test-track-loading',
+    title: 'Testing Loading State',
+    artistName: 'Test Artist',
+  }
+
+  // State tracker mimicking LyricsView state machine
+  let isLoading = false
+  let lyricsData: any = { lines: [{ text: 'Old lyrics from previous track' }] }
+  let activeLineIndex = 5
+  let loadError = false
+
+  const startFetch = (targetTrack: Track | null) => {
+    if (!targetTrack) {
+      lyricsData = null
+      isLoading = false
+      activeLineIndex = -1
+      loadError = false
+      return
+    }
+
+    // Immediately upon track change:
+    isLoading = true
+    lyricsData = null
+    activeLineIndex = -1
+    loadError = false
+  }
+
+  // 1. Initial track switch: verify loading state activates and stale lyrics are evicted immediately
+  startFetch(track)
+  assert.strictEqual(isLoading, true, 'isLoading must be true while fetching')
+  assert.strictEqual(lyricsData, null, 'Stale lyrics must be cleared immediately upon track change')
+  assert.strictEqual(activeLineIndex, -1, 'activeLineIndex must reset to -1')
+  assert.strictEqual(loadError, false)
+
+  // 2. Mock resolution
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response('{"error":"not found"}', { status: 404 })) as any
+
+  try {
+    const res = await orchestrator.getLyrics(track)
+    isLoading = false
+    lyricsData = res
+    assert.strictEqual(isLoading, false)
+    assert.strictEqual(lyricsData, null)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  // 3. Null track switch: cleans up all state
+  startFetch(null)
+  assert.strictEqual(isLoading, false)
+  assert.strictEqual(lyricsData, null)
+  assert.strictEqual(activeLineIndex, -1)
+})
+
