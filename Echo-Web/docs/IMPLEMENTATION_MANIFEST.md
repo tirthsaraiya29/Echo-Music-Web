@@ -47,7 +47,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | BUG-33 | P2 | Room rate limiting trusts forwarded IP input | `server/routes/listenTogether.ts` | Completed | dc34bbb4 | Yes (verified on origin/main) |
 | BUG-34 | P2 | Room resource limits are incomplete | `server/routes/listenTogether.ts` | Completed | be81d3e5 | Yes (verified on origin/main) |
 | BUG-35 | P2 | Range parsing is incomplete | `server/routes/stream.ts` | Completed | ff3cad00 | Yes (verified on origin/main) |
-| BUG-36 | P2 | Stream-info requests are not deduplicated | `server/routes/stream.ts` | Pending | - | - |
+| BUG-36 | P2 | Stream-info requests are not deduplicated | `server/routes/stream.ts` | Completed | 88dd7c1a | Yes (verified on origin/main) |
 | BUG-37 | P2 | Data Saver description overpromises | `src/pages/SettingsPage.tsx, src/engine/AudioEngine.ts` | Pending | - | - |
 | BUG-38 | P2 | Lossless marketing metadata is inconsistent | `index.html, server/routes/stream.ts, src/pages/SettingsPage.tsx` | Pending | - | - |
 | BUG-39 | P2 | Podcast data exists without a complete podcast product surface | `src/services/db/echoDatabase.ts, src/engine/AudioEngine.ts, src/App.tsx` | Pending | - | - |
