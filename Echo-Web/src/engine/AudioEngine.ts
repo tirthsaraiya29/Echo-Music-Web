@@ -8,6 +8,7 @@ import type {
   PlaybackState,
   QueueSnapshot,
   RepeatMode,
+  RestoreQueueOptions,
   SponsorSegment,
   Track,
   VerifiedStreamTelemetry,
@@ -710,13 +711,33 @@ export class AudioEngine {
     }
   }
 
-  public snapshotQueue(): QueueSnapshot {
-    const time = this.deckController.getCurrentTime()
-    return this.queueManager.snapshotQueue(time)
+  public takeQueueOwnership(owner: string, token?: string): string {
+    return this.queueManager.takeOwnership(owner, token)
   }
 
-  public async restoreQueue(snapshot: QueueSnapshot, resume = true): Promise<void> {
-    const track = this.queueManager.restoreQueue(snapshot)
+  public revokeQueueOwnership(reason?: string): void {
+    this.queueManager.revokeOwnership(reason)
+  }
+
+  public getQueueOwnership(): { owner: string | null; token: string | null; isOwned: boolean } {
+    return this.queueManager.getOwnership()
+  }
+
+  public snapshotQueue(owner?: string, token?: string): QueueSnapshot {
+    const time = this.deckController.getCurrentTime()
+    return this.queueManager.snapshotQueue(time, owner, token)
+  }
+
+  public async restoreQueue(
+    snapshot: QueueSnapshot,
+    resume = true,
+    options?: RestoreQueueOptions,
+  ): Promise<boolean> {
+    const track = this.queueManager.restoreQueue(snapshot, options)
+    if (!track && snapshot.currentTrack) {
+      // Ownership check blocked the restore
+      return false
+    }
     this.emit('queueChange')
 
     if (track) {
@@ -725,6 +746,7 @@ export class AudioEngine {
         this.seek(snapshot.currentTime)
       }
     }
+    return true
   }
 
   public setPauseAtEndOfItems(enable: boolean): void {

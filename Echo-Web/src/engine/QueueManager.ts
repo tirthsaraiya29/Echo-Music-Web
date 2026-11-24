@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { DeckId, QueueSnapshot, RepeatMode, Track } from '../types/audio.ts'
+import type { DeckId, QueueSnapshot, RepeatMode, RestoreQueueOptions, Track } from '../types/audio.ts'
 
 export const TrackSchema = z
   .object({
@@ -20,6 +20,8 @@ export const TrackSchema = z
 export const QueueSnapshotSchema = z.object({
   id: z.string().min(1),
   timestamp: z.number(),
+  owner: z.string().optional(),
+  ownerToken: z.string().optional(),
   history: z.array(z.record(z.string(), z.unknown())),
   currentTrack: z.record(z.string(), z.unknown()).nullable(),
   upNext: z.array(z.record(z.string(), z.unknown())),
@@ -48,6 +50,7 @@ export interface QueueMetrics {
   invalidDropsCount: number
   snapshotsCreated: number
   snapshotsRestored: number
+  ownershipViolationsBlocked: number
   restoreFailures: number
   lastMutationDurationMs: number
 }
@@ -103,9 +106,14 @@ export class QueueManager {
     invalidDropsCount: 0,
     snapshotsCreated: 0,
     snapshotsRestored: 0,
+    ownershipViolationsBlocked: 0,
     restoreFailures: 0,
     lastMutationDurationMs: 0,
   }
+
+  private currentOwner: string | null = null
+  private currentOwnerToken: string | null = null
+  private ownershipRevokedReason: string | null = null
 
   constructor(initialTracks: Track[] = [], startIndex = 0) {
     if (initialTracks.length > 0) {
@@ -204,6 +212,42 @@ export class QueueManager {
     this.pauseAtEndOfItemsSetting = enable
   }
 
+  public takeOwnership(owner: string, token?: string): string {
+    const generatedToken =
+      token || `owner_${owner}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.currentOwner = owner
+    this.currentOwnerToken = generatedToken
+    this.ownershipRevokedReason = null
+    return generatedToken
+  }
+
+  public revokeOwnership(reason = 'USER_OVERRIDE'): void {
+    if (this.currentOwner || this.currentOwnerToken) {
+      this.currentOwner = null
+      this.currentOwnerToken = null
+      this.ownershipRevokedReason = reason
+    }
+  }
+
+  public getOwnership(): {
+    owner: string | null
+    token: string | null
+    isOwned: boolean
+    revokedReason: string | null
+  } {
+    return {
+      owner: this.currentOwner,
+      token: this.currentOwnerToken,
+      isOwned: Boolean(this.currentOwnerToken),
+      revokedReason: this.ownershipRevokedReason,
+    }
+  }
+
+  public isOwnershipValid(token?: string | null): boolean {
+    if (!token) return true
+    return this.currentOwnerToken === token
+  }
+
   public setActiveDeck(deck: DeckId): void {
     this.currentActiveDeck = deck
   }
@@ -229,6 +273,7 @@ export class QueueManager {
   }
 
   public setSourceQueue(tracks: Track[], startIndex = 0): Track | null {
+    this.revokeOwnership('SET_SOURCE_QUEUE')
     const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
     const validTracks = tracks.filter((t) => {
       const ok = isValidTrack(t)
@@ -620,11 +665,13 @@ export class QueueManager {
     return { track: previousTrack, seekToZero: false }
   }
 
-  public snapshotQueue(currentTimeSeconds = 0): QueueSnapshot {
+  public snapshotQueue(currentTimeSeconds = 0, owner?: string, token?: string): QueueSnapshot {
     this.metrics.snapshotsCreated++
     return {
       id: `snapshot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       timestamp: Date.now(),
+      owner: owner ?? this.currentOwner ?? undefined,
+      ownerToken: token ?? this.currentOwnerToken ?? undefined,
       history: this.historyList.map(cloneTrack),
       currentTrack: this.activeTrack ? cloneTrack(this.activeTrack) : null,
       upNext: this.upNextList.map(cloneTrack),
@@ -641,7 +688,7 @@ export class QueueManager {
     }
   }
 
-  public restoreQueue(snapshot: QueueSnapshot): Track | null {
+  public restoreQueue(snapshot: QueueSnapshot, options?: RestoreQueueOptions): Track | null {
     if (!snapshot || typeof snapshot !== 'object') {
       this.metrics.restoreFailures++
       return this.activeTrack
@@ -650,6 +697,12 @@ export class QueueManager {
     if (!parsed.success) {
       this.metrics.restoreFailures++
       return this.activeTrack
+    }
+
+    const tokenToCheck = options?.ownerToken ?? (snapshot as QueueSnapshot).ownerToken
+    if (!options?.force && tokenToCheck && !this.isOwnershipValid(tokenToCheck)) {
+      this.metrics.ownershipViolationsBlocked++
+      return null
     }
 
     const start = typeof performance !== 'undefined' ? performance.now() : Date.now()

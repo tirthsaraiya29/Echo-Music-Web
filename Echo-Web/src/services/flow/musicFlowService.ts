@@ -47,9 +47,10 @@ export class MusicFlowService {
    */
   public async enterFlow(initialFeed?: Track[]): Promise<void> {
     const engine = AudioEngine.getInstance()
-    // Snapshot current queue before taking over
-    const snapshot = engine.snapshotQueue()
     const token = `flow_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    // Snapshot current queue before taking over, bound to ownership token
+    const snapshot = engine.snapshotQueue('music-flow', token)
+    engine.takeQueueOwnership('music-flow', token)
 
     let feed = initialFeed && initialFeed.length > 0 ? initialFeed : []
     if (feed.length === 0) {
@@ -97,7 +98,8 @@ export class MusicFlowService {
     // Restore previous queue only if requested and snapshot was preserved
     if (restoreQueue && savedSnapshot && ownershipToken) {
       const engine = AudioEngine.getInstance()
-      await engine.restoreQueue(savedSnapshot, true)
+      await engine.restoreQueue(savedSnapshot, true, { ownerToken: ownershipToken })
+      engine.revokeQueueOwnership('FLOW_EXIT')
     }
   }
 

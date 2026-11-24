@@ -54,11 +54,18 @@ export const audioEngineActions = {
   setEqualizerBands: (gains: number[]) => AudioEngine.getInstance().setEqualizerBands(gains),
   setEqualizerPreset: (name: string) => AudioEngine.getInstance().setEqualizerPreset(name),
   resetEqualizer: () => AudioEngine.getInstance().resetEqualizer(),
-  snapshotQueue: () => AudioEngine.getInstance().snapshotQueue(),
+  snapshotQueue: (owner?: string, token?: string) =>
+    AudioEngine.getInstance().snapshotQueue(owner, token),
   restoreQueue: (
     snapshot: Parameters<ReturnType<typeof AudioEngine.getInstance>['restoreQueue']>[0],
     resume?: boolean,
-  ) => AudioEngine.getInstance().restoreQueue(snapshot, resume),
+    options?: Parameters<ReturnType<typeof AudioEngine.getInstance>['restoreQueue']>[2],
+  ) => AudioEngine.getInstance().restoreQueue(snapshot, resume, options),
+  takeQueueOwnership: (owner: string, token?: string) =>
+    AudioEngine.getInstance().takeQueueOwnership(owner, token),
+  revokeQueueOwnership: (reason?: string) =>
+    AudioEngine.getInstance().revokeQueueOwnership(reason),
+  getQueueOwnership: () => AudioEngine.getInstance().getQueueOwnership(),
   setPauseAtEndOfItems: (enable: boolean) => AudioEngine.getInstance().setPauseAtEndOfItems(enable),
   getVisualizerData: () => AudioEngine.getInstance().getVisualizerData(),
   getFrequencyData: (outputArray?: Uint8Array<ArrayBuffer>) =>

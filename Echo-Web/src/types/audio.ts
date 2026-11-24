@@ -34,6 +34,8 @@ export interface SponsorSegment {
 export interface QueueSnapshot {
   id: string
   timestamp: number
+  owner?: string | undefined
+  ownerToken?: string | undefined
   history: Track[]
   currentTrack: Track | null
   upNext: Track[]
@@ -46,7 +48,12 @@ export interface QueueSnapshot {
   isShuffle: boolean
   pauseAtEndOfItems: boolean
   currentSourceIndex?: number
-  activeTrackSource?: 'upNext' | 'sourceQueue' | 'radio' | 'direct'
+  activeTrackSource?: 'upNext' | 'sourceQueue' | 'radio' | 'direct' | undefined
+}
+
+export interface RestoreQueueOptions {
+  ownerToken?: string | undefined
+  force?: boolean | undefined
 }
 
 export type EqualizerFilterType =
