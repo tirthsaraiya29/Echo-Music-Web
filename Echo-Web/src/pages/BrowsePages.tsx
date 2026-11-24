@@ -471,6 +471,20 @@ export function HomePage() {
           </div>
         </section>
       ))}
+
+      {!isLoading && !isError && (!visibleShelves || visibleShelves.length === 0) && (
+        <div className="empty-state py-8 text-center text-xs text-[#a59fad]" role="status">
+          <Compass className="mx-auto mb-2 text-[#b09cff]" size={28} />
+          <p>No discovery shelves available for this category right now.</p>
+          <button
+            type="button"
+            onClick={() => setActiveCategory('all')}
+            className="mt-2 text-[#b09cff] underline"
+          >
+            Show all categories
+          </button>
+        </div>
+      )}
     </div>
   )
 }
