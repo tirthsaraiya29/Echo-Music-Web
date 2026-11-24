@@ -38,6 +38,7 @@ import {
   isNearEnd,
   recordPodcastProgressMetric,
 } from '../services/podcast/podcastProgressService.ts'
+import { podcastProgressSync } from '../services/podcast/podcastProgressSyncService.ts'
 import { resolveEffectivePlaybackRate } from '../services/podcast/podcastSpeedService.ts'
 import {
   calculateSkipBackward,
@@ -1186,23 +1187,25 @@ export class AudioEngine {
           const posMs = Math.round(current * 1000)
           const durMs = Math.round(duration * 1000)
           const isNear = isNearEnd(posMs, durMs)
+          const progressEntry = {
+            episodeId,
+            showTitle: currentTrack.showTitle || currentTrack.artistName || 'Podcast',
+            episodeTitle: currentTrack.title || 'Episode',
+            artworkUrl: currentTrack.artwork || currentTrack.thumbnailUrl,
+            positionSeconds: posSec,
+            durationSeconds: durSec,
+            positionMs: posMs,
+            durationMs: durMs,
+            completed: isNear,
+            dismissed: false,
+            updatedAt: now,
+          }
           void db.podcastProgress
-            .put({
-              episodeId,
-              showTitle: currentTrack.showTitle || currentTrack.artistName || 'Podcast',
-              episodeTitle: currentTrack.title || 'Episode',
-              artworkUrl: currentTrack.artwork || currentTrack.thumbnailUrl,
-              positionSeconds: posSec,
-              durationSeconds: durSec,
-              positionMs: posMs,
-              durationMs: durMs,
-              completed: isNear,
-              dismissed: false,
-              updatedAt: now,
-            })
+            .put(progressEntry)
             .then(() => {
               recordPodcastProgressMetric('progressSaved')
               if (isNear) recordPodcastProgressMetric('episodesCompleted')
+              podcastProgressSync.broadcastProgress(progressEntry)
             })
             .catch(() => {})
         }
