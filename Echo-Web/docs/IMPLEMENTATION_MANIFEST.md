@@ -102,7 +102,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-37 | Listen Together server | 10 tasks in backlog | Completed | d118d275 | Yes (verified on origin/main) |
 | SMALL-38 | Room security and limits | 10 tasks in backlog | Completed | c448abb1 | Yes (verified on origin/main) |
 | SMALL-39 | SponsorBlock integration | 10 tasks in backlog | Completed | 1d8a9267 | Yes (verified on origin/main) |
-| SMALL-40 | PWA/service worker | 10 tasks in backlog | Pending | - | - |
+| SMALL-40 | PWA/service worker | 10 tasks in backlog | Completed | 4d64f256 | Yes (verified on origin/main) |
 | SMALL-41 | Application routing | 10 tasks in backlog | Pending | - | - |
 | SMALL-42 | Global layout/navigation | 10 tasks in backlog | Pending | - | - |
 | SMALL-43 | Desktop player view | 10 tasks in backlog | Pending | - | - |
