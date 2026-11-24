@@ -121,7 +121,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | Phase ID | Feature Name | Status | Commit SHA | Verified |
 |---|---|---|---|---|
 | FEATURE-001 | Custom extension registry | Completed | 0ad8c86a | Yes (verified on origin/main) |
-| FEATURE-002 | Extension-first playback | Pending | - | - |
+| FEATURE-002 | Extension-first playback | Completed | 94612eff | Yes (verified on origin/main) |
 | FEATURE-003 | 320 kbps source support | Pending | - | - |
 | FEATURE-004 | FLAC/ALAC lossless playback | Pending | - | - |
 | FEATURE-005 | Extension fallback chain | Pending | - | - |
