@@ -5,6 +5,7 @@ import {
   type RecommendationExclusionRecord,
 } from '../db/echoDatabase.ts'
 import type { Track } from '../../types/domain.ts'
+import { getSpotifyArtistWeights } from '../spotify/spotifyRecommendationBridge.ts'
 
 export const listeningEventInputSchema = z.object({
   track: z.object({
@@ -201,6 +202,7 @@ export function calculateTasteScore(
   likedTrackIds: Set<string>,
   now: number = Date.now(),
   currentTimeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' = getCurrentTimeOfDay(),
+  spotifyArtistWeights?: Map<string, number>,
 ): ScoredTrack[] {
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
 
@@ -255,10 +257,17 @@ export function calculateTasteScore(
     }
   }
 
-  // Liked track bonus
+  // Liked track bonus & Spotify Recommendation Bridge bonus
   for (const [trackId, entry] of trackMap.entries()) {
     if (likedTrackIds.has(trackId)) {
       entry.score += 3.0
+    }
+    if (spotifyArtistWeights && entry.record.artistName) {
+      const norm = entry.record.artistName.trim().toLowerCase().replace(/\s+/g, ' ')
+      const boost = spotifyArtistWeights.get(norm)
+      if (boost) {
+        entry.score += boost
+      }
     }
   }
 
@@ -289,7 +298,15 @@ export async function computeTasteScores(likedTrackIds: Set<string>): Promise<Sc
   const exclusions = await db.recommendationExclusions.toArray()
   const excludedSet = new Set(exclusions.map((e) => e.trackId))
   const history = await db.history.toArray()
-  return calculateTasteScore(history, excludedSet, likedTrackIds)
+  const spotifyWeights = getSpotifyArtistWeights()
+  return calculateTasteScore(
+    history,
+    excludedSet,
+    likedTrackIds,
+    Date.now(),
+    getCurrentTimeOfDay(),
+    spotifyWeights,
+  )
 }
 
 export function scoredToTrack(st: ScoredTrack): Track {

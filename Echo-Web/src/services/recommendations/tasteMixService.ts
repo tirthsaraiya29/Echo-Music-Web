@@ -10,6 +10,7 @@ import {
   scoredToTrack,
   type ScoredTrack,
 } from './localTasteEngine.ts'
+import { getSpotifyArtistWeights } from '../spotify/spotifyRecommendationBridge.ts'
 
 export const tasteMixSchema = z.object({
   id: z.string().min(1),
@@ -114,6 +115,7 @@ export interface BuildTasteMixParams {
   targetCount?: number
   maxPerArtist?: number
   randomSalt?: string
+  spotifyArtistWeights?: Map<string, number>
 }
 
 /**
@@ -130,8 +132,10 @@ export function buildTasteMix({
   targetCount = 25,
   maxPerArtist = 2,
   randomSalt = '',
+  spotifyArtistWeights,
 }: BuildTasteMixParams): TasteMix {
   const rng = seededRandom(`${dateKey}-${randomSalt}`)
+  const weights = spotifyArtistWeights ?? getSpotifyArtistWeights()
 
   // 1. Calculate taste scores for user listening history
   const scoredTracks: ScoredTrack[] = calculateTasteScore(
@@ -140,6 +144,7 @@ export function buildTasteMix({
     likedTrackIds,
     now,
     currentTimeOfDay,
+    weights,
   )
 
   const isFallback = scoredTracks.filter((t) => t.score > 0).length < 3
@@ -186,8 +191,14 @@ export function buildTasteMix({
     (t) => !exclusions.has(t.id) && !selectedTrackIds.has(t.id),
   )
 
-  // Sort eligible catalog prioritizing top artists or shuffle deterministically
+  // Sort eligible catalog prioritizing Spotify artists and top artists or shuffle deterministically
   const sortedCatalog = [...eligibleCatalog].sort((a, b) => {
+    const aNorm = (a.artistName || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    const bNorm = (b.artistName || '').trim().toLowerCase().replace(/\s+/g, ' ')
+    const aSpotify = weights.has(aNorm) ? 1 : 0
+    const bSpotify = weights.has(bNorm) ? 1 : 0
+    if (aSpotify !== bSpotify) return bSpotify - aSpotify
+
     const aTop = topArtists.includes(a.artistName) ? 1 : 0
     const bTop = topArtists.includes(b.artistName) ? 1 : 0
     if (aTop !== bTop) return bTop - aTop

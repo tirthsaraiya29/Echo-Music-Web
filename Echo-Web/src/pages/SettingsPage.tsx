@@ -48,6 +48,13 @@ import {
 import { triggerFileDownload } from '../services/sharing/playlistPortability.ts'
 import { cloudMediaManager } from '../services/cloud/cloudMediaManager.ts'
 import type { CloudServerConfig, CloudProviderType } from '../services/cloud/cloudMediaTypes.ts'
+import { SpotifyImportModal } from '../components/modals/SpotifyImportModal.tsx'
+import {
+  getSpotifyTasteProfile,
+  setSpotifyBridgeEnabled,
+  clearSpotifyTasteProfile,
+  type SpotifyTasteProfile,
+} from '../services/spotify/spotifyRecommendationBridge.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
 import type { AddonEndpoint, ExtensionTelemetry } from '../types/extension.ts'
 import { pwaManager } from '../services/pwa/pwaManager.ts'
@@ -167,6 +174,18 @@ export function SettingsPage() {
   const [discordStatusMessage, setDiscordStatusMessage] = useState<string>('')
   const [swStatus, setSwStatus] = useState<SwStatus>(() => pwaManager.getStatus())
   const [checkingForUpdates, setCheckingForUpdates] = useState(false)
+  const [isSpotifyModalOpen, setIsSpotifyModalOpen] = useState(false)
+  const [spotifyProfile, setSpotifyProfile] = useState<SpotifyTasteProfile | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getSpotifyTasteProfile().then((profile) => {
+      if (!cancelled) setSpotifyProfile(profile)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isSpotifyModalOpen])
 
   useEffect(() => {
     const unsubscribe = pwaManager.subscribe((status) => {
@@ -1135,6 +1154,64 @@ export function SettingsPage() {
               />
             )}
 
+            {/* Spotify Recommendation Bridge */}
+            <div className="setting-row">
+              <span>
+                <strong>Spotify Recommendation Bridge</strong>
+                <small>
+                  {spotifyProfile && spotifyProfile.totalTracksIndexed > 0
+                    ? `Bridging ${spotifyProfile.artists.length} artists from ${spotifyProfile.totalTracksIndexed} indexed tracks to train on-device recommendations.`
+                    : 'Use artists and music from your imported Spotify playlists to train and boost recommendations.'}
+                </small>
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="button button--quiet min-h-[44px]"
+                  onClick={() => setIsSpotifyModalOpen(true)}
+                >
+                  Import from Spotify
+                </button>
+              </div>
+            </div>
+
+            <PreferenceToggle
+              label="Spotify taste signals"
+              description="Automatically boosts tracks from your favorite Spotify artists in Daily Taste Mix and Quick Picks."
+              preference="spotifyRecommendationBridge"
+              value={preferences.spotifyRecommendationBridge ?? true}
+              onChange={async (key, val) => {
+                save(key, val)
+                const updated = await setSpotifyBridgeEnabled(val)
+                setSpotifyProfile(updated)
+                notify(val ? 'Spotify recommendation bridge enabled' : 'Spotify recommendation bridge disabled')
+              }}
+            />
+
+            {spotifyProfile && spotifyProfile.artists.length > 0 && (
+              <div className="space-y-2 rounded-xl border border-white/6 bg-white/2 p-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[#a59fad]">
+                    Top indexed Spotify artists:{' '}
+                    <span className="text-white">
+                      {spotifyProfile.artists.slice(0, 5).map((a) => a.name).join(', ')}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await clearSpotifyTasteProfile()
+                      setSpotifyProfile(await getSpotifyTasteProfile())
+                      notify('Cleared Spotify taste signals')
+                    }}
+                    className="rounded-lg bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/20 min-h-[32px]"
+                  >
+                    Clear Signals
+                  </button>
+                </div>
+              </div>
+            )}
+
             <PreferenceToggle
               label="Discord Rich Presence"
               description="Broadcasts current track title and artist to your Discord desktop status."
@@ -1880,6 +1957,11 @@ export function SettingsPage() {
           </section>
         )}
       </div>
+
+      <SpotifyImportModal
+        isOpen={isSpotifyModalOpen}
+        onClose={() => setIsSpotifyModalOpen(false)}
+      />
     </div>
   )
 }

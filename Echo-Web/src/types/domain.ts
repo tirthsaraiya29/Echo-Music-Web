@@ -154,4 +154,5 @@ export interface UserPreferences {
   googleCast?: boolean | undefined
   preferExtensionAudio?: boolean | undefined
   extensionSourcePriority?: 'extension-first' | 'youtube-first' | undefined
+  spotifyRecommendationBridge?: boolean | undefined
 }

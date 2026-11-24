@@ -10,6 +10,7 @@ import { useEchoStore } from '../../stores/useEchoStore'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
 import { db } from '../../services/db/echoDatabase'
+import { recordSpotifyTasteSignals } from '../../services/spotify/spotifyRecommendationBridge.ts'
 
 interface SpotifyImportModalProps {
   isOpen: boolean
@@ -125,12 +126,22 @@ export function SpotifyImportModal({ isOpen, onClose }: SpotifyImportModalProps)
       updatedAt: Date.now(),
     })
 
+    // Bridge taste signals from imported Spotify tracks
+    try {
+      await recordSpotifyTasteSignals(result.matchedTracks, { sourcePlaylist: result.title })
+    } catch {
+      // Non-fatal telemetry/bridge failure
+    }
+
     setToast(`Saved "${result.title}" (${result.matchedTracks.length} tracks)`)
     handleClose()
   }
 
   const handlePlayNow = () => {
     if (!result || result.matchedTracks.length === 0) return
+    try {
+      recordSpotifyTasteSignals(result.matchedTracks, { sourcePlaylist: result.title })
+    } catch {}
     playQueue(result.matchedTracks, 0)
     setToast(`Playing "${result.title}"`)
     handleClose()
