@@ -23,6 +23,7 @@ import { updateLastFmNowPlaying, scrobbleLastFmTrack } from '../services/lastfm/
 import { updateDiscordPresence, clearDiscordPresence } from '../services/discord/discordService.ts'
 import { castService } from '../services/cast/castService.ts'
 import { extensionManager } from '../services/extensions/extensionManager.ts'
+import type { ExtensionResolvedStream } from '../types/extension.ts'
 
 /**
  * Evaluates whether Data Saver is active from user preference or browser network policy.
@@ -92,6 +93,7 @@ export class AudioEngine {
   private sleepTimerEndOfTrack = false
   private playbackRate = 1.0
   private lastStreamFormat: StreamResolutionResult['format'] | null = null
+  private activeExtensionStream: ExtensionResolvedStream | null = null
   private consecutiveErrorCount = 0
   private lastPodcastSaveMs = 0
   private lastFmScrobbled = false
@@ -568,11 +570,41 @@ export class AudioEngine {
     bitrate: string
     sampleRate: string
     bitDepth: string
+    source: string
+    isHighBitrate: boolean
   } {
     const current = this.queueManager.currentTrack
     const ctx = this.graph.context
     const sampleRateKhz = (ctx.sampleRate / 1000).toFixed(1)
     const isLocal = current?.id.startsWith('local_')
+
+    if (this.activeExtensionStream) {
+      const ext = this.activeExtensionStream
+      const isLossless =
+        (ext.quality?.toLowerCase().includes('lossless') ?? false) ||
+        (ext.codec?.toLowerCase().includes('flac') ?? false) ||
+        (ext.mimeType?.toLowerCase().includes('flac') ?? false)
+      const is320 =
+        (ext.quality?.includes('320') ?? false) || Boolean(ext.bitrate && ext.bitrate >= 320000)
+      const codec =
+        ext.codec || (isLossless ? 'FLAC (Lossless)' : is320 ? 'MP3 (320 kbps)' : 'Extension Stream')
+      const bitrate = isLossless
+        ? 'Lossless'
+        : is320
+          ? '320 kbps'
+          : ext.bitrate
+            ? `${Math.round(ext.bitrate / 1000)} kbps`
+            : ext.quality || '320 kbps'
+
+      return {
+        codec,
+        bitrate,
+        sampleRate: `${sampleRateKhz} kHz`,
+        bitDepth: '32-bit Float DSP',
+        source: ext.source,
+        isHighBitrate: Boolean(is320 || isLossless),
+      }
+    }
 
     // Streamed tracks report what the server actually resolved; nothing is overstated.
     const isOpus = (this.lastStreamFormat?.mimeType ?? '').toLowerCase().includes('opus')
@@ -581,13 +613,15 @@ export class AudioEngine {
       ? Math.round(this.lastStreamFormat.bitrate / 1000)
       : null
     const bitrate = isLocal ? 'Source bitrate' : bitrateKbps ? `~${bitrateKbps} kbps` : 'Unresolved'
-    const bitDepth = '32-bit Float DSP'
+    const isHighBitrate = Boolean(bitrateKbps && bitrateKbps >= 320)
 
     return {
       codec,
       bitrate,
       sampleRate: `${sampleRateKhz} kHz`,
-      bitDepth,
+      bitDepth: '32-bit Float DSP',
+      source: isLocal ? 'Local Audio' : 'YouTube Proxy',
+      isHighBitrate,
     }
   }
 
@@ -1089,6 +1123,7 @@ export class AudioEngine {
       try {
         const extStream = await extensionManager.resolveTrackExtension(track)
         if (extStream?.streamUrl) {
+          this.activeExtensionStream = extStream
           const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
           this.streamCache.set(track.id, streamInfo)
           track.streamUrl = extStream.streamUrl
@@ -1111,6 +1146,7 @@ export class AudioEngine {
         if (res.ok) {
           const data = (await res.json()) as StreamResolutionResult
           if (data.streamUrl) {
+            this.activeExtensionStream = null
             this.lastStreamFormat = data.format
             const mimeType =
               data.format.mimeType?.split(';')[0]?.trim() || data.format.mimeType || undefined
@@ -1132,6 +1168,7 @@ export class AudioEngine {
           try {
             const extStream = await extensionManager.resolveTrackExtension(track)
             if (extStream?.streamUrl) {
+              this.activeExtensionStream = extStream
               const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
               this.streamCache.set(track.id, streamInfo)
               track.streamUrl = extStream.streamUrl
@@ -1149,6 +1186,7 @@ export class AudioEngine {
       try {
         const extStream = await extensionManager.resolveTrackExtension(track)
         if (extStream?.streamUrl) {
+          this.activeExtensionStream = extStream
           const streamInfo = { url: extStream.streamUrl, mimeType: extStream.mimeType }
           this.streamCache.set(track.id, streamInfo)
           track.streamUrl = extStream.streamUrl

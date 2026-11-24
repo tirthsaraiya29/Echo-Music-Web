@@ -248,8 +248,13 @@ export function DesktopPlayerView({ isOpen, onClose }: DesktopPlayerViewProps) {
                 Playing from
               </span>
               <span className="rounded border border-[#7c5cff]/20 bg-[#7c5cff]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#b09cff]">
-                {telemetry.codec} · {telemetry.sampleRate}
+                {telemetry.codec} · {telemetry.bitrate} · {telemetry.sampleRate}
               </span>
+              {telemetry.isHighBitrate && (
+                <span className="rounded border border-emerald-500/20 bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400">
+                  HIGH BITRATE
+                </span>
+              )}
             </div>
             <span className="mt-0.5 max-w-xs truncate text-xs font-medium text-[#f4f1f7]">
               {currentTrack.albumTitle || currentTrack.album?.title || 'Echo Music Catalog'}

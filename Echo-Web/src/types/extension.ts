@@ -92,5 +92,6 @@ export interface ExtensionResolvedStream {
   mimeType?: string | undefined
   codec?: string | undefined
   quality?: string | undefined
+  bitrate?: number | undefined
   source: string
 }

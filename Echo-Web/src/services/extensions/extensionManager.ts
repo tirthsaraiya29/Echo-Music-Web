@@ -272,6 +272,7 @@ export class ExtensionManager {
             format?: string | undefined
             codec?: string | undefined
             quality?: string | undefined
+            bitrate?: number | undefined
           } | undefined
         }
 
@@ -284,6 +285,7 @@ export class ExtensionManager {
             mimeType: resolveData.stream.codec || 'audio/flac',
             codec: resolveData.stream.codec,
             quality: resolveData.stream.quality || 'lossless',
+            bitrate: resolveData.stream.bitrate,
             source: addon.name,
           }
         }
