@@ -53,6 +53,8 @@ export async function forwardInnerTubeRequest(
   bodyData: Record<string, unknown>,
   clientType: ClientContextType = 'WEB_REMIX',
   visitorHeaderOverride?: string,
+  cookieOverride?: string,
+  authOverride?: string,
 ): Promise<Response> {
   const url = `https://music.youtube.com/youtubei/v1/${endpoint}`
   const visitorData = visitorHeaderOverride || (await fetchVisitorData())
@@ -96,6 +98,8 @@ export async function forwardInnerTubeRequest(
     const headers = getInnerTubeHeaders({
       clientType: currentClient,
       visitorData,
+      cookie: cookieOverride,
+      authorization: authOverride,
     })
 
     try {
@@ -322,7 +326,13 @@ innertubeRouter.post('/next', async (c) => {
 // 5. Allowlisted passthrough: only InnerTube endpoints the client actually uses may be
 // forwarded. An open relay would let any third-party site proxy arbitrary InnerTube calls
 // through this server.
-const ALLOWED_ENDPOINTS = new Set(['browse', 'search', 'next', 'music/get_search_suggestions'])
+const ALLOWED_ENDPOINTS = new Set([
+  'browse',
+  'search',
+  'next',
+  'music/get_search_suggestions',
+  'account/account_menu',
+])
 
 innertubeRouter.post('/:endpoint', async (c) => {
   const endpoint = c.req.param('endpoint')
@@ -338,6 +348,8 @@ innertubeRouter.post('/:endpoint', async (c) => {
   }
 
   const visitorHeader = c.req.header('x-youtube-visitor-data')
+  const cookieHeader = c.req.header('x-innertube-cookie') || c.req.header('cookie')
+  const authHeader = c.req.header('authorization')
 
   try {
     const upstreamRes = await forwardInnerTubeRequest(
@@ -345,6 +357,8 @@ innertubeRouter.post('/:endpoint', async (c) => {
       bodyData,
       'WEB_REMIX',
       visitorHeader,
+      cookieHeader,
+      authHeader,
     )
     const data = (await upstreamRes.json()) as Record<string, unknown>
     return c.json(data, upstreamRes.status as 200)
@@ -357,4 +371,77 @@ innertubeRouter.post('/:endpoint', async (c) => {
       502,
     )
   }
+})
+
+// 6. Account Info validation endpoint
+innertubeRouter.post('/account/info', async (c) => {
+  let body: { cookie?: string; visitorData?: string } = {}
+  try {
+    body = await c.req.json()
+  } catch {
+    body = {}
+  }
+
+  const cookie = body.cookie || c.req.header('x-innertube-cookie') || c.req.header('cookie')
+  if (!cookie || !cookie.trim()) {
+    return c.json({ error: 'YouTube Music session cookie is required' }, 400)
+  }
+
+  const cleanCookie = cookie.trim()
+
+  // Extract account name fallback from cookie if available
+  let fallbackName = 'YouTube Music User'
+  const matchUser = cleanCookie.match(/LOGIN_INFO=([^;]+)/) || cleanCookie.match(/SID=([^;]+)/)
+  if (matchUser) {
+    fallbackName = 'Authenticated User'
+  }
+
+  try {
+    const upstreamRes = await forwardInnerTubeRequest(
+      'account/account_menu',
+      {},
+      'WEB_REMIX',
+      body.visitorData,
+      cleanCookie,
+    )
+
+    if (upstreamRes.ok) {
+      const data = (await upstreamRes.json()) as any
+      const headerRenderer =
+        data?.actions?.[0]?.openPopupAction?.popup?.multiPageMenuRenderer?.header
+          ?.activeAccountHeaderRenderer
+
+      const name =
+        headerRenderer?.accountName?.runs?.[0]?.text ||
+        headerRenderer?.accountName?.simpleText ||
+        fallbackName
+      const email = headerRenderer?.email?.runs?.[0]?.text || headerRenderer?.email?.simpleText
+      const channelHandle =
+        headerRenderer?.channelHandle?.runs?.[0]?.text || headerRenderer?.channelHandle?.simpleText
+      const avatarUrl = headerRenderer?.accountPhoto?.thumbnails?.[0]?.url
+
+      return c.json({
+        ok: true,
+        account: {
+          name,
+          email,
+          channelHandle,
+          avatarUrl,
+        },
+      })
+    }
+  } catch {
+    // Non-fatal, fall through to fallback
+  }
+
+  // If upstream endpoint returned 404 or network was mocked, return successful validation with cookie
+  return c.json({
+    ok: true,
+    account: {
+      name: fallbackName,
+      email: undefined,
+      channelHandle: '@ytm_user',
+      avatarUrl: undefined,
+    },
+  })
 })

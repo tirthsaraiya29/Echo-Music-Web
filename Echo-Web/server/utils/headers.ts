@@ -1,12 +1,14 @@
 import type { ClientContextType } from './potoken.ts'
 
 export interface ClientHeadersOptions {
-  clientType?: ClientContextType
-  visitorData?: string
+  clientType?: ClientContextType | undefined
+  visitorData?: string | undefined
+  cookie?: string | undefined
+  authorization?: string | undefined
 }
 
 export function getInnerTubeHeaders(options: ClientHeadersOptions = {}): Record<string, string> {
-  const { clientType = 'WEB_REMIX', visitorData } = options
+  const { clientType = 'WEB_REMIX', visitorData, cookie, authorization } = options
   const isAndroid = clientType === 'ANDROID_MUSIC'
   const isIos = clientType === 'IOS'
   const isAndroidVr = clientType === 'ANDROID_VR'
@@ -41,6 +43,14 @@ export function getInnerTubeHeaders(options: ClientHeadersOptions = {}): Record<
 
   if (visitorData) {
     headers['X-YouTube-Visitor-Data'] = visitorData
+  }
+
+  if (cookie) {
+    headers['Cookie'] = cookie
+  }
+
+  if (authorization) {
+    headers['Authorization'] = authorization
   }
 
   return headers

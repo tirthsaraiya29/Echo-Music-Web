@@ -49,6 +49,14 @@ import { triggerFileDownload } from '../services/sharing/playlistPortability.ts'
 import { cloudMediaManager } from '../services/cloud/cloudMediaManager.ts'
 import type { CloudServerConfig, CloudProviderType } from '../services/cloud/cloudMediaTypes.ts'
 import { SpotifyImportModal } from '../components/modals/SpotifyImportModal.tsx'
+import { YouTubeAccountModal } from '../components/modals/YouTubeAccountModal.tsx'
+import {
+  getStoredYouTubeSession,
+  clearStoredYouTubeSession,
+  getSavedYouTubeAccounts,
+  switchActiveYouTubeAccount,
+  type YouTubeAccountSession,
+} from '../services/innertube/accountAuthService.ts'
 import {
   getSpotifyTasteProfile,
   setSpotifyBridgeEnabled,
@@ -179,6 +187,13 @@ export function SettingsPage() {
   const [checkingForUpdates, setCheckingForUpdates] = useState(false)
   const [isSpotifyModalOpen, setIsSpotifyModalOpen] = useState(false)
   const [spotifyProfile, setSpotifyProfile] = useState<SpotifyTasteProfile | null>(null)
+  const [ytmSession, setYtmSession] = useState<YouTubeAccountSession | null>(() =>
+    getStoredYouTubeSession(),
+  )
+  const [savedYtmAccounts, setSavedYtmAccounts] = useState<YouTubeAccountSession[]>(() =>
+    getSavedYouTubeAccounts(),
+  )
+  const [isYtmModalOpen, setIsYtmModalOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -1344,6 +1359,72 @@ export function SettingsPage() {
               />
             )}
 
+            {/* YouTube Music Account */}
+            <div className="setting-row">
+              <span>
+                <strong>YouTube Music Account</strong>
+                <small>
+                  {ytmSession
+                    ? `Connected as ${ytmSession.accountInfo.name} (${ytmSession.accountInfo.channelHandle || ytmSession.accountInfo.email || 'authenticated'}).`
+                    : 'Connect your YouTube Music account session to synchronize playlists, liked albums, and library items.'}
+                </small>
+              </span>
+              <div className="flex items-center gap-2">
+                {ytmSession ? (
+                  <>
+                    {savedYtmAccounts.length > 1 && (
+                      <select
+                        aria-label="Switch YouTube Music Account"
+                        className="settings-select text-xs py-1 px-2"
+                        value={ytmSession.accountInfo.email || ytmSession.accountInfo.name}
+                        onChange={(e) => {
+                          switchActiveYouTubeAccount(e.target.value)
+                          setYtmSession(getStoredYouTubeSession())
+                          notify(`Switched account to ${e.target.value}`)
+                        }}
+                      >
+                        {savedYtmAccounts.map((acc) => (
+                          <option
+                            key={acc.accountInfo.email || acc.accountInfo.name}
+                            value={acc.accountInfo.email || acc.accountInfo.name}
+                          >
+                            {acc.accountInfo.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      className="button button--quiet min-h-[44px]"
+                      onClick={() => setIsYtmModalOpen(true)}
+                    >
+                      Add/Update
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--danger min-h-[44px]"
+                      onClick={() => {
+                        clearStoredYouTubeSession()
+                        setYtmSession(null)
+                        setSavedYtmAccounts(getSavedYouTubeAccounts())
+                        notify('YouTube Music account disconnected')
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="button button--primary min-h-[44px]"
+                    onClick={() => setIsYtmModalOpen(true)}
+                  >
+                    Connect Account
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Spotify Recommendation Bridge */}
             <div className="setting-row">
               <span>
@@ -2151,6 +2232,16 @@ export function SettingsPage() {
       <SpotifyImportModal
         isOpen={isSpotifyModalOpen}
         onClose={() => setIsSpotifyModalOpen(false)}
+      />
+
+      <YouTubeAccountModal
+        isOpen={isYtmModalOpen}
+        onClose={() => setIsYtmModalOpen(false)}
+        onSuccess={(info) => {
+          setYtmSession(getStoredYouTubeSession())
+          setSavedYtmAccounts(getSavedYouTubeAccounts())
+          notify(`Connected as ${info.name}!`)
+        }}
       />
     </div>
   )
