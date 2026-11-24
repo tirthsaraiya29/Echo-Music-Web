@@ -941,6 +941,19 @@ export function SettingsPage() {
                 if (val) castService.init()
               }}
             />
+
+            <div className="setting-row">
+              <span>
+                <strong>Echo Find audio recognition</strong>
+                <small>
+                  Microphone-based music identification service for background audio. External live
+                  matching requires RECOGNITION_PROVIDER_URL.
+                </small>
+              </span>
+              <span className="rounded bg-white/6 px-2.5 py-1 text-[11px] font-semibold text-[#b09cff]">
+                Configurable Gateway
+              </span>
+            </div>
           </section>
         )}
 

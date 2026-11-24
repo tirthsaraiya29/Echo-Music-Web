@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Mic, RotateCcw, X, Volume2 } from 'lucide-react'
+import { Mic, RotateCcw, X, Volume2, Play, Music, AlertCircle } from 'lucide-react'
 import { echoFind, type RecognitionResult } from '../../services/recognition/echoFindService'
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap'
+import { useEchoStore } from '../../stores/useEchoStore'
+import type { Track } from '../../types/domain'
 
 interface EchoFindModalProps {
   isOpen: boolean
@@ -12,12 +14,20 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
   const [isListening, setIsListening] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [guidance, setGuidance] = useState<string | null>(null)
+  const [isConfigured, setIsConfigured] = useState(true)
+  const [matchedTrack, setMatchedTrack] = useState<Track | null>(null)
+  const [confidence, setConfidence] = useState<number | null>(null)
+
   const isMounted = useRef(true)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalFocusTrap(dialogRef, onClose, isOpen)
 
   const handleStartListening = async () => {
     setErrorMsg(null)
+    setGuidance(null)
+    setMatchedTrack(null)
+    setConfidence(null)
     setIsListening(true)
     setAudioLevel(0)
 
@@ -30,8 +40,17 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
 
       if (isMounted.current) {
         setIsListening(false)
-        if (!res.matched) {
+        if (res.matched && res.track) {
+          setMatchedTrack(res.track)
+          setConfidence(res.confidence ?? 95)
+          setErrorMsg(null)
+          setGuidance(null)
+        } else {
+          setMatchedTrack(null)
+          setConfidence(null)
+          setIsConfigured(res.configured !== false)
           setErrorMsg(res.message || 'No matching music found.')
+          setGuidance(res.guidance || null)
         }
       }
     } catch (err) {
@@ -42,10 +61,20 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
     }
   }
 
+  const handlePlayMatched = () => {
+    if (matchedTrack) {
+      useEchoStore.getState().playQueue([matchedTrack], 0)
+      handleClose()
+    }
+  }
+
   const handleClose = () => {
     echoFind.stopListening()
     setIsListening(false)
     setErrorMsg(null)
+    setGuidance(null)
+    setMatchedTrack(null)
+    setConfidence(null)
     setAudioLevel(0)
     onClose()
   }
@@ -108,12 +137,18 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
           </div>
 
           <h2 className="mb-1 text-xl font-bold text-white">
-            {isListening ? 'Listening to audio...' : 'Music Recognition'}
+            {isListening
+              ? 'Listening to audio...'
+              : matchedTrack
+                ? 'Track Identified'
+                : 'Music Recognition'}
           </h2>
-          <p className="mb-8 max-w-xs text-xs text-[#a59fad]">
+          <p className="mb-6 max-w-xs text-xs text-[#a59fad]">
             {isListening
               ? 'Keep your device close to the audio source while Echo records a sample.'
-              : errorMsg || 'Identify any song playing in your room or background.'}
+              : matchedTrack
+                ? `Matched with ${confidence}% confidence.`
+                : errorMsg || 'Identify any song playing in your room or background.'}
           </p>
 
           {/* Radar Animation Stage */}
@@ -133,8 +168,52 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
             </div>
           )}
 
-          {/* Error / No Match Notice */}
-          {!isListening && errorMsg && (
+          {/* Matched Track Stage */}
+          {!isListening && matchedTrack && (
+            <div className="mb-6 flex w-full items-center gap-4 rounded-xl border border-[#7c5cff]/30 bg-[#7c5cff]/10 p-4 text-left">
+              {matchedTrack.artwork ? (
+                <img
+                  src={matchedTrack.artwork}
+                  alt={matchedTrack.title}
+                  className="h-16 w-16 rounded-lg object-cover shadow-md"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-[#7c5cff]/20 text-[#b09cff]">
+                  <Music size={28} />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <strong className="block truncate text-sm text-white">{matchedTrack.title}</strong>
+                <span className="block truncate text-xs text-[#a59fad]">
+                  {matchedTrack.artistName}
+                </span>
+                {matchedTrack.albumTitle && (
+                  <span className="block truncate text-[11px] text-[#a59fad]/70">
+                    {matchedTrack.albumTitle}
+                  </span>
+                )}
+                {confidence !== null && (
+                  <span className="mt-1 inline-block rounded bg-[#7c5cff]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[#b09cff]">
+                    {confidence}% Match
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Unconfigured Guidance Notice */}
+          {!isListening && !matchedTrack && !isConfigured && guidance && (
+            <div className="mb-6 w-full rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-left text-xs text-amber-300">
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertCircle size={15} />
+                <span>Recognition Service Unconfigured</span>
+              </div>
+              <p className="mt-1 text-amber-200/80">{guidance}</p>
+            </div>
+          )}
+
+          {/* Error Notice */}
+          {!isListening && !matchedTrack && isConfigured && errorMsg && (
             <div className="mb-6 w-full rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-left text-xs text-red-300">
               <p>{errorMsg}</p>
             </div>
@@ -153,6 +232,26 @@ export function EchoFindModal({ isOpen, onClose }: EchoFindModalProps) {
               >
                 Cancel
               </button>
+            ) : matchedTrack ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePlayMatched}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#7c5cff] px-5 py-2.5 text-xs font-semibold text-black shadow-md transition-all hover:bg-[#6c48ff]"
+                >
+                  <Play size={15} />
+                  <span>Play Track</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartListening}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-white/8 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/12"
+                  title="Listen again"
+                >
+                  <RotateCcw size={15} />
+                  <span>Try Again</span>
+                </button>
+              </>
             ) : (
               <button
                 type="button"

@@ -2,9 +2,11 @@ import type { Track } from '../../types/domain'
 
 export interface RecognitionResult {
   matched: boolean
-  confidence?: number
-  track?: Track
-  message?: string
+  configured?: boolean | undefined
+  confidence?: number | undefined
+  track?: Track | undefined
+  message?: string | undefined
+  guidance?: string | undefined
 }
 
 export class EchoFindService {
@@ -145,6 +147,22 @@ export class EchoFindService {
     }
 
     this.analyser = null
+  }
+
+  public async checkStatus(): Promise<{ configured: boolean; provider: string; guidance: string }> {
+    try {
+      const res = await fetch('/api/recognition/status')
+      if (res.ok) {
+        return (await res.json()) as { configured: boolean; provider: string; guidance: string }
+      }
+    } catch {
+      // Non-fatal
+    }
+    return {
+      configured: false,
+      provider: 'None',
+      guidance: 'Set RECOGNITION_PROVIDER_URL in server environment variables to connect ACRCloud or Shazam.',
+    }
   }
 }
 
