@@ -13,6 +13,7 @@ import {
   Trash2,
   Share2,
   FileDown,
+  Disc3,
 } from 'lucide-react'
 import type { Playlist, Track } from '../types/domain.ts'
 import { useAlbum } from '../hooks/useAlbum.ts'
@@ -651,6 +652,12 @@ export function AlbumPage() {
         />
       </div>
       <TrackList items={albumTracks} />
+      {albumTracks.length === 0 && (
+        <div className="empty-state py-8 text-center text-xs text-[#a59fad]" role="status">
+          <Disc3 className="mx-auto mb-2 text-[#b09cff]" size={28} />
+          <p>No tracks available for this release.</p>
+        </div>
+      )}
     </div>
   )
 }
