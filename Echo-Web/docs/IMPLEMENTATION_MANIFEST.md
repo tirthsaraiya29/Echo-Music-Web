@@ -180,7 +180,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | FEATURE-058 | Lyrics export with metadata | Completed | 55b3b5cb | Yes |
 | FEATURE-059 | Lyrics download | Completed | 40964af0 | Standardized local lyrics file export & download (.lrc, .ttml, .json, .txt), filename sanitization, Blob trigger, and metrics |
 | FEATURE-060 | Lyrics sync profiles | Completed | ebf4a0ae | Multi-layer lyrics sync profiles (Default, Bluetooth, Cast), provider calibration, Dexie storage, and calibration modal |
-| FEATURE-061 | Default Echo Find provider | Pending | - | - |
+| FEATURE-061 | Default Echo Find provider | Completed | a494631c | Built-in default Shazam recognition provider, status reporting, active engine badge, and metrics |
 | FEATURE-062 | Recognition history | Pending | - | - |
 | FEATURE-063 | Recognition confidence UI | Pending | - | - |
 | FEATURE-064 | Music DNA expansion | Pending | - | - |
