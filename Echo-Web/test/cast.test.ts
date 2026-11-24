@@ -129,3 +129,67 @@ test('Cast Service: creates MediaInfo with dynamic MIME type when casting [BUG-1
     ;(globalThis as unknown as { window: unknown }).window = originalWindow
   }
 })
+
+test('Cast Service: requestSession waits for SDK readiness instead of failing immediately [BUG-30]', async () => {
+  const originalWindow = globalThis.window
+  let sessionRequested = false
+
+  // Simulate environment where Cast SDK is not initially loaded
+  const mockWindow: Record<string, unknown> = {
+    location: { origin: 'http://localhost:5173' },
+  }
+  ;(globalThis as unknown as { window: unknown }).window = mockWindow
+
+  // Reset internal castService state for testing
+  const cast = castService as unknown as {
+    isLoaded: boolean
+    isConnected: boolean
+    readyPromise: Promise<boolean> | null
+    readyResolvers: Array<(ready: boolean) => void>
+  }
+  cast.isLoaded = false
+  cast.isConnected = false
+  cast.readyPromise = null
+  cast.readyResolvers = []
+
+  assert.strictEqual(castService.isSdkReady(), false)
+
+  // Start requesting session in the background
+  const sessionPromise = castService.requestSession(2000)
+
+  // Simulate Cast framework arriving asynchronously via __onGCastApiAvailable
+  mockWindow.cast = {
+    framework: {
+      CastContext: {
+        getInstance: () => ({
+          setOptions: () => {},
+          addEventListener: () => {},
+          requestSession: async () => {
+            sessionRequested = true
+            return {}
+          },
+          endCurrentSession: async () => {},
+        }),
+      },
+      CastState: { CONNECTED: 'CONNECTED' },
+      CastContextEventType: { CAST_STATE_CHANGED: 'CAST_STATE_CHANGED' },
+    },
+  }
+
+  // Trigger global SDK callback
+  const onAvailable = mockWindow.__onGCastApiAvailable as ((available: boolean) => void) | undefined
+  assert.ok(typeof onAvailable === 'function', '__onGCastApiAvailable callback should be registered')
+  onAvailable(true)
+
+  const success = await sessionPromise
+  assert.strictEqual(success, true)
+  assert.strictEqual(sessionRequested, true)
+  assert.strictEqual(castService.isSdkReady(), true)
+  assert.strictEqual(castService.getIsConnected(), true)
+
+  // Disconnect should end session and update state
+  await castService.disconnect()
+  assert.strictEqual(castService.getIsConnected(), false)
+
+  ;(globalThis as unknown as { window: unknown }).window = originalWindow
+})

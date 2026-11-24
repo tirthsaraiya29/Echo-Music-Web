@@ -12,6 +12,7 @@ declare global {
               autoJoinPolicy: unknown
             }) => void
             requestSession: () => Promise<unknown>
+            endCurrentSession: (stopCasting: boolean) => Promise<unknown>
             getCastState: () => string
             getCurrentSession: () => {
               getSessionObj: () => unknown
@@ -79,10 +80,12 @@ declare global {
 
 class GoogleCastService {
   private static instance: GoogleCastService | null = null
-  private initialized = false
   private isLoaded = false
   private isConnected = false
   private listeners = new Set<(connected: boolean) => void>()
+  private readyListeners = new Set<(ready: boolean) => void>()
+  private readyPromise: Promise<boolean> | null = null
+  private readyResolvers: Array<(ready: boolean) => void> = []
 
   public static getInstance(): GoogleCastService {
     if (!GoogleCastService.instance) {
@@ -91,39 +94,97 @@ class GoogleCastService {
     return GoogleCastService.instance
   }
 
-  public init(): void {
-    if (this.initialized || typeof window === 'undefined') return
-    this.initialized = true
+  public isSdkReady(): boolean {
+    return Boolean(this.isLoaded && window.cast?.framework)
+  }
 
-    window.__onGCastApiAvailable = (isAvailable: boolean) => {
-      if (isAvailable && window.cast?.framework) {
+  public subscribeReady(listener: (ready: boolean) => void): () => void {
+    this.readyListeners.add(listener)
+    listener(this.isSdkReady())
+    return () => this.readyListeners.delete(listener)
+  }
+
+  public init(): Promise<boolean> {
+    if (typeof window === 'undefined') return Promise.resolve(false)
+
+    if (this.isLoaded && window.cast?.framework) {
+      return Promise.resolve(true)
+    }
+
+    if (this.readyPromise) {
+      return this.readyPromise
+    }
+
+    this.readyPromise = new Promise<boolean>((resolve) => {
+      this.readyResolvers.push(resolve)
+
+      if (window.cast?.framework) {
         this.isLoaded = true
-        try {
-          const context = window.cast.framework.CastContext.getInstance()
-          context.setOptions({
-            receiverApplicationId: 'CC1AD845', // Default Media Receiver
-            autoJoinPolicy: window.chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
-          })
+        this.setupCastContext()
+        this.resolveReady(true)
+        return
+      }
 
-          context.addEventListener(
-            window.cast.framework.CastContextEventType.CAST_STATE_CHANGED,
-            (event) => {
-              const connected = event.castState === window.cast?.framework.CastState.CONNECTED
-              this.isConnected = connected
-              this.listeners.forEach((l) => l(connected))
-            },
-          )
+      const prevCallback = window.__onGCastApiAvailable
+      window.__onGCastApiAvailable = (isAvailable: boolean) => {
+        try {
+          prevCallback?.(isAvailable)
         } catch {
           // Ignore
         }
+        if (isAvailable && window.cast?.framework) {
+          this.isLoaded = true
+          this.setupCastContext()
+          this.resolveReady(true)
+        } else {
+          this.resolveReady(false)
+        }
       }
-    }
 
-    // Lazy load the cast sender framework
-    const script = document.createElement('script')
-    script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
-    script.async = true
-    document.head.appendChild(script)
+      if (typeof document !== 'undefined') {
+        const existingScript = document.querySelector('script[src*="cast_sender.js"]')
+        if (!existingScript) {
+          const script = document.createElement('script')
+          script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
+          script.async = true
+          script.onerror = () => {
+            this.resolveReady(false)
+          }
+          document.head.appendChild(script)
+        }
+      }
+    })
+
+    return this.readyPromise
+  }
+
+  private resolveReady(ready: boolean): void {
+    const resolvers = [...this.readyResolvers]
+    this.readyResolvers = []
+    resolvers.forEach((r) => r(ready))
+    this.readyListeners.forEach((l) => l(ready))
+  }
+
+  private setupCastContext(): void {
+    if (!window.cast?.framework) return
+    try {
+      const context = window.cast.framework.CastContext.getInstance()
+      context.setOptions({
+        receiverApplicationId: 'CC1AD845', // Default Media Receiver
+        autoJoinPolicy: window.chrome?.cast?.AutoJoinPolicy?.ORIGIN_SCOPED,
+      })
+
+      context.addEventListener(
+        window.cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+        (event) => {
+          const connected = event.castState === window.cast?.framework.CastState.CONNECTED
+          this.isConnected = connected
+          this.listeners.forEach((l) => l(connected))
+        },
+      )
+    } catch {
+      // Ignore
+    }
   }
 
   public subscribe(listener: (connected: boolean) => void): () => void {
@@ -136,9 +197,29 @@ class GoogleCastService {
     return this.isConnected
   }
 
-  public async requestSession(): Promise<boolean> {
-    if (typeof window === 'undefined' || !this.isLoaded || !window.cast?.framework) {
-      this.init()
+  public async ensureReady(timeoutMs = 6000): Promise<boolean> {
+    if (this.isSdkReady()) return true
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs)
+    })
+
+    const readyPromise = this.init().then((val) => {
+      if (timer) clearTimeout(timer)
+      return val
+    })
+
+    return Promise.race([readyPromise, timeoutPromise])
+  }
+
+  public async requestSession(timeoutMs = 8000): Promise<boolean> {
+    if (typeof window === 'undefined') {
+      return false
+    }
+
+    const ready = await this.ensureReady(timeoutMs)
+    if (!ready || !window.cast?.framework) {
       return false
     }
 
@@ -146,10 +227,25 @@ class GoogleCastService {
       const context = window.cast.framework.CastContext.getInstance()
       await context.requestSession()
       this.isConnected = true
+      this.listeners.forEach((l) => l(true))
       return true
     } catch {
       return false
     }
+  }
+
+  public async disconnect(): Promise<void> {
+    if (typeof window === 'undefined') return
+    try {
+      const context = window.cast?.framework?.CastContext?.getInstance?.()
+      if (context) {
+        await context.endCurrentSession(true)
+      }
+    } catch {
+      // Ignore
+    }
+    this.isConnected = false
+    this.listeners.forEach((l) => l(false))
   }
 
   public inferMimeType(url: string): string {

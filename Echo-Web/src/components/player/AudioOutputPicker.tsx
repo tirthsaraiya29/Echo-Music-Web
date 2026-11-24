@@ -24,17 +24,32 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
   const [hasPermission, setHasPermission] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSwitching, setIsSwitching] = useState(false)
+  const [isCastLoading, setIsCastLoading] = useState(false)
   const [isCastConnected, setIsCastConnected] = useState(() => castService.getIsConnected())
+  const [isSdkReady, setIsSdkReady] = useState(() => castService.isSdkReady())
   const isCastEnabled = useEchoStore((state) => state.preferences.googleCast)
 
   const isRoutingSupported =
     typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 
   useEffect(() => {
-    return castService.subscribe((connected) => {
+    const unsubConnected = castService.subscribe((connected) => {
       setIsCastConnected(connected)
     })
+    const unsubReady = castService.subscribeReady((ready) => {
+      setIsSdkReady(ready)
+    })
+    return () => {
+      unsubConnected()
+      unsubReady()
+    }
   }, [])
+
+  useEffect(() => {
+    if (isOpen && isCastEnabled && !castService.isSdkReady()) {
+      void castService.init()
+    }
+  }, [isOpen, isCastEnabled])
 
   useEffect(() => {
     if (!isOpen) return
@@ -112,6 +127,32 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
     }
   }
 
+  const handleCastClick = async () => {
+    if (isCastConnected) {
+      await castService.disconnect()
+      return
+    }
+
+    setIsCastLoading(true)
+    setErrorMessage(null)
+
+    try {
+      const success = await castService.requestSession()
+      if (success) {
+        handleClose()
+      } else {
+        // Keep picker open and inform user of failure instead of silent drop
+        setErrorMessage(
+          'Could not connect to Google Cast. Please ensure a Cast receiver is turned on and connected to the same network.',
+        )
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Error requesting Cast session')
+    } finally {
+      setIsCastLoading(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -160,22 +201,34 @@ export function AudioOutputPicker({ isOpen, onClose }: AudioOutputPickerProps) {
             {isCastEnabled && (
               <button
                 type="button"
-                onClick={async () => {
-                  await castService.requestSession()
-                  handleClose()
-                }}
+                disabled={isCastLoading}
+                onClick={() => void handleCastClick()}
                 className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${
                   isCastConnected
                     ? 'border border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#b09cff]'
                     : 'text-white hover:bg-white/6'
-                }`}
+                } ${isCastLoading ? 'opacity-70 cursor-wait' : ''}`}
               >
                 <span className="flex items-center gap-2.5 truncate pr-2">
                   <Cast
                     size={15}
-                    className={isCastConnected ? 'text-[#7c5cff]' : 'text-[#a59fad]'}
+                    className={
+                      isCastConnected
+                        ? 'text-[#7c5cff]'
+                        : isCastLoading
+                          ? 'animate-pulse text-[#b09cff]'
+                          : 'text-[#a59fad]'
+                    }
                   />
-                  <span className="truncate">Google Cast Receiver</span>
+                  <span className="truncate">
+                    {isCastLoading
+                      ? isSdkReady
+                        ? 'Connecting to Cast...'
+                        : 'Loading Cast SDK...'
+                      : isCastConnected
+                        ? 'Google Cast Receiver (Connected)'
+                        : 'Google Cast Receiver'}
+                  </span>
                 </span>
                 {isCastConnected && (
                   <Check size={14} className="shrink-0 text-[#7c5cff]" />
