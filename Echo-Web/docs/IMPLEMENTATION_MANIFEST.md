@@ -114,7 +114,7 @@ This manifest records the status, commit SHA, and verification for every phase o
 | SMALL-49 | Production deployment | 10 tasks in backlog | Completed | e024f14e | Yes (verified on origin/main) |
 | SMALL-50 | CORS and HTTP headers | 10 tasks in backlog | Completed | 818718a8 | Yes (verified on origin/main) |
 | SMALL-51 | Error handling and observability | 10 tasks in backlog | Completed | 91b49c2e | Yes (verified on origin/main) |
-| SMALL-52 | CI and automated tests | 10 tasks in backlog | Pending | - | - |
+| SMALL-52 | CI and automated tests | 10 tasks in backlog | Completed | f87c95e9 | Yes (verified on origin/main) |
 
 ## Phase 3: Major Upstream Features (FEATURE-001 to FEATURE-109)
 
