@@ -9,6 +9,14 @@ import { KuGouProvider } from './KuGouProvider.ts'
 // Prune target for the persistent cache; in-memory cache stays LRU-bounded separately.
 const PERSISTENT_CACHE_MAX = 300
 
+export type LyricsProviderKey = 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU'
+
+export const PROVIDER_CASCADE: Record<LyricsProviderKey, LyricsProviderKey[]> = {
+  LRCLIB: ['LRCLIB', 'BETTER_LYRICS', 'KUGOU'],
+  BETTER_LYRICS: ['BETTER_LYRICS', 'LRCLIB', 'KUGOU'],
+  KUGOU: ['KUGOU', 'LRCLIB', 'BETTER_LYRICS'],
+}
+
 export class LyricsOrchestrator {
   private static instance: LyricsOrchestrator | null = null
   private currentAbortController: AbortController | null = null
@@ -21,6 +29,21 @@ export class LyricsOrchestrator {
       LyricsOrchestrator.instance = new LyricsOrchestrator()
     }
     return LyricsOrchestrator.instance
+  }
+
+  public getProviderCascade(
+    preferred: string = useEchoStore.getState().preferences.preferredLyricsProvider || 'LRCLIB',
+  ): LyricsProviderKey[] {
+    return PROVIDER_CASCADE[preferred as LyricsProviderKey] || PROVIDER_CASCADE.LRCLIB
+  }
+
+  public buildCacheKey(
+    track: Track,
+    preferred: string = useEchoStore.getState().preferences.preferredLyricsProvider || 'LRCLIB',
+    romanize: boolean = Boolean(useEchoStore.getState().preferences.romanizeLyrics),
+  ): string {
+    const trackKey = track.id || track.videoId || ''
+    return `${trackKey}:${track.title}:${track.artistName}:${preferred}:${romanize ? 'rom' : 'orig'}`
   }
 
   private cleanTitle(title: string): string {
@@ -50,16 +73,20 @@ export class LyricsOrchestrator {
     track: Track,
     externalSignal?: AbortSignal,
   ): Promise<SynchronizedLyrics | null> {
-    const cacheKey = `${track.id || track.videoId || ''}:${track.title}:${track.artistName}`
+    const prefs = useEchoStore.getState().preferences
+    const preferred = prefs.preferredLyricsProvider || 'LRCLIB'
+    const preferRomanized = Boolean(prefs.romanizeLyrics)
+
+    const cacheKey = this.buildCacheKey(track, preferred, preferRomanized)
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey) ?? null
     }
 
     // Persistent cache first, so a reload or offline session still gets lyrics.
     const trackId = track.videoId || track.id
-    if (trackId) {
+    if (trackId && typeof indexedDB !== 'undefined') {
       const stored = await db.cachedLyrics.get(trackId)
-      if (stored) {
+      if (stored && stored.query === cacheKey) {
         this.cache.set(cacheKey, stored.lyrics)
         this.pruneMemoryCache()
         return stored.lyrics
@@ -93,42 +120,44 @@ export class LyricsOrchestrator {
     let lyrics: SynchronizedLyrics | null = null
 
     try {
-      // 1. BetterLyrics (Word-by-word TTML karaoke)
-      if (!signal.aborted) {
-        lyrics = await BetterLyricsProvider.fetchLyrics(
-          cleanTitle,
-          cleanArtist,
-          album,
-          durationSeconds,
-          signal,
-        )
+      const cascade = this.getProviderCascade(preferred)
+
+      for (const provider of cascade) {
+        if (lyrics || signal.aborted) break
+
+        switch (provider) {
+          case 'BETTER_LYRICS':
+            lyrics = await BetterLyricsProvider.fetchLyrics(
+              cleanTitle,
+              cleanArtist,
+              album,
+              durationSeconds,
+              signal,
+            )
+            break
+          case 'LRCLIB':
+            lyrics = await LRCLIBProvider.fetchLyrics(
+              cleanTitle,
+              cleanArtist,
+              album,
+              durationSeconds,
+              signal,
+              preferRomanized,
+            )
+            break
+          case 'KUGOU':
+            lyrics = await KuGouProvider.fetchLyrics(
+              cleanTitle,
+              cleanArtist,
+              album,
+              durationSeconds,
+              signal,
+            )
+            break
+        }
       }
 
-      // 2. LRCLIB (Precise LRC line synchronization)
-      if (!lyrics && !signal.aborted) {
-        const preferRomanized = Boolean(useEchoStore.getState().preferences.romanizeLyrics)
-        lyrics = await LRCLIBProvider.fetchLyrics(
-          cleanTitle,
-          cleanArtist,
-          album,
-          durationSeconds,
-          signal,
-          preferRomanized,
-        )
-      }
-
-      // 3. KuGou (KRC / LRC proxy with XOR decryption)
-      if (!lyrics && !signal.aborted) {
-        lyrics = await KuGouProvider.fetchLyrics(
-          cleanTitle,
-          cleanArtist,
-          album,
-          durationSeconds,
-          signal,
-        )
-      }
-
-      // 4. YouTube Captions Fallback
+      // Fallback to YouTube Captions
       if (!lyrics && !signal.aborted && (track.videoId || track.id)) {
         lyrics = await this.fetchYouTubeCaptions(track.videoId || track.id, signal)
       }
@@ -184,6 +213,7 @@ export class LyricsOrchestrator {
     query: string,
     lyrics: SynchronizedLyrics,
   ): Promise<void> {
+    if (typeof indexedDB === 'undefined') return
     try {
       await db.cachedLyrics.put({
         trackId,
