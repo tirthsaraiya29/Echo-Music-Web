@@ -377,10 +377,23 @@ export class QueueManager {
   }
 
   public addRadioTracks(tracks: Track[]): void {
+    const existingIds = new Set<string>()
+    if (this.activeTrack) existingIds.add(this.activeTrack.id)
+    for (const t of this.upNextList) existingIds.add(t.id)
+    for (const t of this.sourceQueueList) existingIds.add(t.id)
+    for (const t of this.radioQueueList) existingIds.add(t.id)
+
     const valid = tracks.filter((t) => {
       const ok = isValidTrack(t)
-      if (!ok) this.metrics.invalidDropsCount++
-      return ok
+      if (!ok) {
+        this.metrics.invalidDropsCount++
+        return false
+      }
+      if (existingIds.has(t.id)) {
+        return false
+      }
+      existingIds.add(t.id)
+      return true
     })
     this.radioQueueList.push(...valid.map(cloneTrack))
     this.metrics.mutationsCount++

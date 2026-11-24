@@ -80,6 +80,8 @@ export class AudioEngine {
   private static readonly STREAM_CACHE_MAX = 200
   private objectUrls = new Set<string>()
   private isFetchingRadioContinuation = false
+  private radioAbortController: AbortController | null = null
+  private inFlightRadioVideoId: string | null = null
   private currentLoadRequestId = 0
 
   private userInteractionCleanup: (() => void) | null = null
@@ -633,6 +635,13 @@ export class AudioEngine {
       this.userInteractionCleanup = null
     }
 
+    if (this.radioAbortController) {
+      this.radioAbortController.abort()
+      this.radioAbortController = null
+    }
+    this.isFetchingRadioContinuation = false
+    this.inFlightRadioVideoId = null
+
     this.sponsorBlock.destroy()
     this.mediaSession.destroy()
     this.deckController.destroy()
@@ -1149,8 +1158,19 @@ export class AudioEngine {
   }
 
   private async fetchRadioContinuation(videoId: string): Promise<void> {
-    if (this.isFetchingRadioContinuation || !videoId) return
+    if (this.isFetchingRadioContinuation && this.inFlightRadioVideoId === videoId) return
+    if (!videoId) return
+
+    // Cancel prior fetch if videoId changed
+    if (this.radioAbortController) {
+      this.radioAbortController.abort()
+      this.radioAbortController = null
+    }
+
+    const abortController = new AbortController()
+    this.radioAbortController = abortController
     this.isFetchingRadioContinuation = true
+    this.inFlightRadioVideoId = videoId
 
     try {
       const prefs = useEchoStore.getState().preferences
@@ -1158,6 +1178,7 @@ export class AudioEngine {
       const showExplicit = prefs.showExplicit ?? true
       const res = await fetch(
         `/api/radio/continuation?videoId=${encodeURIComponent(videoId)}&gl=${encodeURIComponent(region)}&explicit=${showExplicit}`,
+        { signal: abortController.signal },
       )
       if (res.ok) {
         const data = (await res.json()) as { tracks: Track[] }
@@ -1173,7 +1194,13 @@ export class AudioEngine {
     } catch {
       // Radio continuation fetch failures are non-fatal
     } finally {
-      this.isFetchingRadioContinuation = false
+      if (this.inFlightRadioVideoId === videoId) {
+        this.isFetchingRadioContinuation = false
+        this.inFlightRadioVideoId = null
+      }
+      if (this.radioAbortController === abortController) {
+        this.radioAbortController = null
+      }
     }
   }
 

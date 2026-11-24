@@ -1,25 +1,150 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import type { Track } from '../../src/types/audio.ts'
 import { buildClientContext, fetchVisitorData } from '../utils/potoken.ts'
 
 export const radioRouter = new Hono()
 
+export const radioContinuationQuerySchema = z
+  .object({
+    videoId: z.string().min(1).max(64).optional(),
+    continuation: z.string().min(1).max(1024).optional(),
+    gl: z.string().regex(/^[A-Za-z]{2}$/).default('US'),
+    hl: z.string().regex(/^[A-Za-z]{2}(-[A-Za-z]{2})?$/).default('en'),
+    explicit: z.enum(['true', 'false']).default('true'),
+  })
+  .refine((data) => Boolean(data.videoId || data.continuation), {
+    message: 'videoId or continuation parameter is required',
+  })
+
+export const radioResponseSchema = z.object({
+  tracks: z.array(z.record(z.string(), z.unknown())),
+  continuationToken: z.string().optional(),
+})
+
+export interface RadioMetrics {
+  requestsTotal: number
+  successTotal: number
+  failuresTotal: number
+  tracksFetched: number
+  continuationsUsed: number
+  inFlightDeduplicated: number
+  lastError: string | null
+}
+
+const radioMetrics: RadioMetrics = {
+  requestsTotal: 0,
+  successTotal: 0,
+  failuresTotal: 0,
+  tracksFetched: 0,
+  continuationsUsed: 0,
+  inFlightDeduplicated: 0,
+  lastError: null,
+}
+
+export function getRadioMetrics(): RadioMetrics {
+  return { ...radioMetrics }
+}
+
+export function resetRadioMetrics(): void {
+  radioMetrics.requestsTotal = 0
+  radioMetrics.successTotal = 0
+  radioMetrics.failuresTotal = 0
+  radioMetrics.tracksFetched = 0
+  radioMetrics.continuationsUsed = 0
+  radioMetrics.inFlightDeduplicated = 0
+  radioMetrics.lastError = null
+}
+
+const inFlightRadio = new Map<string, Promise<{ tracks: Track[]; continuationToken?: string }>>()
+
+export function resolveRadioContinuation(
+  videoId?: string,
+  continuationToken?: string,
+  gl = 'US',
+  hl = 'en',
+  explicitAllowed = true,
+  signal?: AbortSignal,
+): Promise<{ tracks: Track[]; continuationToken?: string }> {
+  const cacheKey = `${videoId || ''}:${continuationToken || ''}:${gl}:${hl}:${explicitAllowed}`
+  const existing = inFlightRadio.get(cacheKey)
+  if (existing) {
+    radioMetrics.inFlightDeduplicated++
+    return existing
+  }
+
+  const p = (async () => {
+    try {
+      const res = await fetchInnerTubeRadio(videoId, continuationToken, gl, hl, explicitAllowed, signal)
+      radioMetrics.successTotal++
+      radioMetrics.tracksFetched += res.tracks.length
+      if (continuationToken) radioMetrics.continuationsUsed++
+      return res
+    } catch (err) {
+      radioMetrics.failuresTotal++
+      radioMetrics.lastError = err instanceof Error ? err.message : String(err)
+      throw err
+    } finally {
+      inFlightRadio.delete(cacheKey)
+    }
+  })()
+
+  inFlightRadio.set(cacheKey, p)
+  return p
+}
+
 radioRouter.get('/continuation', async (c) => {
-  const videoId = c.req.query('videoId')
-  const continuationToken = c.req.query('continuation')
-  const gl = c.req.query('gl') || 'US'
-  const hl = c.req.query('hl') || 'en'
+  radioMetrics.requestsTotal++
+  const query = {
+    videoId: c.req.query('videoId'),
+    continuation: c.req.query('continuation'),
+    gl: c.req.query('gl') || 'US',
+    hl: c.req.query('hl') || 'en',
+    explicit: c.req.query('explicit') || 'true',
+  }
 
-  const explicitAllowed = c.req.query('explicit') !== 'false'
+  const parsedQuery = radioContinuationQuerySchema.safeParse(query)
+  if (!parsedQuery.success) {
+    return c.json(
+      {
+        error: 'Invalid radio continuation parameters',
+        issues: parsedQuery.error.issues,
+      },
+      400,
+    )
+  }
 
-  if (!videoId && !continuationToken) {
-    return c.json({ error: 'videoId or continuation parameter is required' }, 400)
+  const { videoId, continuation: continuationToken, gl, hl, explicit } = parsedQuery.data
+  const explicitAllowed = explicit !== 'false'
+
+  // Timeout controller with 10s timeout
+  const timeoutController = new AbortController()
+  const timer = setTimeout(() => timeoutController.abort(), 10000)
+
+  // Listen for client disconnect
+  const clientSignal = c.req.raw.signal
+  const abortListener = () => timeoutController.abort()
+  if (clientSignal) {
+    clientSignal.addEventListener('abort', abortListener, { once: true })
   }
 
   try {
-    const radioData = await fetchInnerTubeRadio(videoId, continuationToken, gl, hl, explicitAllowed)
+    const radioData = await resolveRadioContinuation(
+      videoId,
+      continuationToken,
+      gl,
+      hl,
+      explicitAllowed,
+      timeoutController.signal,
+    )
     return c.json(radioData)
   } catch (err: unknown) {
+    if (clientSignal?.aborted) {
+      return new Response(JSON.stringify({ error: 'Client aborted request' }), {
+        status: 499,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
     return c.json(
       {
         error: 'Failed to fetch radio continuation',
@@ -27,7 +152,16 @@ radioRouter.get('/continuation', async (c) => {
       },
       502,
     )
+  } finally {
+    clearTimeout(timer)
+    if (clientSignal) {
+      clientSignal.removeEventListener('abort', abortListener)
+    }
   }
+})
+
+radioRouter.get('/telemetry', (c) => {
+  return c.json(getRadioMetrics())
 })
 
 interface RunItem {
@@ -60,7 +194,12 @@ async function fetchInnerTubeRadio(
   gl = 'US',
   hl = 'en',
   explicitAllowed = true,
+  signal?: AbortSignal,
 ): Promise<{ tracks: Track[]; continuationToken?: string }> {
+  if (signal?.aborted) {
+    throw new Error('Radio request aborted')
+  }
+
   const visitorData = await fetchVisitorData()
   const context = buildClientContext('WEB_REMIX', visitorData, undefined, gl, hl)
 
@@ -76,7 +215,7 @@ async function fetchInnerTubeRadio(
     payload['isAudioOnly'] = true
   }
 
-  const res = await fetch('https://music.youtube.com/youtubei/v1/next', {
+  const fetchOptions: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -88,7 +227,12 @@ async function fetchInnerTubeRadio(
       'X-YouTube-Client-Version': '1.20240901.01.00',
     },
     body: JSON.stringify(payload),
-  })
+  }
+  if (signal) {
+    fetchOptions.signal = signal
+  }
+
+  const res = await fetch('https://music.youtube.com/youtubei/v1/next', fetchOptions)
 
   if (!res.ok) {
     throw new Error(`InnerTube next returned HTTP ${res.status}`)
@@ -216,19 +360,30 @@ function extractNextContinuationToken(data: Record<string, unknown>): string | u
   return undefined
 }
 
-function parseTimeStringToMs(timeStr?: string): number {
-  if (!timeStr) return 180000
-  const parts = timeStr.split(':').map((p) => Number.parseInt(p, 10))
-  if (parts.length === 2) {
+export function parseTimeStringToMs(timeStr?: string, fallback = 180000): number {
+  const safeFallback = Math.max(0, Math.min(86400000, Number.isFinite(fallback) ? Math.round(fallback) : 180000))
+  if (!timeStr || typeof timeStr !== 'string') return safeFallback
+
+  const trimmed = timeStr.trim()
+  if (!trimmed) return safeFallback
+
+  const parts = trimmed.split(':').map((p) => Number.parseInt(p, 10))
+  if (parts.some((n) => Number.isNaN(n) || n < 0)) return safeFallback
+
+  let ms = safeFallback
+  if (parts.length === 1) {
+    ms = (parts[0] ?? 180) * 1000
+  } else if (parts.length === 2) {
     const mins = parts[0] ?? 0
     const secs = parts[1] ?? 0
-    return (mins * 60 + secs) * 1000
-  }
-  if (parts.length === 3) {
+    ms = (mins * 60 + secs) * 1000
+  } else if (parts.length === 3) {
     const hrs = parts[0] ?? 0
     const mins = parts[1] ?? 0
     const secs = parts[2] ?? 0
-    return (hrs * 3600 + mins * 60 + secs) * 1000
+    ms = (hrs * 3600 + mins * 60 + secs) * 1000
   }
-  return 180000
+
+  if (ms < 0 || ms > 86400000) return safeFallback
+  return ms
 }
