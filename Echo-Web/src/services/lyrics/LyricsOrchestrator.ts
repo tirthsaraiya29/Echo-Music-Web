@@ -21,6 +21,7 @@ import { useEchoStore } from '../../stores/useEchoStore.ts'
 import { BetterLyricsProvider } from './BetterLyricsProvider.ts'
 import { LRCLIBProvider } from './LRCLIBProvider.ts'
 import { KuGouProvider } from './KuGouProvider.ts'
+import { LyricsPlusProvider } from './LyricsPlusProvider.ts'
 
 // --- Runtime Schemas ---
 
@@ -56,7 +57,7 @@ export const lyricLineSchema = z.object({
 })
 
 export const synchronizedLyricsSchema = z.object({
-  provider: z.enum(['BETTER_LYRICS', 'LRCLIB', 'KUGOU', 'YOUTUBE']),
+  provider: z.enum(['BETTER_LYRICS', 'LRCLIB', 'KUGOU', 'YOUTUBE', 'LYRICS_PLUS']),
   isSynced: z.boolean(),
   isWordSynced: z.boolean(),
   lines: z.array(lyricLineSchema),
@@ -80,6 +81,7 @@ export const lyricsOrchestratorMetricsSchema = z.object({
     LRCLIB: z.number().int().nonnegative(),
     KUGOU: z.number().int().nonnegative(),
     YOUTUBE: z.number().int().nonnegative(),
+    LYRICS_PLUS: z.number().int().nonnegative().optional(),
   }),
   coalescedRequests: z.number().int().nonnegative(),
   failuresByReason: z.record(z.string(), z.number().int().nonnegative()),
@@ -98,12 +100,13 @@ export type LyricsStatus =
   | 'offline'
   | 'error'
 
-export type LyricsProviderKey = 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU'
+export type LyricsProviderKey = 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | 'LYRICS_PLUS'
 
 export const PROVIDER_CASCADE: Record<LyricsProviderKey, LyricsProviderKey[]> = {
-  LRCLIB: ['LRCLIB', 'BETTER_LYRICS', 'KUGOU'],
-  BETTER_LYRICS: ['BETTER_LYRICS', 'LRCLIB', 'KUGOU'],
-  KUGOU: ['KUGOU', 'LRCLIB', 'BETTER_LYRICS'],
+  LRCLIB: ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU'],
+  LYRICS_PLUS: ['LYRICS_PLUS', 'LRCLIB', 'BETTER_LYRICS', 'KUGOU'],
+  BETTER_LYRICS: ['BETTER_LYRICS', 'LYRICS_PLUS', 'LRCLIB', 'KUGOU'],
+  KUGOU: ['KUGOU', 'LYRICS_PLUS', 'LRCLIB', 'BETTER_LYRICS'],
 }
 
 export interface LyricsCacheEntry {
@@ -123,6 +126,7 @@ let orchestratorMetrics: LyricsOrchestratorMetrics = {
     LRCLIB: 0,
     KUGOU: 0,
     YOUTUBE: 0,
+    LYRICS_PLUS: 0,
   },
   coalescedRequests: 0,
   failuresByReason: {},
@@ -149,6 +153,7 @@ export function resetLyricsOrchestratorMetrics(): void {
       LRCLIB: 0,
       KUGOU: 0,
       YOUTUBE: 0,
+      LYRICS_PLUS: 0,
     },
     coalescedRequests: 0,
     failuresByReason: {},
@@ -375,6 +380,21 @@ export class LyricsOrchestrator {
                       cleanArtist,
                       album,
                       durationSeconds,
+                      sig,
+                    ),
+                  signal,
+                  LyricsOrchestrator.PROVIDER_TIMEOUT_MS,
+                )
+                break
+              case 'LYRICS_PLUS':
+                candidate = await this.fetchWithTimeout(
+                  (sig) =>
+                    LyricsPlusProvider.fetchLyrics(
+                      cleanTitle,
+                      cleanArtist,
+                      album,
+                      durationSeconds,
+                      track.videoId || track.id,
                       sig,
                     ),
                   signal,

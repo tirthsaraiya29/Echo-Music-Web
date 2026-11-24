@@ -1281,6 +1281,7 @@ export function SettingsPage() {
                 }
               >
                 <option value="LRCLIB">LRCLIB (Fast & Open Source)</option>
+                <option value="LYRICS_PLUS">Lyrics+ / YouLyPlus (Rich Syllables & Multi-Mirror)</option>
                 <option value="BETTER_LYRICS">BetterLyrics (TTML Word Timing)</option>
                 <option value="KUGOU">KuGou (Global Asian Catalog)</option>
               </select>

@@ -14,7 +14,7 @@ export interface LyricLine {
   isBackground?: boolean | undefined
 }
 
-export type LyricsProviderType = 'BETTER_LYRICS' | 'LRCLIB' | 'KUGOU' | 'YOUTUBE'
+export type LyricsProviderType = 'BETTER_LYRICS' | 'LRCLIB' | 'KUGOU' | 'YOUTUBE' | 'LYRICS_PLUS'
 
 export interface SynchronizedLyrics {
   provider: LyricsProviderType

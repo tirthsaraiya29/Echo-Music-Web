@@ -156,7 +156,7 @@ export interface UserPreferences {
   varispeedEnabled?: boolean | undefined
   pauseOnMute?: boolean | undefined
   bluetoothResumeEnabled?: boolean | undefined
-  preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | undefined
+  preferredLyricsProvider?: 'LRCLIB' | 'BETTER_LYRICS' | 'KUGOU' | 'LYRICS_PLUS' | undefined
   defaultTab?: 'home' | 'search' | 'library' | 'discover' | 'settings' | undefined
   dataSaver?: boolean | undefined
   romanizeLyrics?: boolean | undefined

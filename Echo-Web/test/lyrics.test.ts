@@ -22,19 +22,24 @@ test('Lyrics Provider Cascade: prioritizes preferred provider correctly [BUG-16]
   // 1. LRCLIB preferred
   const lrclibCascade = orchestrator.getProviderCascade('LRCLIB')
   assert.strictEqual(lrclibCascade[0], 'LRCLIB')
-  assert.deepStrictEqual(lrclibCascade, ['LRCLIB', 'BETTER_LYRICS', 'KUGOU'])
+  assert.deepStrictEqual(lrclibCascade, ['LRCLIB', 'LYRICS_PLUS', 'BETTER_LYRICS', 'KUGOU'])
 
-  // 2. BetterLyrics preferred
+  // 2. LyricsPlus preferred
+  const lyricsPlusCascade = orchestrator.getProviderCascade('LYRICS_PLUS')
+  assert.strictEqual(lyricsPlusCascade[0], 'LYRICS_PLUS')
+  assert.deepStrictEqual(lyricsPlusCascade, ['LYRICS_PLUS', 'LRCLIB', 'BETTER_LYRICS', 'KUGOU'])
+
+  // 3. BetterLyrics preferred
   const betterLyricsCascade = orchestrator.getProviderCascade('BETTER_LYRICS')
   assert.strictEqual(betterLyricsCascade[0], 'BETTER_LYRICS')
-  assert.deepStrictEqual(betterLyricsCascade, ['BETTER_LYRICS', 'LRCLIB', 'KUGOU'])
+  assert.deepStrictEqual(betterLyricsCascade, ['BETTER_LYRICS', 'LYRICS_PLUS', 'LRCLIB', 'KUGOU'])
 
-  // 3. KuGou preferred
+  // 4. KuGou preferred
   const kugouCascade = orchestrator.getProviderCascade('KUGOU')
   assert.strictEqual(kugouCascade[0], 'KUGOU')
-  assert.deepStrictEqual(kugouCascade, ['KUGOU', 'LRCLIB', 'BETTER_LYRICS'])
+  assert.deepStrictEqual(kugouCascade, ['KUGOU', 'LYRICS_PLUS', 'LRCLIB', 'BETTER_LYRICS'])
 
-  // 4. Default fallback when unconfigured
+  // 5. Default fallback when unconfigured
   const defaultCascade = orchestrator.getProviderCascade('UNKNOWN_PROVIDER')
   assert.strictEqual(defaultCascade[0], 'LRCLIB')
 })

@@ -234,6 +234,10 @@ export function PlaylistPage() {
     return <SpotifyPlaylistDetailPage playlistIdOverride={playlistId} />
   }
 
+  return <StandardPlaylistDetailPage playlistId={playlistId} />
+}
+
+function StandardPlaylistDetailPage({ playlistId }: { playlistId: string }) {
   const userPlaylist = useEchoStore((state) =>
     state.playlists.find((item) => item.id === playlistId),
   )
